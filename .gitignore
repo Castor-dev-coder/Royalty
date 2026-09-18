@@ -1,0 +1,25 @@
+# Environment files
+.env
+.env.*
+*.env
+backend/.env*
+frontend/.env*
+!.env.example
+!backend/.env.example
+!frontend/.env.example
+
+# GitHub configuration
+.github/
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Prisma generated skill folders
+.claude/
+.cursor/
+.agents/
+.devin/
+
