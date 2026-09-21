@@ -1,21 +1,296 @@
-// use prisma-8
+// Royalty Hair & Nails Studio - Prisma 8 Contract
+// Mapped from PostgreSQL schema
 
-model User {
-  id        Int      @id @default(autoincrement())
-  email     String   @unique
-  username  String?
-  name      String?
-  posts     Post[]
-  createdAt TimestamptzString @default(now())
-  updatedAt temporal.updatedAtString()
+// ============================================================
+// ENUM TYPES
+// ============================================================
+
+enum AccountRole {
+  ADMIN
+  MANAGER
+  STAFF
+  CUSTOMER
 }
 
-model Post {
-  id        Int      @id @default(autoincrement())
-  title     String
-  content   String?
-  author    User     @relation(fields: [authorId], references: [id])
-  authorId  Int
-  createdAt TimestamptzString @default(now())
-  updatedAt temporal.updatedAtString()
+enum AccountStatus {
+  ACTIVE
+  DEACTIVATED
+}
+
+enum StaffWorkStatus {
+  ON_DUTY
+  DAY_OFF
+  UNAVAILABLE
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+}
+
+enum ScheduleRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum AppointmentStatus {
+  RESERVED
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum PaymentMethod {
+  CASH
+  GCASH
+}
+
+enum PaymentStatus {
+  UNVERIFIED
+  VERIFIED
+  REJECTED
+}
+
+// ============================================================
+// MODELS
+// ============================================================
+
+model Account {
+  id           String   @id @default(dbgenerated("gen_random_uuid()"))
+  email        String   @unique
+  passwordHash String
+  role         AccountRole @default(CUSTOMER)
+  status       AccountStatus @default(ACTIVE)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now()) @map("updated_at")
+
+  // Relations - Account is the auth base; Customer and Staff extend it
+  customer Customer?
+  staff    Staff?
+
+  @@map("accounts")
+}
+
+model Customer {
+  id         String   @id @default(dbgenerated("gen_random_uuid()"))
+  accountId  String   @unique @map("account_id")
+  firstName  String   @map("first_name")
+  lastName   String   @map("last_name")
+  gender     String?
+  phone      String?
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @default(now()) @map("updated_at")
+
+  // Relations
+  account    Account        @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  appointments Appointment[]
+  reviews    Review[]
+
+  @@map("customers")
+}
+
+model Staff {
+  id              String   @id @default(dbgenerated("gen_random_uuid()"))
+  accountId       String   @unique @map("account_id")
+  firstName       String   @map("first_name")
+  lastName        String   @map("last_name")
+  phone           String?
+  primaryRole     String   @map("primary_role")
+  employmentType  EmploymentType
+  workStatus      StaffWorkStatus @default(DAY_OFF)
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @default(now()) @map("updated_at")
+
+  // Relations
+  account         Account              @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  staffServices   StaffService[]
+  schedules       StaffSchedule[]
+  scheduleRequests ScheduleRequest[]
+
+  @@map("staff")
+}
+
+model ServiceCategory {
+  id        String   @id @default(dbgenerated("gen_random_uuid()"))
+  name      String   @unique
+  isActive  Boolean       @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
+
+  // Relations
+  services Service[]
+
+  @@map("service_categories")
+}
+
+model Service {
+  id              String   @id @default(dbgenerated("gen_random_uuid()"))
+  categoryId      String   @map("category_id")
+  name            String
+  description     String?
+  price           Decimal
+  durationMinutes Int
+  isActive        Boolean     @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @default(now()) @map("updated_at")
+
+  // Relations
+  category        ServiceCategory    @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  staffServices   StaffService[]
+  appointmentServices AppointmentService[]
+
+  @@map("services")
+}
+
+model StaffService {
+  staffId    String   @map("staff_id")
+  serviceId  String   @map("service_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  // Relations
+  staff      Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  service    Service  @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+
+  @@id([staffId, serviceId])
+  @@map("staff_services")
+}
+
+model BusinessHour {
+  id        String   @id @default(dbgenerated("gen_random_uuid()"))
+  dayOfWeek Int
+  openTime  String?
+  closeTime String?
+  isOpen    Boolean   @default(true) @map("is_open")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
+
+  @@map("business_hours")
+  @@unique([dayOfWeek])
+}
+
+model StaffSchedule {
+  id             String   @id @default(dbgenerated("gen_random_uuid()"))
+  staffId        String   @map("staff_id")
+  dayOfWeek      Int
+  startTime      String
+  endTime        String
+  effectiveFrom  DateTime
+  effectiveUntil DateTime?
+  isActive       Boolean    @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @default(now()) @map("updated_at")
+
+  // Relations
+  staff          Staff       @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@map("staff_schedules")
+}
+
+model ScheduleRequest {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()"))
+  staffId            String   @map("staff_id")
+  requestedDate      DateTime @map("requested_date")
+  requestedStartTime String?
+  requestedEndTime   String?
+  requestType        String
+  reason             String?
+  status             ScheduleRequestStatus @default(PENDING)
+  reviewedBy         String?
+  reviewedAt         DateTime?
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  // Relations
+  staff              Staff         @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  reviewer           Account?      @relation(fields: [reviewedBy], references: [id], onDelete: Restrict)
+
+  @@map("schedule_requests")
+}
+
+model Appointment {
+  id              String   @id @default(dbgenerated("gen_random_uuid()"))
+  appointmentCode String   @unique @map("appointment_code")
+  customerId      String   @map("customer_id")
+  appointmentDate DateTime @map("appointment_date")
+  startTime       String
+  endTime         String
+  totalAmount     Decimal  @default("0") @map("total_amount")
+  status          AppointmentStatus @default(RESERVED)
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @default(now()) @map("updated_at")
+
+  // Relations
+  customer        Customer              @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  services        AppointmentService[]
+  payment         Payment?
+
+  @@map("appointments")
+}
+
+model AppointmentService {
+  id              String   @id @default(dbgenerated("gen_random_uuid()"))
+  appointmentId   String   @map("appointment_id")
+  serviceId       String   @map("service_id")
+  serviceName     String
+  price           Decimal
+  durationMinutes Int
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  // Relations
+  appointment     Appointment  @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  service         Service      @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+
+  @@map("appointment_services")
+  @@unique([appointmentId, serviceId])
+}
+
+model Payment {
+  id            String   @id @default(dbgenerated("gen_random_uuid()"))
+  appointmentId String   @unique @map("appointment_id")
+  amount        Decimal
+  paymentMethod PaymentMethod
+  status        PaymentStatus @default(UNVERIFIED)
+  verifiedBy    String?
+  verifiedAt    DateTime?
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @default(now()) @map("updated_at")
+
+  // Relations
+  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Restrict)
+  verifier      Account?    @relation(fields: [verifiedBy], references: [id], onDelete: Restrict)
+
+  @@map("payments")
+}
+
+model Review {
+  id            String   @id @default(dbgenerated("gen_random_uuid()"))
+  appointmentId String   @unique @map("appointment_id")
+  customerId    String   @map("customer_id")
+  rating        Int
+  comment       String?
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @default(now()) @map("updated_at")
+
+  // Relations
+  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Restrict)
+  customer      Customer    @relation(fields: [customerId], references: [id], onDelete: Restrict)
+
+  @@map("reviews")
+}
+
+model AuditLog {
+  id             String   @id @default(dbgenerated("gen_random_uuid()"))
+  actorAccountId String?
+  action         String
+  entityType     String
+  entityId       String?
+  oldData        Json?
+  newData        Json?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  // Relations
+  actor          Account?  @relation(fields: [actorAccountId], references: [id], onDelete: SetNull)
+
+  @@map("audit_logs")
 }
