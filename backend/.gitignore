@@ -1,0 +1,36 @@
+# Dependency directories
+node_modules/
+
+# Build output
+dist/
+build/
+
+# Environment files with secrets
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor/OS cruft
+.DS_Store
+Thumbs.db
+*.swp
+
+# Virtual environments
+.venv/
+venv/
+
+# Coverage reports
+coverage/
+*.lcov
+
+# Local databases
+*.db
+*.sqlite
+
+# IDE
+.vscode/
+.idea/

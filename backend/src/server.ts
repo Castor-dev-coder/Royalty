@@ -5,6 +5,10 @@ import { errorHandler, notFoundHandler } from './middleware/error.js';
 import { authenticate, AuthenticatedRequest } from './middleware/auth.js';
 import { authRouter } from './routes/auth.js';
 import { accountsRouter } from './routes/accounts.js';
+import { customersRouter } from './routes/customers.js';
+import { staffRouter } from './routes/staff.js';
+import { servicesRouter } from './routes/services.js';
+import { schedulesRouter } from './routes/schedules.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -35,6 +39,10 @@ app.get('/health', async (_req, res) => {
 
 app.use('/auth', authRouter);
 app.use('/accounts', accountsRouter);
+app.use('/customers', customersRouter);
+app.use('/staff', staffRouter);
+app.use('/services', servicesRouter);
+app.use('/schedules', schedulesRouter);
 
 // Protected test route (to verify auth works)
 app.get('/api/me', authenticate, (req: AuthenticatedRequest, res) => {
