@@ -373,6 +373,13 @@
                   "kind": "scalar"
                 }
               },
+              "staffId": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
               "startTime": {
                 "nullable": false,
                 "type": {
@@ -455,6 +462,22 @@
                   "model": "AppointmentService",
                   "namespace": "public"
                 }
+              },
+              "staff": {
+                "cardinality": "N:1",
+                "nullable": true,
+                "on": {
+                  "localFields": [
+                    "staffId"
+                  ],
+                  "targetFields": [
+                    "id"
+                  ]
+                },
+                "to": {
+                  "model": "Staff",
+                  "namespace": "public"
+                }
               }
             },
             "storage": {
@@ -476,6 +499,9 @@
                 },
                 "id": {
                   "column": "id"
+                },
+                "staffId": {
+                  "column": "staff_id"
                 },
                 "startTime": {
                   "column": "startTime"
@@ -1682,6 +1708,21 @@
                   "namespace": "public"
                 }
               },
+              "appointments": {
+                "cardinality": "1:N",
+                "on": {
+                  "localFields": [
+                    "id"
+                  ],
+                  "targetFields": [
+                    "staffId"
+                  ]
+                },
+                "to": {
+                  "model": "Appointment",
+                  "namespace": "public"
+                }
+              },
               "scheduleRequests": {
                 "cardinality": "1:N",
                 "on": {
@@ -2234,6 +2275,11 @@
                   "nativeType": "text",
                   "nullable": false
                 },
+                "staff_id": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": true
+                },
                 "startTime": {
                   "codecId": "pg/text@1",
                   "nativeType": "text",
@@ -2290,6 +2336,23 @@
                     "namespaceId": "public",
                     "tableName": "customers"
                   }
+                },
+                {
+                  "onDelete": "restrict",
+                  "source": {
+                    "columns": [
+                      "staff_id"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "appointments"
+                  },
+                  "target": {
+                    "columns": [
+                      "id"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "staff"
+                  }
                 }
               ],
               "indexes": [
@@ -2299,6 +2362,23 @@
                   ],
                   "name": "appointments_customer_id_idx_e16dfa6b",
                   "prefix": "appointments_customer_id_idx",
+                  "unique": false
+                },
+                {
+                  "columns": [
+                    "staff_id",
+                    "appointment_date"
+                  ],
+                  "name": "appointments_staff_id_appointment_date_idx_fe569ed5",
+                  "prefix": "appointments_staff_id_appointment_date_idx",
+                  "unique": false
+                },
+                {
+                  "columns": [
+                    "staff_id"
+                  ],
+                  "name": "appointments_staff_id_idx_416d53f4",
+                  "prefix": "appointments_staff_id_idx",
                   "unique": false
                 }
               ],
@@ -3505,7 +3585,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "0cd57e2d9657c380fca351c62e6d03c0dccf4f0672306329eb4704c944ac9f15"
+    "storageHash": "afa8686623a0dbc6f578a4d441f6914977703c07820ee7121818165b55fb955b"
   },
   "capabilities": {
     "postgres": {

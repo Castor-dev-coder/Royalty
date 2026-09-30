@@ -208,30 +208,14 @@ export const updateScheduleRequestSchema = z.object({
 
 export type UpdateScheduleRequestRequest = z.infer<typeof updateScheduleRequestSchema>;
 
-// ============================================================
-// Appointment schemas
-// ============================================================
-
-export const createAppointmentSchema = z.object({
-  customerId: z.string().uuid(),
-  appointmentDate: z.string().date(),
-  startTime: z.string(),
-  endTime: z.string(),
-  services: z.array(z.object({
-    serviceId: z.string().uuid(),
-    serviceName: z.string().max(150),
-    price: z.number().min(0),
-    durationMinutes: z.number().int().min(1),
-  })),
-});
-
-export type CreateAppointmentRequest = z.infer<typeof createAppointmentSchema>;
-
-export const updateAppointmentStatusSchema = z.object({
-  status: z.enum(['RESERVED', 'CONFIRMED', 'COMPLETED', 'CANCELLED', 'NO_SHOW']),
-});
-
-export type UpdateAppointmentStatusRequest = z.infer<typeof updateAppointmentStatusSchema>;
+export {
+  createAppointmentSchema,
+  updateAppointmentStatusSchema,
+} from '../modules/appointments/appointments.schemas.js';
+export type {
+  CreateAppointmentInput as CreateAppointmentRequest,
+  UpdateAppointmentStatusInput as UpdateAppointmentStatusRequest,
+} from '../modules/appointments/appointments.schemas.js';
 
 // ============================================================
 // Payment schemas

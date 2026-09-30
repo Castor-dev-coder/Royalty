@@ -7,6 +7,14 @@ const envSchema = z.object({
   DIRECT_URL: z.string().url().optional(),
   JWT_SECRET: z.string().min(32),
   JWT_REFRESH_SECRET: z.string().min(32),
+  STUDIO_TIME_ZONE: z.string().default('Asia/Manila').refine((timeZone) => {
+    try {
+      new Intl.DateTimeFormat('en-US', { timeZone });
+      return true;
+    } catch {
+      return false;
+    }
+  }, 'STUDIO_TIME_ZONE must be a valid IANA timezone'),
 });
 
 export type Env = z.infer<typeof envSchema>;

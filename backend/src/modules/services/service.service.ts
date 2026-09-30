@@ -43,12 +43,15 @@ export class ServiceService {
 
   /** Get a service category by ID */
   static async getCategoryById(categoryId: string, requestingRole: string): Promise<ServiceCategoryInfo> {
-    if (requestingRole !== 'ADMIN' && requestingRole !== 'MANAGER') {
+    if (requestingRole !== 'ADMIN' && requestingRole !== 'MANAGER' && requestingRole !== 'CUSTOMER') {
       throw new ForbiddenError('Only administrators can view service categories');
     }
 
     const category = await db.orm.public.ServiceCategory.where({ id: categoryId }).first();
     if (!category) {
+      throw new NotFoundError('Service category not found');
+    }
+    if (requestingRole === 'CUSTOMER' && !category.isActive) {
       throw new NotFoundError('Service category not found');
     }
 
@@ -57,11 +60,13 @@ export class ServiceService {
 
   /** List all service categories */
   static async listCategories(requestingRole: string): Promise<ServiceCategoryInfo[]> {
-    if (requestingRole !== 'ADMIN' && requestingRole !== 'MANAGER') {
+    if (requestingRole !== 'ADMIN' && requestingRole !== 'MANAGER' && requestingRole !== 'CUSTOMER') {
       throw new ForbiddenError('Only administrators can view service categories');
     }
 
-    const categories = await db.orm.public.ServiceCategory.orderBy((c) => c.name.asc()).all();
+    const categories = requestingRole === 'CUSTOMER'
+      ? await db.orm.public.ServiceCategory.where({ isActive: true }).orderBy((c) => c.name.asc()).all()
+      : await db.orm.public.ServiceCategory.orderBy((c) => c.name.asc()).all();
     return categories.map((c) => this.mapCategory(c));
   }
 
@@ -153,7 +158,7 @@ export class ServiceService {
 
   /** Get a service by ID with category info */
   static async getServiceById(serviceId: string, requestingRole: string): Promise<ServiceInfo> {
-    if (requestingRole !== 'ADMIN' && requestingRole !== 'MANAGER') {
+    if (requestingRole !== 'ADMIN' && requestingRole !== 'MANAGER' && requestingRole !== 'CUSTOMER') {
       throw new ForbiddenError('Only administrators can view services');
     }
 
@@ -164,6 +169,9 @@ export class ServiceService {
 
     // Get category name
     const category = await db.orm.public.ServiceCategory.where({ id: service.categoryId }).first();
+    if (requestingRole === 'CUSTOMER' && (!service.isActive || !category?.isActive)) {
+      throw new NotFoundError('Service not found');
+    }
     const categoryName = category ? category.name : 'Unknown';
 
     return this.mapServiceWithCategory(service, categoryName);
@@ -171,15 +179,18 @@ export class ServiceService {
 
   /** List all services with category info */
   static async listServices(requestingRole: string): Promise<ServiceInfo[]> {
-    if (requestingRole !== 'ADMIN' && requestingRole !== 'MANAGER') {
+    if (requestingRole !== 'ADMIN' && requestingRole !== 'MANAGER' && requestingRole !== 'CUSTOMER') {
       throw new ForbiddenError('Only administrators can view services');
     }
 
-    const services = await db.orm.public.Service.orderBy((s) => s.name.asc()).all();
+    const services = requestingRole === 'CUSTOMER'
+      ? await db.orm.public.Service.where({ isActive: true }).orderBy((s) => s.name.asc()).all()
+      : await db.orm.public.Service.orderBy((s) => s.name.asc()).all();
 
     const result: ServiceInfo[] = [];
     for (const service of services) {
       const category = await db.orm.public.ServiceCategory.where({ id: service.categoryId }).first();
+      if (requestingRole === 'CUSTOMER' && !category?.isActive) continue;
       const categoryName = category ? category.name : 'Unknown';
       result.push(this.mapServiceWithCategory(service, categoryName));
     }

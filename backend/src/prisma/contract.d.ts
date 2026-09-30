@@ -34,7 +34,7 @@ import type {
 } from '@prisma/orm-postgres/contract/types';
 
 export type StorageHash =
-  StorageHashBase<'0cd57e2d9657c380fca351c62e6d03c0dccf4f0672306329eb4704c944ac9f15'>;
+  StorageHashBase<'afa8686623a0dbc6f578a4d441f6914977703c07820ee7121818165b55fb955b'>;
 export type ExecutionHash = ExecutionHashBase<string>;
 export type ProfileHash =
   ProfileHashBase<'3916f444a8a17ad749191acf9e08dad97d1a327b88c2f1d45d12f240296aa8b2'>;
@@ -254,6 +254,7 @@ export type FieldOutputTypes = {
       readonly id: CodecTypes['pg/text@1']['output'];
       readonly appointmentCode: CodecTypes['pg/text@1']['output'];
       readonly customerId: CodecTypes['pg/text@1']['output'];
+      readonly staffId: CodecTypes['pg/text@1']['output'] | null;
       readonly appointmentDate: CodecTypes['pg/timestamptz-temporal@1']['output'];
       readonly startTime: CodecTypes['pg/text@1']['output'];
       readonly endTime: CodecTypes['pg/text@1']['output'];
@@ -397,6 +398,7 @@ export type FieldInputTypes = {
       readonly id: CodecTypes['pg/text@1']['input'];
       readonly appointmentCode: CodecTypes['pg/text@1']['input'];
       readonly customerId: CodecTypes['pg/text@1']['input'];
+      readonly staffId: CodecTypes['pg/text@1']['input'] | null;
       readonly appointmentDate: CodecTypes['pg/timestamptz-temporal@1']['input'];
       readonly startTime: CodecTypes['pg/text@1']['input'];
       readonly endTime: CodecTypes['pg/text@1']['input'];
@@ -552,6 +554,7 @@ export type StorageColumnTypes = {
       readonly customer_id: CodecTypes['pg/text@1']['output'];
       readonly endTime: CodecTypes['pg/text@1']['output'];
       readonly id: CodecTypes['pg/text@1']['output'];
+      readonly staff_id: CodecTypes['pg/text@1']['output'] | null;
       readonly startTime: CodecTypes['pg/text@1']['output'];
       readonly status: 'RESERVED' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW';
       readonly total_amount: CodecTypes['pg/numeric@1']['output'];
@@ -695,6 +698,7 @@ export type StorageColumnInputTypes = {
       readonly customer_id: CodecTypes['pg/text@1']['input'];
       readonly endTime: CodecTypes['pg/text@1']['input'];
       readonly id: CodecTypes['pg/text@1']['input'];
+      readonly staff_id: CodecTypes['pg/text@1']['input'] | null;
       readonly startTime: CodecTypes['pg/text@1']['input'];
       readonly status: 'RESERVED' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW';
       readonly total_amount: CodecTypes['pg/numeric@1']['input'];
@@ -851,10 +855,12 @@ export namespace Models {
     createdAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
     updatedAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
     account: public_Account;
+    appointments: public_Appointment[];
     scheduleRequests: public_ScheduleRequest[];
     schedules: public_StaffSchedule[];
     staffServices: public_StaffService[];
-    readonly [RelationKeys]?: 'account' | 'scheduleRequests' | 'schedules' | 'staffServices';
+    readonly [RelationKeys]?:
+      'account' | 'appointments' | 'scheduleRequests' | 'schedules' | 'staffServices';
   };
   export type public_ServiceCategory = {
     id: CodecTypes['pg/text@1']['output'];
@@ -932,6 +938,7 @@ export namespace Models {
     id: CodecTypes['pg/text@1']['output'];
     appointmentCode: CodecTypes['pg/text@1']['output'];
     customerId: CodecTypes['pg/text@1']['output'];
+    staffId: CodecTypes['pg/text@1']['output'] | null;
     appointmentDate: CodecTypes['pg/timestamptz-temporal@1']['output'];
     startTime: CodecTypes['pg/text@1']['output'];
     endTime: CodecTypes['pg/text@1']['output'];
@@ -942,7 +949,8 @@ export namespace Models {
     customer: public_Customer;
     payment: public_Payment | null;
     services: public_AppointmentService[];
-    readonly [RelationKeys]?: 'customer' | 'payment' | 'services';
+    staff: public_Staff | null;
+    readonly [RelationKeys]?: 'customer' | 'payment' | 'services' | 'staff';
   };
   export type public_AppointmentService = {
     id: CodecTypes['pg/text@1']['output'];
@@ -1197,6 +1205,11 @@ type ContractBase = Omit<
                   readonly codecId: 'pg/text@1';
                   readonly nullable: false;
                 };
+                readonly staff_id: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: true;
+                };
                 readonly appointment_date: {
                   readonly nativeType: 'timestamptz';
                   readonly codecId: 'pg/timestamptz-temporal@1';
@@ -1247,9 +1260,21 @@ type ContractBase = Omit<
               uniques: readonly [{ readonly columns: readonly ['appointment_code'] }];
               indexes: readonly [
                 {
+                  readonly name: 'appointments_staff_id_appointment_date_idx_fe569ed5';
+                  readonly prefix: 'appointments_staff_id_appointment_date_idx';
+                  readonly columns: readonly ['staff_id', 'appointment_date'];
+                  readonly unique: false;
+                },
+                {
                   readonly name: 'appointments_customer_id_idx_e16dfa6b';
                   readonly prefix: 'appointments_customer_id_idx';
                   readonly columns: readonly ['customer_id'];
+                  readonly unique: false;
+                },
+                {
+                  readonly name: 'appointments_staff_id_idx_416d53f4';
+                  readonly prefix: 'appointments_staff_id_idx';
+                  readonly columns: readonly ['staff_id'];
                   readonly unique: false;
                 },
               ];
@@ -1263,6 +1288,18 @@ type ContractBase = Omit<
                   readonly target: {
                     readonly namespaceId: 'public' & NamespaceId;
                     readonly tableName: 'customers';
+                    readonly columns: readonly ['id'];
+                  };
+                },
+                {
+                  readonly source: {
+                    readonly namespaceId: 'public' & NamespaceId;
+                    readonly tableName: 'appointments';
+                    readonly columns: readonly ['staff_id'];
+                  };
+                  readonly target: {
+                    readonly namespaceId: 'public' & NamespaceId;
+                    readonly tableName: 'staff';
                     readonly columns: readonly ['id'];
                   };
                 },
@@ -2286,6 +2323,10 @@ type ContractBase = Omit<
                 readonly nullable: false;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
               };
+              readonly staffId: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
               readonly appointmentDate: {
                 readonly nullable: false;
                 readonly type: {
@@ -2360,6 +2401,18 @@ type ContractBase = Omit<
                   readonly targetFields: readonly ['appointmentId'];
                 };
               };
+              readonly staff: {
+                readonly to: {
+                  readonly namespace: 'public' & NamespaceId;
+                  readonly model: 'Staff';
+                };
+                readonly cardinality: 'N:1';
+                readonly nullable: true;
+                readonly on: {
+                  readonly localFields: readonly ['staffId'];
+                  readonly targetFields: readonly ['id'];
+                };
+              };
             };
             readonly storage: {
               readonly table: 'appointments';
@@ -2368,6 +2421,7 @@ type ContractBase = Omit<
                 readonly id: { readonly column: 'id' };
                 readonly appointmentCode: { readonly column: 'appointment_code' };
                 readonly customerId: { readonly column: 'customer_id' };
+                readonly staffId: { readonly column: 'staff_id' };
                 readonly appointmentDate: { readonly column: 'appointment_date' };
                 readonly startTime: { readonly column: 'startTime' };
                 readonly endTime: { readonly column: 'endTime' };
@@ -3141,6 +3195,17 @@ type ContractBase = Omit<
                 readonly on: {
                   readonly localFields: readonly ['accountId'];
                   readonly targetFields: readonly ['id'];
+                };
+              };
+              readonly appointments: {
+                readonly to: {
+                  readonly namespace: 'public' & NamespaceId;
+                  readonly model: 'Appointment';
+                };
+                readonly cardinality: '1:N';
+                readonly on: {
+                  readonly localFields: readonly ['id'];
+                  readonly targetFields: readonly ['staffId'];
                 };
               };
               readonly scheduleRequests: {

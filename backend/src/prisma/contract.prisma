@@ -108,6 +108,7 @@ model Staff {
   staffServices   StaffService[]
   schedules       StaffSchedule[]
   scheduleRequests ScheduleRequest[]
+  appointments    Appointment[]
 
   @@map("staff")
 }
@@ -212,6 +213,7 @@ model Appointment {
   id              String   @id @default(dbgenerated("gen_random_uuid()"))
   appointmentCode String   @unique @map("appointment_code")
   customerId      String   @map("customer_id")
+  staffId         String?  @map("staff_id")
   appointmentDate DateTime @map("appointment_date")
   startTime       String
   endTime         String
@@ -222,10 +224,12 @@ model Appointment {
 
   // Relations
   customer        Customer              @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  staff           Staff?                @relation(fields: [staffId], references: [id], onDelete: Restrict)
   services        AppointmentService[]
   payment         Payment?
 
   @@map("appointments")
+  @@index([staffId, appointmentDate])
 }
 
 model AppointmentService {

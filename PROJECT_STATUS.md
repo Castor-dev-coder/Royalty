@@ -100,37 +100,28 @@ Key behaviors:
 
 These are known limitations or decisions deferred to future work. They are NOT approved requirements for schema changes.
 
-1. **Appointment availability must use business hours.** The business hours data exists but is not yet used to validate appointment times. This will be implemented in the Appointments module.
+1. **Appointment schema is not yet applied to or verified against Supabase.** The checked-in Prisma contract now includes nullable `appointments.staff_id` and an index on `(staff_id, appointment_date)`, but `npm run db:verify` could not connect. Apply/verify the additive database change before deploying the appointment API; existing appointment rows remain unassigned.
 
-2. **Appointment creation must reject inactive services.** Service `is_active` is tracked but not yet enforced at appointment creation time. Will be implemented in the Appointments module.
+2. **Appointment overlap checks can race.** Availability is checked before the transaction that inserts the appointment and lines. Concurrent requests may both pass. The current Prisma contract has no exclusion constraint or lock-based serialization for appointment intervals.
 
-3. **Customer-facing service/category read access** is deferred to the appointment/customer booking flow. Currently all service endpoints require ADMIN/MANAGER. Will be finalized when implementing customer booking.
+3. **DAY_OFF has no expiry field** in the database. Only the current `staff.work_status` is checked. If the business needs expiring DAY_OFF periods, a schema change would be required (e.g., `day_off_until TIMESTAMPTZ`).
 
-4. **DAY_OFF has no expiry field** in the database. Only the current `staff.work_status` is checked. If the business needs DAY_OFF periods with automatic expiry, a schema change would be required (e.g., `day_off_until TIMESTAMPTZ`). Not currently approved.
+4. **Schedule request approval does NOT automatically create a staff schedule.** Approval only changes the request status to APPROVED. A separate staff_schedule record must be created manually by an ADMIN/MANAGER.
 
-5. **Schedule request approval does NOT automatically create a staff schedule.** Approval only changes the request status to APPROVED. A separate staff_schedule record must be created manually by an ADMIN/MANAGER. This is a workflow gap that may need resolution.
+5. **Schedule overlap detection has a possible concurrency race.** The conflict check query and insert/update are not atomic. Two concurrent requests could both pass the check.
 
-6. **Schedule overlap detection has a possible concurrency race.** The conflict check query and the insert/update are not wrapped in a transaction. Two concurrent requests could both pass the check and create overlapping schedules. This is acceptable for current low-contention use but not strictly serializable. A unique partial index or `SELECT ... FOR UPDATE` could address this, but would require schema or implementation changes.
+## Appointments
 
-7. These are known limitations/deferred decisions, not approved requirements for schema changes. Do not modify the database schema without explicit approval.
+Implementation status: API source and checked-in Prisma contract added; not ready for deployment until the Supabase schema is updated and verified.
 
-## Next Module
-
-**Next module: Appointments**
-
-The Appointments module will need to integrate:
-- Customers (customer_id, customer profile data)
-- Services (service selection, active state check, price/duration snapshots into appointment_services)
-- Business hours (validate appointment time against business hours)
-- Staff schedules (validate staff availability against schedule)
-- Staff work status (DAY_OFF, ON_DUTY, UNAVAILABLE)
-- Appointment conflicts (double-booking prevention)
-- Appointment status workflow (RESERVED → CONFIRMED → COMPLETED/CANCELLED/NO_SHOW)
-- Appointment codes (unique appointment_code)
-- Transactions (appointment + appointment_services created atomically)
-- Authorization (customers can manage own appointments, STAFF/ADMIN/MANAGER can manage all)
-
-Existing database schema is the source of truth. Do not modify schema without explicit approval.
+- Routes: `GET /appointments`, `GET /appointments/me`, `GET /appointments/staff/me`, `GET /appointments/:id`, `GET /appointments/availability`, `POST /appointments`, and `PATCH /appointments/:id/status`.
+- Booking derives the customer from the authenticated account, accepts service IDs rather than prices, snapshots active service details, requires an assigned staff member, and creates the appointment and service rows in one transaction.
+- Availability checks active services/categories, staff-service assignments, ON_DUTY status, business hours, active staff schedule, and existing RESERVED/CONFIRMED appointments.
+- Customer access to service/category reads returns active catalog entries only.
+- Appointment date/time checks use `STUDIO_TIME_ZONE` (default `Asia/Manila`). Service durations are summed with no added buffer.
+- Status transitions: RESERVED → CONFIRMED or CANCELLED; CONFIRMED → COMPLETED, CANCELLED, or NO_SHOW. Customers may cancel their own appointment before its start. Completion and no-show are blocked until the scheduled end.
+- Existing appointment rows may have `staff_id = NULL`; new bookings require an assignment. Staff deletion is restricted when appointments reference that staff member.
+- No rescheduling endpoint is implemented. Appointment overlap checks are not concurrency-safe until a database-level strategy is added.
 
 ## Repository State
 
@@ -138,4 +129,5 @@ Existing database schema is the source of truth. Do not modify schema without ex
 - Working tree: dirty (uncommitted changes)
 - Build: passing (`npm run build` exits 0)
 - Prisma contract: passing (`npm run contract:emit` exits 0)
-- Tests: none yet (not blocking)
+- Tests: no test runner configured; appointment request-schema smoke checks passed
+- Database verification: blocked; configured database host could not be resolved
