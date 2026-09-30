@@ -4,8 +4,18 @@ import { env } from '../../config/env.js';
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../errors/index.js';
 import { generateAuditLog } from '../../utils/audit.js';
 import type { CreateAppointmentInput } from './appointments.schemas.js';
-
-type AppointmentStatus = 'RESERVED' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW';
+import {
+  AppointmentStatus,
+  calculateEndTime,
+  canTransitionStatus,
+  dateOnly,
+  dateString,
+  hasAppointmentTimePassed,
+  isoDayOfWeek,
+  localDateAndTime,
+  sumDecimalStrings,
+  timeRangesOverlap,
+} from './appointments.rules.js';
 type AppointmentRecord = {
   id: string;
   appointmentCode: string;
@@ -60,74 +70,15 @@ export interface AppointmentInfo {
   updatedAt: Date;
 }
 
-function localDateAndTime(now: Date): { date: string; time: string } {
-  const parts = new Intl.DateTimeFormat('en-GB', {
-    timeZone: env.STUDIO_TIME_ZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23',
-  }).formatToParts(now);
-  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return {
-    date: `${values.year}-${values.month}-${values.day}`,
-    time: `${values.hour}:${values.minute}`,
-  };
-}
-
-function dateOnly(value: string): Date {
-  return new Date(`${value}T00:00:00.000Z`);
-}
-
-function dateString(value: Date): string {
-  return value.toISOString().slice(0, 10);
-}
-
-function isoDayOfWeek(value: string): number {
-  const day = dateOnly(value).getUTCDay();
-  return day === 0 ? 7 : day;
-}
-
 function toMinutes(value: string): number {
   const [hours, minutes] = value.split(':').map(Number);
   return hours * 60 + minutes;
-}
-
-function fromMinutes(value: number): string {
-  return `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`;
-}
-
-function sumDecimalStrings(values: string[]): string {
-  const parts = values.map((value) => {
-    const match = /^(\d+)(?:\.(\d+))?$/.exec(value);
-    if (!match) throw new BadRequestError('A service price has an unsupported numeric format');
-    return { whole: match[1], fraction: match[2] ?? '' };
-  });
-  const scale = Math.max(0, ...parts.map((part) => part.fraction.length));
-  const total = parts.reduce((sum, part) => {
-    const scaled = `${part.whole}${part.fraction.padEnd(scale, '0')}`;
-    return sum + BigInt(scaled);
-  }, 0n);
-  if (scale === 0) return total.toString();
-
-  const digits = total.toString().padStart(scale + 1, '0');
-  const whole = digits.slice(0, -scale);
-  const fraction = digits.slice(-scale).replace(/0+$/, '');
-  return fraction ? `${whole}.${fraction}` : whole;
 }
 
 function serializeDecimal(value: unknown): number {
   const result = Number(value);
   if (!Number.isFinite(result)) throw new BadRequestError('A stored appointment amount is invalid');
   return result;
-}
-
-function isBeforeLocalStart(appointmentDate: Date, startTime: string, now: Date): boolean {
-  const localNow = localDateAndTime(now);
-  const date = dateString(appointmentDate);
-  return date > localNow.date || (date === localNow.date && startTime > localNow.time);
 }
 
 async function collect<T>(records: AsyncIterable<T> | Iterable<T>): Promise<T[]> {
@@ -286,14 +237,7 @@ export class AppointmentsService {
     if (!appointment) throw new NotFoundError('Appointment not found');
     await this.assertCanView(appointment, requestingUserId, role);
 
-    const transitions: Record<AppointmentStatus, AppointmentStatus[]> = {
-      RESERVED: ['CONFIRMED', 'CANCELLED'],
-      CONFIRMED: ['COMPLETED', 'CANCELLED', 'NO_SHOW'],
-      COMPLETED: [],
-      CANCELLED: [],
-      NO_SHOW: [],
-    };
-    if (!transitions[appointment.status].includes(nextStatus)) {
+    if (!canTransitionStatus(appointment.status, nextStatus)) {
       throw new ConflictError(`Appointment cannot transition from ${appointment.status} to ${nextStatus}`);
     }
 
@@ -301,7 +245,7 @@ export class AppointmentsService {
       if (nextStatus !== 'CANCELLED') {
         throw new ForbiddenError('Customers may only cancel their own appointments');
       }
-      if (!isBeforeLocalStart(appointment.appointmentDate, appointment.startTime, new Date())) {
+      if (hasAppointmentTimePassed(appointment.appointmentDate, appointment.startTime, new Date(), env.STUDIO_TIME_ZONE)) {
         throw new ConflictError('An appointment can only be cancelled before its start time');
       }
     } else if (role === 'STAFF') {
@@ -310,10 +254,10 @@ export class AppointmentsService {
       throw new ForbiddenError('You do not have permission to change this appointment');
     }
 
-    if (nextStatus === 'COMPLETED' && isBeforeLocalStart(appointment.appointmentDate, appointment.endTime, new Date())) {
+    if (nextStatus === 'COMPLETED' && !hasAppointmentTimePassed(appointment.appointmentDate, appointment.endTime, new Date(), env.STUDIO_TIME_ZONE)) {
       throw new ConflictError('An appointment cannot be completed before its end time');
     }
-    if (nextStatus === 'NO_SHOW' && isBeforeLocalStart(appointment.appointmentDate, appointment.endTime, new Date())) {
+    if (nextStatus === 'NO_SHOW' && !hasAppointmentTimePassed(appointment.appointmentDate, appointment.endTime, new Date(), env.STUDIO_TIME_ZONE)) {
       throw new ConflictError('An appointment cannot be marked as no-show before its end time');
     }
 
@@ -335,7 +279,7 @@ export class AppointmentsService {
 
   private static async getBookingPlan(data: CreateAppointmentInput): Promise<BookingPlan> {
     const requestedDate = dateOnly(data.appointmentDate);
-    const localNow = localDateAndTime(new Date());
+    const localNow = localDateAndTime(new Date(), env.STUDIO_TIME_ZONE);
     if (data.appointmentDate < localNow.date ||
       (data.appointmentDate === localNow.date && data.startTime <= localNow.time)) {
       throw new BadRequestError('Appointment date and time must be in the future');
@@ -356,11 +300,7 @@ export class AppointmentsService {
       });
     }
 
-    const totalDuration = serviceRows.reduce((sum, service) => sum + service.durationMinutes, 0);
-    const startMinutes = toMinutes(data.startTime);
-    const endMinutes = startMinutes + totalDuration;
-    if (endMinutes >= 24 * 60) throw new BadRequestError('Appointment cannot extend past midnight');
-    const endTime = fromMinutes(endMinutes);
+    const endTime = calculateEndTime(data.startTime, serviceRows.map((service) => service.durationMinutes));
     const staff = await db.orm.public.Staff.where({ id: data.staffId }).first();
     if (!staff) throw new NotFoundError('Staff member not found');
 
@@ -392,7 +332,7 @@ export class AppointmentsService {
     const hasConflict = staffAppointments.some((appointment) => {
       if (appointment.appointmentDate.toISOString().slice(0, 10) !== data.appointmentDate) return false;
       if (appointment.status !== 'RESERVED' && appointment.status !== 'CONFIRMED') return false;
-      return data.startTime < appointment.endTime && appointment.startTime < endTime;
+      return timeRangesOverlap(data.startTime, endTime, appointment.startTime, appointment.endTime);
     });
     if (hasConflict) available = false;
 

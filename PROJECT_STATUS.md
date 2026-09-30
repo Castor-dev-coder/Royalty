@@ -129,5 +129,5 @@ Implementation status: API source and checked-in Prisma contract added; not read
 - Working tree: dirty (uncommitted changes)
 - Build: passing (`npm run build` exits 0)
 - Prisma contract: passing (`npm run contract:emit` exits 0)
-- Tests: no test runner configured; appointment request-schema smoke checks passed
+- Tests: `npm test` runs appointment rule/schema unit tests; database integration tests remain pending
 - Database verification: blocked; configured database host could not be resolved
