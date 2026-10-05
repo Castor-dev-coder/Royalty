@@ -69,8 +69,9 @@ export class StaffService {
       throw new NotFoundError('Staff member not found');
     }
 
-    // STAFF can only view their own profile unless they are admin/manager
-    if (requestingRole === 'STAFF' && staffId !== requestingUserId) {
+    // STAFF can only view their own profile unless they are admin/manager.
+    // requestingUserId is an account ID, so compare against the staff account link.
+    if (requestingRole === 'STAFF' && staff.accountId !== requestingUserId) {
       throw new ForbiddenError('You do not have permission to view this staff member');
     }
 
@@ -196,15 +197,10 @@ export class StaffService {
    * - STAFF can update their own phone
    * - ADMIN/MANAGER can update employment details
    */
-  static async updateOwnProfile(staffId: string, data: { phone?: string }, requestingUserId: string): Promise<StaffProfile> {
-    const staff = await db.orm.public.Staff.where({ id: staffId }).first();
+  static async updateOwnProfile(accountId: string, data: { phone?: string }): Promise<StaffProfile> {
+    const staff = await db.orm.public.Staff.where({ accountId }).first();
     if (!staff) {
       throw new NotFoundError('Staff member not found');
-    }
-
-    // Only the staff member can update their own profile
-    if (staffId !== requestingUserId) {
-      throw new ForbiddenError('You can only update your own staff profile');
     }
 
     // Build update data (only phone is allowed for self-service)
@@ -214,7 +210,7 @@ export class StaffService {
     }
 
     const updated = await db.orm.public.Staff
-      .where({ id: staffId })
+      .where({ id: staff.id })
       .update(updateData);
 
     if (!updated) {
@@ -222,10 +218,10 @@ export class StaffService {
     }
 
     await generateAuditLog({
-      actorAccountId: requestingUserId,
+      actorAccountId: accountId,
       action: 'UPDATE_STAFF_PROFILE',
       entityType: 'Staff',
-      entityId: staffId,
+      entityId: staff.id,
       oldData: this.auditData(staff),
       newData: this.auditData(updated),
     });

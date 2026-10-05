@@ -82,10 +82,9 @@ export async function createStaffController(req: AuthenticatedRequest, res: Resp
 // PATCH /staff/me - Update own staff profile (phone only)
 export async function updateOwnStaffController(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
   try {
-    const id = String(req.params.id);
     const { phone } = req.body;
 
-    const staff = await StaffService.updateOwnProfile(id, { phone }, req.user!.userId);
+    const staff = await StaffService.updateOwnProfile(req.user!.userId, { phone });
     res.json({ data: staff });
   } catch (error) {
     next(error);
