@@ -3,12 +3,15 @@ import { pgVarchar } from '../../prisma/contract-compat.js';
 import { NotFoundError, ForbiddenError, ConflictError, BadRequestError } from '../../errors/index.js';
 import { generateAuditLog } from '../../utils/audit.js';
 import {
-  dateOnlyToUtcDate,
   dateTimeInputToDateOnly,
+  fromPrismaDate,
+  fromPrismaDateString,
+  fromPrismaTime,
   isoWeekdayToPostgres,
   normalizeDateOnly,
-  normalizeTimeOnly,
   postgresWeekdayToIso,
+  toPlainDate,
+  toPlainTime,
 } from '../../utils/date-time.js';
 
 interface TxContext {
@@ -59,10 +62,10 @@ function timeRangesOverlap(start1: string, end1: string, start2: string, end2: s
 
 // Check if two date ranges overlap
 function dateRangesOverlap(
-  effectiveFrom1: Date | string,
-  effectiveUntil1: Date | string | null,
-  effectiveFrom2: Date | string,
-  effectiveUntil2: Date | string | null
+  effectiveFrom1: Date,
+  effectiveUntil1: Date | null,
+  effectiveFrom2: Date,
+  effectiveUntil2: Date | null
 ): boolean {
   const start1 = normalizeDateOnly(effectiveFrom1);
   const end1 = effectiveUntil1 ? normalizeDateOnly(effectiveUntil1) : '9999-12-31';
@@ -84,8 +87,8 @@ function mapBusinessHour(hour: {
   return {
     id: hour.id,
     dayOfWeek: postgresWeekdayToIso(hour.dayOfWeek),
-    openTime: hour.openTime === null ? null : normalizeTimeOnly(hour.openTime),
-    closeTime: hour.closeTime === null ? null : normalizeTimeOnly(hour.closeTime),
+    openTime: hour.openTime,
+    closeTime: hour.closeTime,
     isOpen: hour.isOpen,
     createdAt: hour.createdAt,
     updatedAt: hour.updatedAt,
@@ -98,8 +101,8 @@ function mapStaffSchedule(schedule: {
   dayOfWeek: number;
   startTime: string;
   endTime: string;
-  effectiveFrom: Date | string;
-  effectiveUntil: Date | string | null;
+  effectiveFrom: Date;
+  effectiveUntil: Date | null;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -108,14 +111,51 @@ function mapStaffSchedule(schedule: {
     id: schedule.id,
     staffId: schedule.staffId,
     dayOfWeek: postgresWeekdayToIso(schedule.dayOfWeek),
-    startTime: normalizeTimeOnly(schedule.startTime),
-    endTime: normalizeTimeOnly(schedule.endTime),
-    effectiveFrom: dateOnlyToUtcDate(schedule.effectiveFrom),
-    effectiveUntil: schedule.effectiveUntil === null ? null : dateOnlyToUtcDate(schedule.effectiveUntil),
+    startTime: schedule.startTime,
+    endTime: schedule.endTime,
+    effectiveFrom: schedule.effectiveFrom instanceof Date ? schedule.effectiveFrom : new Date(`${normalizeDateOnly(schedule.effectiveFrom)}T00:00:00.000Z`),
+    effectiveUntil: schedule.effectiveUntil === null ? null : schedule.effectiveUntil instanceof Date ? schedule.effectiveUntil : new Date(`${normalizeDateOnly(schedule.effectiveUntil)}T00:00:00.000Z`),
     isActive: schedule.isActive,
     createdAt: schedule.createdAt,
     updatedAt: schedule.updatedAt,
   };
+}
+
+function mapBusinessHourFromPrisma(hour: {
+  id: string;
+  dayOfWeek: number;
+  openTime: string | Temporal.PlainTime | null;
+  closeTime: string | Temporal.PlainTime | null;
+  isOpen: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}): BusinessHoursInfo {
+  return mapBusinessHour({
+    ...hour,
+    openTime: hour.openTime === null ? null : fromPrismaTime(hour.openTime),
+    closeTime: hour.closeTime === null ? null : fromPrismaTime(hour.closeTime),
+  });
+}
+
+function mapStaffScheduleFromPrisma(schedule: {
+  id: string;
+  staffId: string;
+  dayOfWeek: number;
+  startTime: string | Temporal.PlainTime;
+  endTime: string | Temporal.PlainTime;
+  effectiveFrom: Date | string | Temporal.PlainDate;
+  effectiveUntil: Date | string | Temporal.PlainDate | null;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}): StaffScheduleInfo {
+  return mapStaffSchedule({
+    ...schedule,
+    startTime: fromPrismaTime(schedule.startTime),
+    endTime: fromPrismaTime(schedule.endTime),
+    effectiveFrom: fromPrismaDate(schedule.effectiveFrom),
+    effectiveUntil: schedule.effectiveUntil === null ? null : fromPrismaDate(schedule.effectiveUntil),
+  });
 }
 
 export interface BusinessHoursInfo {
@@ -167,7 +207,7 @@ export class SchedulesService {
     }
 
     const hours = await db.orm.public.BusinessHour.orderBy((b) => b.dayOfWeek.asc()).all();
-    return hours.map(mapBusinessHour).sort((left, right) => left.dayOfWeek - right.dayOfWeek);
+    return hours.map(mapBusinessHourFromPrisma).sort((left, right) => left.dayOfWeek - right.dayOfWeek);
   }
 
   /** Replace entire business hours configuration atomically */
@@ -219,8 +259,8 @@ export class SchedulesService {
         for (const day of days) {
           await tx.orm.public.BusinessHour.create({
             dayOfWeek: isoWeekdayToPostgres(day.dayOfWeek),
-            openTime: day.openTime,
-            closeTime: day.closeTime,
+            openTime: toPlainTime(day.openTime),
+            closeTime: toPlainTime(day.closeTime),
             isOpen: day.isOpen,
           });
         }
@@ -271,13 +311,13 @@ export class SchedulesService {
       }
 
       // Check time overlap
-      if (timeRangesOverlap(startTime, endTime, normalizeTimeOnly(schedule.startTime), normalizeTimeOnly(schedule.endTime))) {
+      if (timeRangesOverlap(startTime, endTime, fromPrismaTime(schedule.startTime), fromPrismaTime(schedule.endTime))) {
         // Check effective date overlap
         if (dateRangesOverlap(
           effectiveFrom,
           effectiveUntil,
-          schedule.effectiveFrom,
-          schedule.effectiveUntil
+          fromPrismaDate(schedule.effectiveFrom),
+          schedule.effectiveUntil === null ? null : fromPrismaDate(schedule.effectiveUntil)
         )) {
           throw new ConflictError('Schedule conflict: overlapping time range for this staff member on this day');
         }
@@ -292,7 +332,7 @@ export class SchedulesService {
     }
 
     const schedules = await db.orm.public.StaffSchedule.orderBy((s) => s.dayOfWeek.asc()).all();
-    return schedules.map(mapStaffSchedule).sort((left, right) => left.dayOfWeek - right.dayOfWeek);
+    return schedules.map(mapStaffScheduleFromPrisma).sort((left, right) => left.dayOfWeek - right.dayOfWeek);
   }
 
   /** Get staff schedules by staff ID */
@@ -319,7 +359,7 @@ export class SchedulesService {
       .orderBy((s) => s.dayOfWeek.asc())
       .all();
 
-    return schedules.map(mapStaffSchedule).sort((left, right) => left.dayOfWeek - right.dayOfWeek);
+    return schedules.map(mapStaffScheduleFromPrisma).sort((left, right) => left.dayOfWeek - right.dayOfWeek);
   }
 
   /** Get own schedules (for STAFF) */
@@ -332,7 +372,7 @@ export class SchedulesService {
       .orderBy((s) => s.dayOfWeek.asc())
       .all();
 
-    return schedules.map(mapStaffSchedule).sort((left, right) => left.dayOfWeek - right.dayOfWeek);
+    return schedules.map(mapStaffScheduleFromPrisma).sort((left, right) => left.dayOfWeek - right.dayOfWeek);
   }
 
   /** Create a staff schedule */
@@ -409,10 +449,10 @@ export class SchedulesService {
     const schedule = await db.orm.public.StaffSchedule.create({
       staffId: data.staffId,
       dayOfWeek: isoWeekdayToPostgres(data.dayOfWeek),
-      startTime: data.startTime,
-      endTime: data.endTime,
-      effectiveFrom: normalizeDateOnly(effectiveFromDate),
-      effectiveUntil: effectiveUntilDate ? normalizeDateOnly(effectiveUntilDate) : null,
+      startTime: toPlainTime(data.startTime),
+      endTime: toPlainTime(data.endTime),
+      effectiveFrom: toPlainDate(effectiveFromDate),
+      effectiveUntil: effectiveUntilDate ? toPlainDate(effectiveUntilDate) : null,
       isActive: data.isActive,
     });
 
@@ -432,7 +472,7 @@ export class SchedulesService {
       },
     });
 
-    return mapStaffSchedule(schedule);
+    return mapStaffScheduleFromPrisma(schedule);
   }
 
   /** Update a staff schedule */
@@ -464,14 +504,14 @@ export class SchedulesService {
 
     // Determine the effective values (use existing if not provided)
     const dayOfWeek = data.dayOfWeek ?? postgresWeekdayToIso(schedule.dayOfWeek);
-    const startTime = data.startTime ?? normalizeTimeOnly(schedule.startTime);
-    const endTime = data.endTime ?? normalizeTimeOnly(schedule.endTime);
+    const startTime = data.startTime ?? fromPrismaTime(schedule.startTime);
+    const endTime = data.endTime ?? fromPrismaTime(schedule.endTime);
     const effectiveFromDate = data.effectiveFrom
       ? dateTimeInputToDateOnly(data.effectiveFrom)
-      : dateOnlyToUtcDate(schedule.effectiveFrom);
+      : fromPrismaDate(schedule.effectiveFrom);
     const effectiveUntilDate = data.effectiveUntil !== undefined
       ? data.effectiveUntil === null ? null : dateTimeInputToDateOnly(data.effectiveUntil)
-      : schedule.effectiveUntil === null ? null : dateOnlyToUtcDate(schedule.effectiveUntil);
+      : schedule.effectiveUntil === null ? null : fromPrismaDate(schedule.effectiveUntil);
     const isActive = data.isActive ?? schedule.isActive;
 
     // Validate
@@ -516,10 +556,10 @@ export class SchedulesService {
 
     const updated = await db.orm.public.StaffSchedule.where({ id: scheduleId }).update({
       dayOfWeek: isoWeekdayToPostgres(dayOfWeek),
-      startTime,
-      endTime,
-      effectiveFrom: normalizeDateOnly(effectiveFromDate),
-      effectiveUntil: effectiveUntilDate ? normalizeDateOnly(effectiveUntilDate) : null,
+      startTime: toPlainTime(startTime),
+      endTime: toPlainTime(endTime),
+      effectiveFrom: toPlainDate(effectiveFromDate),
+      effectiveUntil: effectiveUntilDate ? toPlainDate(effectiveUntilDate) : null,
       isActive,
     });
 
@@ -552,7 +592,7 @@ export class SchedulesService {
       },
     });
 
-    return mapStaffSchedule(updated);
+    return mapStaffScheduleFromPrisma(updated);
   }
 
   /** Delete a staff schedule */
@@ -604,7 +644,7 @@ export class SchedulesService {
       .orderBy((r) => r.createdAt.desc())
       .all();
 
-    return requests.map((r) => this.mapScheduleRequest(r));
+    return requests.map((r) => this.mapPrismaScheduleRequest(r));
   }
 
   /** Get schedule request by ID */
@@ -626,7 +666,7 @@ export class SchedulesService {
       }
     }
 
-    return this.mapScheduleRequest(request);
+    return this.mapPrismaScheduleRequest(request);
   }
 
   /** Get own schedule requests (for STAFF) */
@@ -639,7 +679,7 @@ export class SchedulesService {
       .orderBy((r) => r.createdAt.desc())
       .all();
 
-    return requests.map((r) => this.mapScheduleRequest(r));
+    return requests.map((r) => this.mapPrismaScheduleRequest(r));
   }
 
   /** Create a schedule request (STAFF only) */
@@ -666,8 +706,8 @@ export class SchedulesService {
     }
     const requestedDate = dateTimeInputToDateOnly(data.requestedDate);
 
-    const requestedStartTime = data.requestedStartTime ? normalizeTimeOnly(data.requestedStartTime) : undefined;
-    const requestedEndTime = data.requestedEndTime ? normalizeTimeOnly(data.requestedEndTime) : undefined;
+    const requestedStartTime = data.requestedStartTime;
+    const requestedEndTime = data.requestedEndTime;
     if (data.requestedStartTime) {
       validateTimeFormat(requestedStartTime!);
     }
@@ -681,9 +721,9 @@ export class SchedulesService {
 
     const request = await db.orm.public.ScheduleRequest.create({
       staffId: staff.id,
-      requestedDate: normalizeDateOnly(requestedDate),
-      requestedStartTime: requestedStartTime ?? null,
-      requestedEndTime: requestedEndTime ?? null,
+      requestedDate: toPlainDate(requestedDate),
+      requestedStartTime: requestedStartTime ? toPlainTime(requestedStartTime) : null,
+      requestedEndTime: requestedEndTime ? toPlainTime(requestedEndTime) : null,
       requestType: pgVarchar<50>(data.requestType),
       reason: data.reason ?? null,
       status: 'PENDING',
@@ -702,7 +742,7 @@ export class SchedulesService {
       },
     });
 
-    return this.mapScheduleRequest(request);
+    return this.mapPrismaScheduleRequest(request);
   }
 
   /** Approve a schedule request */
@@ -755,7 +795,7 @@ export class SchedulesService {
       newData: { status: 'APPROVED', reviewedBy: requestingUserId, reviewedAt: now },
     });
 
-    return this.mapScheduleRequest(updated);
+    return this.mapPrismaScheduleRequest(updated);
   }
 
   /** Reject a schedule request */
@@ -808,19 +848,40 @@ export class SchedulesService {
       newData: { status: 'REJECTED', reviewedBy: requestingUserId, reviewedAt: now },
     });
 
-    return this.mapScheduleRequest(updated);
+    return this.mapPrismaScheduleRequest(updated);
   }
 
   // ============================================================
   // Mapping helpers
   // ============================================================
 
+  private static mapPrismaScheduleRequest(request: {
+    id: string;
+    staffId: string;
+    requestedDate: Date | string | Temporal.PlainDate;
+    requestedStartTime: Date | string | Temporal.PlainTime | null;
+    requestedEndTime: Date | string | Temporal.PlainTime | null;
+    requestType: string;
+    reason: string | null;
+    status: 'PENDING' | 'APPROVED' | 'REJECTED';
+    reviewedBy: string | null;
+    reviewedAt: Date | null;
+    createdAt: Date;
+  }): ScheduleRequestInfo {
+    return this.mapScheduleRequest({
+      ...request,
+      requestedDate: fromPrismaDate(request.requestedDate),
+      requestedStartTime: request.requestedStartTime === null ? null : fromPrismaTime(request.requestedStartTime),
+      requestedEndTime: request.requestedEndTime === null ? null : fromPrismaTime(request.requestedEndTime),
+    });
+  }
+
   private static mapScheduleRequest(request: {
     id: string;
     staffId: string;
-    requestedDate: Date | string;
-    requestedStartTime: Date | string | null;
-    requestedEndTime: Date | string | null;
+    requestedDate: Date;
+    requestedStartTime: string | null;
+    requestedEndTime: string | null;
     requestType: string;
     reason: string | null;
     status: 'PENDING' | 'APPROVED' | 'REJECTED';
@@ -831,9 +892,9 @@ export class SchedulesService {
     return {
       id: request.id,
       staffId: request.staffId,
-      requestedDate: dateOnlyToUtcDate(request.requestedDate),
-      requestedStartTime: request.requestedStartTime === null ? null : normalizeTimeOnly(request.requestedStartTime),
-      requestedEndTime: request.requestedEndTime === null ? null : normalizeTimeOnly(request.requestedEndTime),
+      requestedDate: request.requestedDate,
+      requestedStartTime: request.requestedStartTime,
+      requestedEndTime: request.requestedEndTime,
       requestType: request.requestType,
       reason: request.reason,
       status: request.status,

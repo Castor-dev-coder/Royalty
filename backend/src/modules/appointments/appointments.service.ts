@@ -10,7 +10,15 @@ import {
 import { env } from '../../config/env.js';
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../errors/index.js';
 import { generateAuditLog } from '../../utils/audit.js';
-import { isoWeekdayToPostgres, normalizeTimeOnly } from '../../utils/date-time.js';
+import {
+  fromPrismaDate,
+  fromPrismaDateString,
+  fromPrismaTime,
+  isoWeekdayToPostgres,
+  normalizeTimeOnly,
+  toPlainDate,
+  toPlainTime,
+} from '../../utils/date-time.js';
 import { StaffService, type EligibleStaffInfo } from '../staff/staff.service.js';
 import type { CreateAppointmentInput } from './appointments.schemas.js';
 import type { CalendarAvailabilityQuery } from './appointments.schemas.js';
@@ -33,9 +41,9 @@ type AppointmentRecord = {
   appointmentCode: string;
   customerId: string;
   staffId: string | null;
-  appointmentDate: Date | string;
-  startTime: string;
-  endTime: string;
+  appointmentDate: Date | string | Temporal.PlainDate;
+  startTime: string | Temporal.PlainTime;
+  endTime: string | Temporal.PlainTime;
   totalAmount: unknown;
   status: AppointmentStatus;
   createdAt: Date;
@@ -108,6 +116,21 @@ async function collect<T>(records: AsyncIterable<T> | Iterable<T>): Promise<T[]>
   return result;
 }
 
+type ApplicationAppointmentRecord = Omit<AppointmentRecord, 'appointmentDate' | 'startTime' | 'endTime'> & {
+  appointmentDate: Date;
+  startTime: string;
+  endTime: string;
+};
+
+function toApplicationAppointment(appointment: AppointmentRecord): ApplicationAppointmentRecord {
+  return {
+    ...appointment,
+    appointmentDate: fromPrismaDate(appointment.appointmentDate),
+    startTime: fromPrismaTime(appointment.startTime),
+    endTime: fromPrismaTime(appointment.endTime),
+  };
+}
+
 export class AppointmentsService {
   static async getCalendarAvailability(input: CalendarAvailabilityQuery): Promise<{
     timezone: string;
@@ -141,23 +164,23 @@ export class AppointmentsService {
       const dayOfWeek = isoWeekdayToPostgres(isoDayOfWeek(date));
       const businessHour = await db.orm.public.BusinessHour.where({ dayOfWeek }).first();
       if (!businessHour?.isOpen || !businessHour.openTime || !businessHour.closeTime) continue;
-      const businessOpen = normalizeTimeOnly(businessHour.openTime);
-      const businessClose = normalizeTimeOnly(businessHour.closeTime);
+      const businessOpen = fromPrismaTime(businessHour.openTime);
+      const businessClose = fromPrismaTime(businessHour.closeTime);
 
       const availableStaff: Array<EligibleCalendarStaff & { windows: ReturnType<typeof buildAvailableStartWindows> }> = [];
       for (const staff of selectedStaff) {
         const [schedules, appointments] = await Promise.all([
           db.orm.public.StaffSchedule.where({ staffId: staff.id, dayOfWeek, isActive: true }).all(),
-          db.orm.public.Appointment.where(staffWhere({ staffId: staff.id, appointmentDate: date })).all(),
+          db.orm.public.Appointment.where(staffWhere({ staffId: staff.id, appointmentDate: toPlainDate(date) })).all(),
         ]);
         const scheduleWindows = schedules
           .filter((schedule) => {
-            const effectiveUntil = schedule.effectiveUntil ? dateString(schedule.effectiveUntil) : null;
-            return dateString(schedule.effectiveFrom) <= date && (!effectiveUntil || effectiveUntil >= date);
+            const effectiveUntil = schedule.effectiveUntil ? fromPrismaDateString(schedule.effectiveUntil) : null;
+            return fromPrismaDateString(schedule.effectiveFrom) <= date && (!effectiveUntil || effectiveUntil >= date);
           })
           .map((schedule) => ({
-            startTime: normalizeTimeOnly(schedule.startTime) > businessOpen ? normalizeTimeOnly(schedule.startTime) : businessOpen,
-            endTime: normalizeTimeOnly(schedule.endTime) < businessClose ? normalizeTimeOnly(schedule.endTime) : businessClose,
+            startTime: fromPrismaTime(schedule.startTime) > businessOpen ? fromPrismaTime(schedule.startTime) : businessOpen,
+            endTime: fromPrismaTime(schedule.endTime) < businessClose ? fromPrismaTime(schedule.endTime) : businessClose,
           }))
           .filter((window) => window.startTime < window.endTime);
         if (date === localNow.date) {
@@ -171,8 +194,8 @@ export class AppointmentsService {
         const bookedWindows = appointments
           .filter((appointment) => appointment.status === 'RESERVED' || appointment.status === 'CONFIRMED')
           .map((appointment) => ({
-            startTime: normalizeTimeOnly(appointment.startTime),
-            endTime: normalizeTimeOnly(appointment.endTime),
+            startTime: fromPrismaTime(appointment.startTime),
+            endTime: fromPrismaTime(appointment.endTime),
           }));
         const windows = buildAvailableStartWindows(scheduleWindows, bookedWindows, durationMinutes);
         if (windows.length > 0) availableStaff.push({ ...staff, windows });
@@ -197,9 +220,9 @@ export class AppointmentsService {
       const appointment = await tx.orm.public.Appointment.create(withStaffAssignment({
         appointmentCode: pgVarchar<40>(`APT-${randomUUID().toUpperCase()}`),
         customerId: customer.id,
-        appointmentDate: plan.appointmentDate,
-        startTime: data.startTime,
-        endTime: plan.endTime,
+        appointmentDate: toPlainDate(plan.appointmentDate),
+        startTime: toPlainTime(data.startTime),
+        endTime: toPlainTime(plan.endTime),
         totalAmount: pgNumeric(plan.totalAmount),
         status: 'RESERVED',
       }, data.staffId));
@@ -236,7 +259,7 @@ export class AppointmentsService {
       },
     });
 
-    return this.mapAppointment(appointment);
+    return this.mapAppointment(toApplicationAppointment(appointment));
   }
 
   static async checkAvailability(data: CreateAppointmentInput): Promise<{
@@ -261,7 +284,7 @@ export class AppointmentsService {
     const appointmentsRaw = await query.skip(skip).take(limit).all();
     const appointments = await collect(appointmentsRaw as Iterable<AppointmentRecord> | AsyncIterable<AppointmentRecord>);
     return {
-      appointments: await Promise.all(appointments.map((appointment) => this.mapAppointment(appointment))),
+      appointments: await Promise.all(appointments.map((appointment) => this.mapAppointment(toApplicationAppointment(appointment)))),
       total,
     };
   }
@@ -287,7 +310,7 @@ export class AppointmentsService {
     const appointmentsRaw = await query.skip(skip).take(limit).all();
     const appointments = await collect(appointmentsRaw as Iterable<AppointmentRecord> | AsyncIterable<AppointmentRecord>);
     return {
-      appointments: await Promise.all(appointments.map((appointment) => this.mapAppointment(appointment))),
+      appointments: await Promise.all(appointments.map((appointment) => this.mapAppointment(toApplicationAppointment(appointment)))),
       total,
     };
   }
@@ -311,7 +334,7 @@ export class AppointmentsService {
     const appointments = await collect(appointmentRecords as Iterable<AppointmentRecord> | AsyncIterable<AppointmentRecord>);
     const completed = await Promise.all(appointments.map(async (appointment): Promise<CompletedAppointmentInfo> => {
       const [mapped, staff, review] = await Promise.all([
-        this.mapAppointment(appointment),
+        this.mapAppointment(toApplicationAppointment(appointment)),
         appointment.staffId ? db.orm.public.Staff.where({ id: appointment.staffId }).first() : Promise.resolve(null),
         db.orm.public.Review.where({ appointmentId: appointment.id }).first(),
       ]);
@@ -349,7 +372,7 @@ export class AppointmentsService {
     const appointmentsRaw = await query.skip(skip).take(limit).all();
     const appointments = await collect(appointmentsRaw as Iterable<AppointmentRecord> | AsyncIterable<AppointmentRecord>);
     return {
-      appointments: await Promise.all(appointments.map((appointment) => this.mapAppointment(appointment))),
+      appointments: await Promise.all(appointments.map((appointment) => this.mapAppointment(toApplicationAppointment(appointment)))),
       total,
     };
   }
@@ -358,7 +381,7 @@ export class AppointmentsService {
     const appointment = await db.orm.public.Appointment.where({ id: appointmentId }).first();
     if (!appointment) throw new NotFoundError('Appointment not found');
     await this.assertCanView(appointment, requestingUserId, role);
-    return this.mapAppointment(appointment);
+    return this.mapAppointment(toApplicationAppointment(appointment));
   }
 
   static async updateStatus(
@@ -379,7 +402,7 @@ export class AppointmentsService {
       if (nextStatus !== 'CANCELLED') {
         throw new ForbiddenError('Customers may only cancel their own appointments');
       }
-      if (hasAppointmentTimePassed(appointment.appointmentDate, normalizeTimeOnly(appointment.startTime), new Date(), env.STUDIO_TIME_ZONE)) {
+      if (hasAppointmentTimePassed(fromPrismaDate(appointment.appointmentDate), fromPrismaTime(appointment.startTime), new Date(), env.STUDIO_TIME_ZONE)) {
         throw new ConflictError('An appointment can only be cancelled before its start time');
       }
     } else if (role === 'STAFF') {
@@ -388,10 +411,10 @@ export class AppointmentsService {
       throw new ForbiddenError('You do not have permission to change this appointment');
     }
 
-    if (nextStatus === 'COMPLETED' && !hasAppointmentTimePassed(appointment.appointmentDate, normalizeTimeOnly(appointment.endTime), new Date(), env.STUDIO_TIME_ZONE)) {
+    if (nextStatus === 'COMPLETED' && !hasAppointmentTimePassed(fromPrismaDate(appointment.appointmentDate), fromPrismaTime(appointment.endTime), new Date(), env.STUDIO_TIME_ZONE)) {
       throw new ConflictError('An appointment cannot be completed before its end time');
     }
-    if (nextStatus === 'NO_SHOW' && !hasAppointmentTimePassed(appointment.appointmentDate, normalizeTimeOnly(appointment.endTime), new Date(), env.STUDIO_TIME_ZONE)) {
+    if (nextStatus === 'NO_SHOW' && !hasAppointmentTimePassed(fromPrismaDate(appointment.appointmentDate), fromPrismaTime(appointment.endTime), new Date(), env.STUDIO_TIME_ZONE)) {
       throw new ConflictError('An appointment cannot be marked as no-show before its end time');
     }
 
@@ -408,7 +431,7 @@ export class AppointmentsService {
       newData: { status: updated.status },
     });
 
-    return this.mapAppointment(updated);
+    return this.mapAppointment(toApplicationAppointment(updated));
   }
 
   private static async getBookingPlan(data: CreateAppointmentInput): Promise<BookingPlan> {
@@ -447,8 +470,8 @@ export class AppointmentsService {
     let available = staff.workStatus === 'ON_DUTY';
     const dayOfWeek = isoWeekdayToPostgres(isoDayOfWeek(data.appointmentDate));
     const businessHour = await db.orm.public.BusinessHour.where({ dayOfWeek }).first();
-    const businessOpen = businessHour?.openTime ? normalizeTimeOnly(businessHour.openTime) : null;
-    const businessClose = businessHour?.closeTime ? normalizeTimeOnly(businessHour.closeTime) : null;
+    const businessOpen = businessHour?.openTime ? fromPrismaTime(businessHour.openTime) : null;
+    const businessClose = businessHour?.closeTime ? fromPrismaTime(businessHour.closeTime) : null;
     if (!businessHour || !businessHour.isOpen || !businessHour.openTime || !businessHour.closeTime ||
       !businessOpen || !businessClose || data.startTime < businessOpen || endTime > businessClose) {
       available = false;
@@ -457,18 +480,18 @@ export class AppointmentsService {
     const schedules = await db.orm.public.StaffSchedule.where({ staffId: staff.id, dayOfWeek, isActive: true }).all();
     const dateValue = requestedDate.getTime();
     const hasMatchingSchedule = schedules.some((schedule) => {
-      const scheduleEndDate = schedule.effectiveUntil ? dateString(schedule.effectiveUntil) : null;
-      return dateString(schedule.effectiveFrom) <= data.appointmentDate &&
+      const scheduleEndDate = schedule.effectiveUntil ? fromPrismaDateString(schedule.effectiveUntil) : null;
+      return fromPrismaDateString(schedule.effectiveFrom) <= data.appointmentDate &&
         (!scheduleEndDate || scheduleEndDate >= data.appointmentDate) &&
-        data.startTime >= normalizeTimeOnly(schedule.startTime) && endTime <= normalizeTimeOnly(schedule.endTime);
+        data.startTime >= fromPrismaTime(schedule.startTime) && endTime <= fromPrismaTime(schedule.endTime);
     });
     if (!hasMatchingSchedule || !Number.isFinite(dateValue)) available = false;
 
     const staffAppointments = await db.orm.public.Appointment.where(staffWhere({ staffId: staff.id })).all();
     const hasConflict = staffAppointments.some((appointment) => {
-      if (dateString(appointment.appointmentDate) !== data.appointmentDate) return false;
+      if (fromPrismaDateString(appointment.appointmentDate) !== data.appointmentDate) return false;
       if (appointment.status !== 'RESERVED' && appointment.status !== 'CONFIRMED') return false;
-      return timeRangesOverlap(data.startTime, endTime, normalizeTimeOnly(appointment.startTime), normalizeTimeOnly(appointment.endTime));
+      return timeRangesOverlap(data.startTime, endTime, fromPrismaTime(appointment.startTime), fromPrismaTime(appointment.endTime));
     });
     if (hasConflict) available = false;
 
@@ -506,7 +529,7 @@ export class AppointmentsService {
     id: string;
     appointmentCode: string;
     customerId: string;
-    appointmentDate: Date | string;
+    appointmentDate: Date;
     startTime: Date | string;
     endTime: Date | string;
     totalAmount: unknown;

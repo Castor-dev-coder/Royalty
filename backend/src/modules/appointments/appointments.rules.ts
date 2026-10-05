@@ -37,7 +37,7 @@ export function dateOnly(value: string): Date {
   return dateOnlyToUtcDate(value);
 }
 
-export function dateString(value: Date | string): string {
+export function dateString(value: Date): string {
   return normalizeDateOnly(value);
 }
 
@@ -126,7 +126,7 @@ export function sumDecimalStrings(values: string[]): string {
 }
 
 export function hasAppointmentTimePassed(
-  appointmentDate: Date | string,
+  appointmentDate: Date,
   appointmentTime: string,
   now: Date,
   timeZone: string

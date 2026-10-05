@@ -103,8 +103,8 @@ test('schedule conflict checks query PostgreSQL weekday values', async (context)
   assert.equal(queriedDay, 0);
 });
 
-test('staff schedule creation stores PostgreSQL weekday and date-only values', async (context) => {
-  let inserted: { dayOfWeek: number; startTime: string; effectiveFrom: Date; effectiveUntil: Date | null } | undefined;
+test('staff schedule creation stores PostgreSQL weekday and Temporal date-only values', async (context) => {
+  let inserted: { dayOfWeek: number; startTime: Temporal.PlainTime; effectiveFrom: Temporal.PlainDate; effectiveUntil: Temporal.PlainDate | null } | undefined;
   const accountWhere = mock.method(db.orm.public.Account, 'where', () => ({
     first: async () => ({ id: staffAccountId, role: 'ADMIN' }),
   }));
@@ -120,10 +120,10 @@ test('staff schedule creation stores PostgreSQL weekday and date-only values', a
   const scheduleCreate = mock.method(db.orm.public.StaffSchedule, 'create', async (input: {
     staffId: string;
     dayOfWeek: number;
-    startTime: string;
-    endTime: string;
-    effectiveFrom: Date;
-    effectiveUntil: Date | null;
+    startTime: Temporal.PlainTime;
+    endTime: Temporal.PlainTime;
+    effectiveFrom: Temporal.PlainDate;
+    effectiveUntil: Temporal.PlainDate | null;
     isActive: boolean;
   }) => {
     inserted = input as unknown as typeof inserted;
@@ -149,7 +149,7 @@ test('staff schedule creation stores PostgreSQL weekday and date-only values', a
 
   assert.equal(inserted?.dayOfWeek, 0);
   // `effective_from` is a PostgreSQL `date` column: the boundary receives a date-only string.
-  assert.equal(inserted?.effectiveFrom, '2099-01-04');
+  assert.equal(inserted?.effectiveFrom.toString(), '2099-01-04');
   assert.equal(result.dayOfWeek, 7);
   assert.equal(result.startTime, '09:00');
   assert.equal(result.effectiveFrom.toISOString(), '2099-01-04T00:00:00.000Z');
@@ -203,8 +203,8 @@ test('schedule request self-list queries by resolved staff profile ID', async (c
   assert.equal(queriedStaffId, staffId);
 });
 
-test('schedule request creation stores a calendar date and returns normalized time-only values', async (context) => {
-  const requestInput: { staffId: string; requestedDate: Date; requestedStartTime: string | null; requestedEndTime: string | null }[] = [];
+test('schedule request creation stores a Temporal date and returns normalized time-only values', async (context) => {
+  const requestInput: { staffId: string; requestedDate: Temporal.PlainDate; requestedStartTime: Temporal.PlainTime | null; requestedEndTime: Temporal.PlainTime | null }[] = [];
   const staffWhere = mock.method(db.orm.public.Staff, 'where', () => ({ first: async () => ({ id: staffId }) }));
   const requestCreate = mock.method(db.orm.public.ScheduleRequest, 'create', async (input: typeof requestInput[number]) => {
     requestInput.push(input);
@@ -227,7 +227,7 @@ test('schedule request creation stores a calendar date and returns normalized ti
     requestType: 'TIME_OFF',
   }, staffAccountId);
   // `requested_date` is a PostgreSQL `date` column: the boundary receives a date-only string.
-  assert.equal(requestInput[0]?.requestedDate, '2099-01-05');
+  assert.equal(requestInput[0]?.requestedDate.toString(), '2099-01-05');
   assert.equal(result.requestedDate.toISOString(), '2099-01-05T00:00:00.000Z');
   assert.equal(result.requestedStartTime, '09:00');
   assert.equal(result.requestedEndTime, '10:00');

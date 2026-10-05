@@ -1,7 +1,7 @@
 import { db } from '../../prisma/db.js';
 import { staffIdOf } from '../../prisma/contract-compat.js';
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../errors/index.js';
-import { dateString } from '../appointments/appointments.rules.js';
+import { fromPrismaDateString, fromPrismaTime } from '../../utils/date-time.js';
 import { getReviewEligibility } from './reviews.rules.js';
 import type { CreateReviewInput, ReviewListQuery } from './reviews.schemas.js';
 
@@ -128,9 +128,9 @@ export class ReviewsService {
       appointment: {
         id: appointment.id,
         appointmentCode: appointment.appointmentCode,
-        appointmentDate: dateString(appointment.appointmentDate),
-        startTime: appointment.startTime,
-        endTime: appointment.endTime,
+        appointmentDate: fromPrismaDateString(appointment.appointmentDate),
+        startTime: fromPrismaTime(appointment.startTime),
+        endTime: fromPrismaTime(appointment.endTime),
         totalAmount: decimalNumber(appointment.totalAmount),
         services: serviceRows.map((service) => ({
           id: service.id,

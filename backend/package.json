@@ -13,7 +13,9 @@
     "db:init": "prisma db init",
     "db:update": "prisma db update",
     "db:verify": "prisma db verify",
-    "db:migrate": "prisma db migrate"
+    "db:migrate": "prisma db migrate",
+    "db:seed": "tsx scripts/seed.ts seed",
+    "db:seed:remove": "tsx scripts/seed.ts remove"
   },
   "keywords": [],
   "author": "",
