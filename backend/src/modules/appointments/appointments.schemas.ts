@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { dateOnly } from './appointments.rules.js';
 
 const timeSchema = z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/, 'Must be HH:MM format');
 const serviceIdsSchema = z.array(z.string().uuid()).min(1).max(10).refine(
@@ -36,3 +37,19 @@ export const appointmentAvailabilityQuerySchema = z.object({
 });
 
 export type AppointmentAvailabilityQuery = z.infer<typeof appointmentAvailabilityQuerySchema>;
+
+export const calendarAvailabilityQuerySchema = z.object({
+  from: z.string().date(),
+  to: z.string().date(),
+  staffId: z.string().uuid().optional(),
+  serviceIds: z.string().transform((value) => value.split(',')).pipe(serviceIdsSchema),
+}).superRefine(({ from, to }, context) => {
+  const daysApart = (dateOnly(to).getTime() - dateOnly(from).getTime()) / (24 * 60 * 60 * 1000);
+  if (daysApart < 0) {
+    context.addIssue({ code: 'custom', path: ['to'], message: 'End date must be on or after start date' });
+  } else if (daysApart > 30) {
+    context.addIssue({ code: 'custom', path: ['to'], message: 'Date range cannot exceed 31 days' });
+  }
+});
+
+export type CalendarAvailabilityQuery = z.infer<typeof calendarAvailabilityQuerySchema>;

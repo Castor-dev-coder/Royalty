@@ -3,6 +3,7 @@ import { AuthenticatedRequest } from '../../middleware/auth.js';
 import { AppointmentsService } from './appointments.service.js';
 import {
   AppointmentAvailabilityQuery,
+  CalendarAvailabilityQuery,
   AppointmentListQuery,
   CreateAppointmentInput,
   UpdateAppointmentStatusInput,
@@ -32,6 +33,16 @@ export async function listMyAppointmentsController(req: AuthenticatedRequest, re
   }
 }
 
+export async function listCompletedMyAppointmentsController(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { page, limit } = validated<AppointmentListQuery>(req, 'validatedQuery');
+    const result = await AppointmentsService.listCompletedMine(req.user!.userId, page, limit);
+    res.json({ data: { ...result, page, limit, totalPages: Math.ceil(result.total / limit) } });
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function listStaffAppointmentsController(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
   try {
     const { page, limit } = validated<AppointmentListQuery>(req, 'validatedQuery');
@@ -55,6 +66,16 @@ export async function getAppointmentAvailabilityController(req: AuthenticatedReq
   try {
     const input = validated<AppointmentAvailabilityQuery>(req, 'validatedQuery');
     const availability = await AppointmentsService.checkAvailability(input);
+    res.json({ data: availability });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getCalendarAvailabilityController(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const input = (req as Request & { validatedQuery: CalendarAvailabilityQuery }).validatedQuery;
+    const availability = await AppointmentsService.getCalendarAvailability(input);
     res.json({ data: availability });
   } catch (error) {
     next(error);

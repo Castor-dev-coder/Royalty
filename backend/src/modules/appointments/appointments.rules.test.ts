@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { BadRequestError } from '../../errors/index.js';
-import { createAppointmentSchema } from './appointments.schemas.js';
+import { calendarAvailabilityQuerySchema, createAppointmentSchema } from './appointments.schemas.js';
 import {
+  buildAvailableStartWindows,
   calculateEndTime,
   canTransitionStatus,
   dateOnly,
@@ -62,6 +63,30 @@ test('same-day future checks use the configured studio timezone', () => {
   const now = new Date('2025-12-31T16:00:00.000Z');
   assert.equal(hasAppointmentTimePassed(appointmentDate, '09:00', now, 'Asia/Manila'), false);
   assert.equal(hasAppointmentTimePassed(appointmentDate, '00:00', now, 'Asia/Manila'), true);
+});
+
+test('calendar availability returns continuous start windows around bookings', () => {
+  assert.deepEqual(buildAvailableStartWindows(
+    [{ startTime: '09:00', endTime: '17:00' }],
+    [{ startTime: '10:00', endTime: '11:00' }, { startTime: '13:00', endTime: '14:00' }],
+    60
+  ), [
+    { startTime: '09:00', latestStartTime: '09:00' },
+    { startTime: '11:00', latestStartTime: '12:00' },
+    { startTime: '14:00', latestStartTime: '16:00' },
+  ]);
+});
+
+test('calendar query accepts at most 31 inclusive dates and rejects reversed ranges', () => {
+  assert.equal(calendarAvailabilityQuerySchema.safeParse({
+    from: '2026-10-01', to: '2026-10-31', serviceIds: id,
+  }).success, true);
+  assert.equal(calendarAvailabilityQuerySchema.safeParse({
+    from: '2026-10-01', to: '2026-11-01', serviceIds: id,
+  }).success, false);
+  assert.equal(calendarAvailabilityQuerySchema.safeParse({
+    from: '2026-10-02', to: '2026-10-01', serviceIds: id,
+  }).success, false);
 });
 
 test('appointment statuses only follow the permitted forward transitions', () => {

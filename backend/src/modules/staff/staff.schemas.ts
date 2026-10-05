@@ -1,5 +1,16 @@
 import { z } from 'zod';
 
+const serviceIdsSchema = z.array(z.string().uuid()).min(1).max(10).refine(
+  (ids) => new Set(ids).size === ids.length,
+  'Duplicate service IDs are not allowed'
+);
+
+export const eligibleStaffQuerySchema = z.object({
+  serviceIds: z.string().transform((value) => value.split(',')).pipe(serviceIdsSchema),
+});
+
+export type EligibleStaffQuery = z.infer<typeof eligibleStaffQuerySchema>;
+
 // ============================================================
 // Staff schemas
 // ============================================================

@@ -2,6 +2,11 @@ import { BadRequestError } from '../../errors/index.js';
 
 export type AppointmentStatus = 'RESERVED' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW';
 
+export interface AvailableStartWindow {
+  startTime: string;
+  latestStartTime: string;
+}
+
 const transitions: Record<AppointmentStatus, AppointmentStatus[]> = {
   RESERVED: ['CONFIRMED', 'CANCELLED'],
   CONFIRMED: ['COMPLETED', 'CANCELLED', 'NO_SHOW'],
@@ -51,6 +56,55 @@ export function calculateEndTime(startTime: string, durations: number[]): string
   return `${String(Math.floor(endMinutes / 60)).padStart(2, '0')}:${String(endMinutes % 60).padStart(2, '0')}`;
 }
 
+export function buildAvailableStartWindows(
+  scheduleWindows: Array<{ startTime: string; endTime: string }>,
+  bookedWindows: Array<{ startTime: string; endTime: string }>,
+  durationMinutes: number
+): AvailableStartWindow[] {
+  if (durationMinutes <= 0) return [];
+
+  const freeWindows = scheduleWindows.flatMap((schedule) => {
+    let segments = [{ start: toMinutes(schedule.startTime), end: toMinutes(schedule.endTime) }];
+
+    for (const booking of bookedWindows) {
+      const bookingStart = toMinutes(booking.startTime);
+      const bookingEnd = toMinutes(booking.endTime);
+      segments = segments.flatMap((segment) => {
+        if (bookingStart >= segment.end || bookingEnd <= segment.start) return [segment];
+        const remaining: typeof segments = [];
+        if (bookingStart > segment.start) remaining.push({ start: segment.start, end: bookingStart });
+        if (bookingEnd < segment.end) remaining.push({ start: bookingEnd, end: segment.end });
+        return remaining;
+      });
+    }
+
+    return segments
+      .filter((segment) => segment.end - segment.start >= durationMinutes)
+      .map((segment) => ({ start: segment.start, latest: segment.end - durationMinutes }));
+  }).sort((left, right) => left.start - right.start);
+
+  const result: Array<{ start: number; latest: number }> = [];
+  for (const window of freeWindows) {
+    const previous = result[result.length - 1];
+    if (previous && window.start <= previous.latest + 1) {
+      previous.latest = Math.max(previous.latest, window.latest);
+    } else {
+      result.push({ ...window });
+    }
+  }
+
+  return result.map(({ start, latest }) => ({
+    startTime: minutesToTime(start),
+    latestStartTime: minutesToTime(latest),
+  }));
+}
+
+export function incrementTime(time: string, minutes: number): string | null {
+  const next = toMinutes(time) + minutes;
+  if (next < 0 || next >= 24 * 60) return null;
+  return minutesToTime(next);
+}
+
 export function sumDecimalStrings(values: string[]): string {
   const parts = values.map((value) => {
     const match = /^(\d+)(?:\.(\d+))?$/.exec(value);
@@ -83,6 +137,10 @@ export function hasAppointmentTimePassed(
 
 export function timeRangesOverlap(start1: string, end1: string, start2: string, end2: string): boolean {
   return toMinutes(start1) < toMinutes(end2) && toMinutes(start2) < toMinutes(end1);
+}
+
+function minutesToTime(minutes: number): string {
+  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
 }
 
 export function canTransitionStatus(current: AppointmentStatus, next: AppointmentStatus): boolean {

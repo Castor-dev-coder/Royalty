@@ -3,15 +3,19 @@ import { db } from '../../prisma/db.js';
 import { env } from '../../config/env.js';
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../errors/index.js';
 import { generateAuditLog } from '../../utils/audit.js';
+import { StaffService, type EligibleStaffInfo } from '../staff/staff.service.js';
 import type { CreateAppointmentInput } from './appointments.schemas.js';
+import type { CalendarAvailabilityQuery } from './appointments.schemas.js';
 import {
   AppointmentStatus,
+  buildAvailableStartWindows,
   calculateEndTime,
   canTransitionStatus,
   dateOnly,
   dateString,
   hasAppointmentTimePassed,
   isoDayOfWeek,
+  incrementTime,
   localDateAndTime,
   sumDecimalStrings,
   timeRangesOverlap,
@@ -49,6 +53,8 @@ interface BookingPlan {
   available: boolean;
 }
 
+type EligibleCalendarStaff = EligibleStaffInfo;
+
 export interface AppointmentInfo {
   id: string;
   appointmentCode: string;
@@ -70,6 +76,12 @@ export interface AppointmentInfo {
   updatedAt: Date;
 }
 
+export interface CompletedAppointmentInfo extends AppointmentInfo {
+  staff: { id: string; firstName: string; lastName: string; primaryRole: string } | null;
+  reviewEligible: boolean;
+  alreadyReviewed: boolean;
+}
+
 function toMinutes(value: string): number {
   const [hours, minutes] = value.split(':').map(Number);
   return hours * 60 + minutes;
@@ -88,6 +100,75 @@ async function collect<T>(records: AsyncIterable<T> | Iterable<T>): Promise<T[]>
 }
 
 export class AppointmentsService {
+  static async getCalendarAvailability(input: CalendarAvailabilityQuery): Promise<{
+    timezone: string;
+    dates: Array<{
+      date: string;
+      staff: Array<EligibleCalendarStaff & { windows: ReturnType<typeof buildAvailableStartWindows> }>;
+    }>;
+  }> {
+    const services = await Promise.all(input.serviceIds.map(async (serviceId) => {
+      const service = await db.orm.public.Service.where({ id: serviceId }).first();
+      if (!service) throw new NotFoundError(`Service not found: ${serviceId}`);
+      if (!service.isActive) throw new BadRequestError(`Service is inactive: ${service.name}`);
+      return service;
+    }));
+    const durationMinutes = services.reduce((total, service) => total + service.durationMinutes, 0);
+    const eligibleStaff = await StaffService.listEligibleForServices(input.serviceIds);
+    const selectedStaff = input.staffId
+      ? eligibleStaff.filter((staff) => staff.id === input.staffId)
+      : eligibleStaff;
+    const firstDate = dateOnly(input.from).getTime();
+    const lastDate = dateOnly(input.to).getTime();
+    const localNow = localDateAndTime(new Date(), env.STUDIO_TIME_ZONE);
+    const dates: Array<{
+      date: string;
+      staff: Array<EligibleCalendarStaff & { windows: ReturnType<typeof buildAvailableStartWindows> }>;
+    }> = [];
+
+    for (let dateValue = firstDate; dateValue <= lastDate; dateValue += 24 * 60 * 60 * 1000) {
+      const date = new Date(dateValue).toISOString().slice(0, 10);
+      if (date < localNow.date) continue;
+      const dayOfWeek = isoDayOfWeek(date);
+      const businessHour = await db.orm.public.BusinessHour.where({ dayOfWeek }).first();
+      if (!businessHour?.isOpen || !businessHour.openTime || !businessHour.closeTime) continue;
+
+      const availableStaff: Array<EligibleCalendarStaff & { windows: ReturnType<typeof buildAvailableStartWindows> }> = [];
+      for (const staff of selectedStaff) {
+        const [schedules, appointments] = await Promise.all([
+          db.orm.public.StaffSchedule.where({ staffId: staff.id, dayOfWeek, isActive: true }).all(),
+          db.orm.public.Appointment.where({ staffId: staff.id, appointmentDate: dateOnly(date) }).all(),
+        ]);
+        const scheduleWindows = schedules
+          .filter((schedule) => {
+            const effectiveUntil = schedule.effectiveUntil ? dateString(schedule.effectiveUntil) : null;
+            return dateString(schedule.effectiveFrom) <= date && (!effectiveUntil || effectiveUntil >= date);
+          })
+          .map((schedule) => ({
+            startTime: schedule.startTime > businessHour.openTime! ? schedule.startTime : businessHour.openTime!,
+            endTime: schedule.endTime < businessHour.closeTime! ? schedule.endTime : businessHour.closeTime!,
+          }))
+          .filter((window) => window.startTime < window.endTime);
+        if (date === localNow.date) {
+          const firstFutureMinute = incrementTime(localNow.time, 1);
+          if (!firstFutureMinute) continue;
+          for (const window of scheduleWindows) {
+            if (window.startTime < firstFutureMinute) window.startTime = firstFutureMinute;
+          }
+        }
+
+        const bookedWindows = appointments
+          .filter((appointment) => appointment.status === 'RESERVED' || appointment.status === 'CONFIRMED')
+          .map((appointment) => ({ startTime: appointment.startTime, endTime: appointment.endTime }));
+        const windows = buildAvailableStartWindows(scheduleWindows, bookedWindows, durationMinutes);
+        if (windows.length > 0) availableStaff.push({ ...staff, windows });
+      }
+      if (availableStaff.length > 0) dates.push({ date, staff: availableStaff });
+    }
+
+    return { timezone: env.STUDIO_TIME_ZONE, dates };
+  }
+
   static async create(data: CreateAppointmentInput, requestingUserId: string): Promise<AppointmentInfo> {
     const customer = await db.orm.public.Customer.where({ accountId: requestingUserId }).first();
     if (!customer) throw new NotFoundError('No customer profile found for this account');
@@ -196,6 +277,46 @@ export class AppointmentsService {
       appointments: await Promise.all(appointments.map((appointment) => this.mapAppointment(appointment))),
       total,
     };
+  }
+
+  static async listCompletedMine(
+    requestingUserId: string,
+    page: number,
+    limit: number
+  ): Promise<{ appointments: CompletedAppointmentInfo[]; total: number }> {
+    const customer = await db.orm.public.Customer.where({ accountId: requestingUserId }).first();
+    if (!customer) throw new NotFoundError('No customer profile found for this account');
+
+    const query = db.orm.public.Appointment.where({ customerId: customer.id, status: 'COMPLETED' });
+    const totalResult = await query.count();
+    const total = typeof totalResult === 'number' ? totalResult : 0;
+    const skip = (page - 1) * limit;
+    const appointmentsRaw = db.orm.public.Appointment.where({ customerId: customer.id, status: 'COMPLETED' })
+      .orderBy((appointment) => appointment.appointmentDate.desc());
+    // @ts-expect-error - Prisma 8 RC types omit supported skip/take methods on ordered collections
+    const appointmentRecords = await appointmentsRaw.skip(skip).take(limit).all();
+    const appointments = await collect(appointmentRecords as Iterable<AppointmentRecord> | AsyncIterable<AppointmentRecord>);
+    const completed = await Promise.all(appointments.map(async (appointment): Promise<CompletedAppointmentInfo> => {
+      const [mapped, staff, review] = await Promise.all([
+        this.mapAppointment(appointment),
+        appointment.staffId ? db.orm.public.Staff.where({ id: appointment.staffId }).first() : Promise.resolve(null),
+        db.orm.public.Review.where({ appointmentId: appointment.id }).first(),
+      ]);
+      const alreadyReviewed = review !== null;
+      return {
+        ...mapped,
+        staff: staff ? {
+          id: staff.id,
+          firstName: staff.firstName,
+          lastName: staff.lastName,
+          primaryRole: staff.primaryRole,
+        } : null,
+        reviewEligible: !alreadyReviewed,
+        alreadyReviewed,
+      };
+    }));
+
+    return { appointments: completed, total };
   }
 
   static async listForStaff(

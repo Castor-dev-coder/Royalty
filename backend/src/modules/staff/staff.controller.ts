@@ -1,8 +1,18 @@
 import { Request, Response, NextFunction } from 'express';
 import { StaffService } from './staff.service.js';
 import { AuthenticatedRequest } from '../../middleware/auth.js';
-import { createStaffSchema, updateOwnStaffProfileSchema, updateStaffEmploymentSchema } from './staff.schemas.js';
+import { createStaffSchema, EligibleStaffQuery, updateOwnStaffProfileSchema, updateStaffEmploymentSchema } from './staff.schemas.js';
 import { validateRequest } from '../../middleware/validator.js';
+
+export async function listEligibleStaffController(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const query = (req as Request & { validatedQuery: EligibleStaffQuery }).validatedQuery;
+    const staff = await StaffService.listEligibleForServices(query.serviceIds);
+    res.json({ data: { staff } });
+  } catch (error) {
+    next(error);
+  }
+}
 
 // GET /staff/:id - Get staff member by ID
 export async function getStaffController(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {

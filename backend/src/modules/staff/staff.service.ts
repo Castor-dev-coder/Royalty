@@ -1,6 +1,14 @@
 import { db } from '../../prisma/db.js';
 import { NotFoundError, ForbiddenError, ConflictError, BadRequestError } from '../../errors/index.js';
 import { generateAuditLog } from '../../utils/audit.js';
+import { isStaffEligibleForServices } from './staff.rules.js';
+
+export interface EligibleStaffInfo {
+  id: string;
+  firstName: string;
+  lastName: string;
+  primaryRole: string;
+}
 
 export interface StaffProfile {
   id: string;
@@ -16,6 +24,40 @@ export interface StaffProfile {
 }
 
 export class StaffService {
+  static async listEligibleForServices(serviceIds: string[]): Promise<EligibleStaffInfo[]> {
+    for (const serviceId of serviceIds) {
+      const service = await db.orm.public.Service.where({ id: serviceId }).first();
+      if (!service) throw new NotFoundError(`Service not found: ${serviceId}`);
+      if (!service.isActive) throw new BadRequestError(`Service is inactive: ${service.name}`);
+
+      const category = await db.orm.public.ServiceCategory.where({ id: service.categoryId }).first();
+      if (!category || !category.isActive) {
+        throw new BadRequestError(`Service category is inactive: ${service.name}`);
+      }
+    }
+
+    const assignmentsByService = await Promise.all(serviceIds.map(async (serviceId) => {
+      const assignments = await db.orm.public.StaffService.where({ serviceId }).all();
+      return new Set(assignments.map((assignment) => assignment.staffId));
+    }));
+    const candidateIds = assignmentsByService[0] ?? new Set<string>();
+
+    const eligible: EligibleStaffInfo[] = [];
+    for (const staffId of candidateIds) {
+      const staff = await db.orm.public.Staff.where({ id: staffId }).first();
+      const assignedServiceIds = serviceIds.filter((_, index) => assignmentsByService[index]?.has(staffId));
+      if (!staff || !isStaffEligibleForServices(staff.workStatus, assignedServiceIds, serviceIds)) continue;
+      eligible.push({
+        id: staff.id,
+        firstName: staff.firstName,
+        lastName: staff.lastName,
+        primaryRole: staff.primaryRole,
+      });
+    }
+
+    return eligible.sort((left, right) => left.firstName.localeCompare(right.firstName) || left.lastName.localeCompare(right.lastName));
+  }
+
   /**
    * Get a staff member by ID.
    * - STAFF can view their own profile

@@ -7,7 +7,10 @@ import { z } from 'zod';
 export const registerSchema = z.object({
   email: z.string().email().max(255),
   password: z.string().min(8).max(100),
-  role: z.enum(['ADMIN', 'MANAGER', 'STAFF', 'CUSTOMER']).default('CUSTOMER'),
+  firstName: z.string().trim().min(1).max(100),
+  lastName: z.string().trim().min(1).max(100),
+  gender: z.string().max(30).optional(),
+  phone: z.string().max(30).optional(),
 });
 
 export type RegisterRequest = z.infer<typeof registerSchema>;
@@ -236,19 +239,6 @@ export const verifyPaymentSchema = z.object({
 });
 
 export type VerifyPaymentRequest = z.infer<typeof verifyPaymentSchema>;
-
-// ============================================================
-// Review schemas
-// ============================================================
-
-export const createReviewSchema = z.object({
-  appointmentId: z.string().uuid(),
-  customerId: z.string().uuid(),
-  rating: z.number().int().min(1).max(5),
-  comment: z.string().max(2000).optional(),
-});
-
-export type CreateReviewRequest = z.infer<typeof createReviewSchema>;
 
 // ============================================================
 // Pagination schemas

@@ -1,13 +1,16 @@
 import { Router } from 'express';
-import { getStaffController, getMyStaffController, listStaffController, createStaffController, updateOwnStaffController, updateStaffController } from '../modules/staff/staff.controller.js';
+import { getStaffController, getMyStaffController, listStaffController, createStaffController, updateOwnStaffController, updateStaffController, listEligibleStaffController } from '../modules/staff/staff.controller.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
-import { validateRequest } from '../middleware/validator.js';
-import { createStaffSchema, updateOwnStaffProfileSchema, updateStaffEmploymentSchema } from '../modules/staff/staff.schemas.js';
+import { validateQuery, validateRequest } from '../middleware/validator.js';
+import { createStaffSchema, eligibleStaffQuerySchema, updateOwnStaffProfileSchema, updateStaffEmploymentSchema } from '../modules/staff/staff.schemas.js';
 
 export const staffRouter = Router();
 
 // All routes require authentication
 staffRouter.use(authenticate);
+
+// Customer-facing booking discovery; appointment creation rechecks eligibility.
+staffRouter.get('/eligible', requireRole('CUSTOMER'), validateQuery(eligibleStaffQuerySchema), listEligibleStaffController);
 
 // GET /staff - List all staff (admin/manager only)
 staffRouter.get('/', requireRole('ADMIN', 'MANAGER'), listStaffController);

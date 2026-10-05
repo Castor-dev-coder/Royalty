@@ -3,6 +3,7 @@ import { authenticate, requireRole } from '../middleware/auth.js';
 import { validateQuery, validateRequest } from '../middleware/validator.js';
 import {
   appointmentAvailabilityQuerySchema,
+  calendarAvailabilityQuerySchema,
   appointmentListQuerySchema,
   createAppointmentSchema,
   updateAppointmentStatusSchema,
@@ -10,7 +11,9 @@ import {
 import {
   createAppointmentController,
   getAppointmentAvailabilityController,
+  getCalendarAvailabilityController,
   getAppointmentController,
+  listCompletedMyAppointmentsController,
   listAppointmentsController,
   listMyAppointmentsController,
   listStaffAppointmentsController,
@@ -21,8 +24,10 @@ export const appointmentsRouter = Router();
 
 appointmentsRouter.use(authenticate);
 
+appointmentsRouter.get('/availability/calendar', requireRole('CUSTOMER'), validateQuery(calendarAvailabilityQuerySchema), getCalendarAvailabilityController);
 appointmentsRouter.get('/availability', validateQuery(appointmentAvailabilityQuerySchema), getAppointmentAvailabilityController);
 appointmentsRouter.get('/', requireRole('ADMIN', 'MANAGER'), validateQuery(appointmentListQuerySchema), listAppointmentsController);
+appointmentsRouter.get('/me/completed', requireRole('CUSTOMER'), validateQuery(appointmentListQuerySchema), listCompletedMyAppointmentsController);
 appointmentsRouter.get('/me', requireRole('CUSTOMER', 'ADMIN', 'MANAGER'), validateQuery(appointmentListQuerySchema), listMyAppointmentsController);
 appointmentsRouter.get('/staff/me', requireRole('STAFF'), validateQuery(appointmentListQuerySchema), listStaffAppointmentsController);
 appointmentsRouter.post('/', requireRole('CUSTOMER'), validateRequest(createAppointmentSchema), createAppointmentController);

@@ -16,8 +16,19 @@ export interface TokenResult {
   refreshToken: string;
 }
 
+interface CustomerRegistrationProfile {
+  firstName: string;
+  lastName: string;
+  gender?: string;
+  phone?: string;
+}
+
+interface TransactionContext {
+  orm: typeof db.orm;
+}
+
 export class AuthService {
-  static async register(email: string, password: string, role: string): Promise<AuthResult> {
+  static async register(email: string, password: string, profile: CustomerRegistrationProfile): Promise<AuthResult> {
     // Check if account already exists
     const existing = await db.orm.public.Account.where({ email }).first();
     if (existing) {
@@ -27,12 +38,23 @@ export class AuthService {
     // Hash password
     const passwordHash = await bcrypt.hash(password, 12);
 
-    // Create account
-    const account = await db.orm.public.Account.create({
-      email,
-      passwordHash,
-      role: role as 'ADMIN' | 'MANAGER' | 'STAFF' | 'CUSTOMER',
-      status: 'ACTIVE' as const,
+    const account = await db.transaction(async (tx: TransactionContext) => {
+      const createdAccount = await tx.orm.public.Account.create({
+        email,
+        passwordHash,
+        role: 'CUSTOMER',
+        status: 'ACTIVE',
+      });
+
+      await tx.orm.public.Customer.create({
+        accountId: createdAccount.id,
+        firstName: profile.firstName,
+        lastName: profile.lastName,
+        gender: profile.gender ?? null,
+        phone: profile.phone ?? null,
+      });
+
+      return createdAccount;
     });
 
     // Generate tokens

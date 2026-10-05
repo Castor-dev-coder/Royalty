@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "tsx src/server.ts",
     "build": "tsc",
-    "test": "tsx --test src/modules/appointments/*.test.ts",
+    "test": "tsx --test src/modules/appointments/*.test.ts src/modules/auth/*.test.ts src/modules/staff/*.test.ts src/modules/reviews/*.test.ts",
     "start": "node dist/server.js",
     "contract:emit": "prisma contract emit",
     "db:init": "prisma db init",
