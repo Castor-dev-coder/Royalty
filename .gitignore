@@ -57,3 +57,6 @@ coverage/
 *.sqlite3
 *.db
 
+# Local Prisma ref backups (one-off copies made before re-signing)
+backend/migrations/app/refs/*.bak
+

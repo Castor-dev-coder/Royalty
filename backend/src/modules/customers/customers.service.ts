@@ -1,4 +1,5 @@
 import { db } from '../../prisma/db.js';
+import { pgVarchar } from '../../prisma/contract-compat.js';
 import { NotFoundError, ForbiddenError, ConflictError, BadRequestError } from '../../errors/index.js';
 import { generateAuditLog } from '../../utils/audit.js';
 
@@ -136,10 +137,10 @@ export class CustomerService {
 
     const customer = await db.orm.public.Customer.create({
       accountId: data.accountId,
-      firstName: data.firstName,
-      lastName: data.lastName,
-      gender: data.gender ?? null,
-      phone: data.phone ?? null,
+      firstName: pgVarchar<100>(data.firstName),
+      lastName: pgVarchar<100>(data.lastName),
+      gender: data.gender ? pgVarchar<30>(data.gender) : null,
+      phone: data.phone ? pgVarchar<30>(data.phone) : null,
     });
 
     await generateAuditLog({

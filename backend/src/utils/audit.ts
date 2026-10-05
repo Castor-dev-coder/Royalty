@@ -1,5 +1,6 @@
 // Audit log utility
 import { db } from '../prisma/db.js';
+import { pgVarchar } from '../prisma/contract-compat.js';
 import type { Contract } from '../prisma/contract.d.js';
 
 export interface AuditParams {
@@ -15,8 +16,8 @@ export async function generateAuditLog(params: AuditParams): Promise<void> {
   try {
     await db.orm.public.AuditLog.create({
       actorAccountId: params.actorAccountId ?? null,
-      action: params.action,
-      entityType: params.entityType,
+      action: pgVarchar<100>(params.action),
+      entityType: pgVarchar<100>(params.entityType),
       entityId: params.entityId ?? null,
       oldData: params.oldData ? JSON.parse(JSON.stringify(params.oldData)) : null,
       newData: params.newData ? JSON.parse(JSON.stringify(params.newData)) : null,

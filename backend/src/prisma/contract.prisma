@@ -1,300 +1,416 @@
-// Royalty Hair & Nails Studio - Prisma 8 Contract
-// Mapped from PostgreSQL schema
+// use prisma-8
+// LIVE BASELINE — reconciled against the live Supabase catalog via `prisma contract infer`.
+//
+// Fidelity notes (Batch 2F):
+//   * varchar columns use VarChar(n) because plain String maps to PostgreSQL text.
+//   * Primary keys, unique constraints, indexes, FKs and CHECKs preserve their LIVE names via map:.
+//   * @@rls marks the 16 tables that have RLS enabled in the database (no policies exist).
+//   * post / user / posts / users are @@control(external): never touched by Prisma.
+//
+// Batch 3 (applied — migration 20261005T1357_batch3_review, live and signed):
+//   appointments.staff_id (nullable UUID) + fk_appointment_staff ON DELETE RESTRICT +
+//   idx_appointments_staff_id_date (staff_id, appointment_date), and the
+//   appointment_code varchar(6)->40 / services.name varchar(150)->200 /
+//   appointment_services.service_name varchar(150)->200 widenings.
+//   The FK's automatically derived standalone (staff_id) index is suppressed via index: false;
+//   the composite index already leads with staff_id.
+//
+// Numeric default note: appointments.totalAmount is @default(0), matching both `contract infer`
+// and the live catalog's unquoted `0`, and it verifies against the live database with zero
+// failures. Prisma 8 rc.11's default normalizer coerced numeric defaults to a JavaScript number,
+// which pg/numeric@1 then rejected during migration planning; rc.12+ returns decimal text, so
+// this representation both verifies and plans.
+// Contract inferred from the live database schema. Edit as needed, then run `prisma contract emit`.
 
-// ============================================================
-// ENUM TYPES
-// ============================================================
+namespace public {
+  native_enum AccountRole {
+    ADMIN = "ADMIN"
+    MANAGER = "MANAGER"
+    STAFF = "STAFF"
+    CUSTOMER = "CUSTOMER"
+    @@map("account_role")
+  }
 
-enum AccountRole {
-  ADMIN
-  MANAGER
-  STAFF
-  CUSTOMER
-}
+  native_enum AccountStatus {
+    ACTIVE = "ACTIVE"
+    DEACTIVATED = "DEACTIVATED"
+    @@map("account_status")
+  }
 
-enum AccountStatus {
-  ACTIVE
-  DEACTIVATED
-}
+  native_enum AppointmentStatus {
+    RESERVED = "RESERVED"
+    CONFIRMED = "CONFIRMED"
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"
+    NO_SHOW = "NO_SHOW"
+    @@map("appointment_status")
+  }
 
-enum StaffWorkStatus {
-  ON_DUTY
-  DAY_OFF
-  UNAVAILABLE
-}
+  native_enum EmploymentType {
+    FULL_TIME = "FULL_TIME"
+    PART_TIME = "PART_TIME"
+    @@map("employment_type")
+  }
 
-enum EmploymentType {
-  FULL_TIME
-  PART_TIME
-}
+  native_enum PaymentMethod {
+    CASH = "CASH"
+    GCASH = "GCASH"
+    @@map("payment_method")
+  }
 
-enum ScheduleRequestStatus {
-  PENDING
-  APPROVED
-  REJECTED
-}
+  native_enum PaymentStatus {
+    UNVERIFIED = "UNVERIFIED"
+    VERIFIED = "VERIFIED"
+    REJECTED = "REJECTED"
+    @@map("payment_status")
+  }
 
-enum AppointmentStatus {
-  RESERVED
-  CONFIRMED
-  COMPLETED
-  CANCELLED
-  NO_SHOW
-}
+  native_enum ScheduleRequestStatus {
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    @@map("schedule_request_status")
+  }
 
-enum PaymentMethod {
-  CASH
-  GCASH
-}
+  native_enum StaffWorkStatus {
+    ON_DUTY = "ON_DUTY"
+    DAY_OFF = "DAY_OFF"
+    UNAVAILABLE = "UNAVAILABLE"
+    @@map("staff_work_status")
+  }
 
-enum PaymentStatus {
-  UNVERIFIED
-  VERIFIED
-  REJECTED
-}
+  model Account {
+    id               Uuid                   @id(map: "accounts_pkey") @default(sql`gen_random_uuid()`)
+    email            VarChar(255)           @unique(map: "accounts_email_key")
+    passwordHash     String                 @map("password_hash")
+    role             pg.enum(AccountRole)   @default("CUSTOMER")
+    status           pg.enum(AccountStatus) @default("ACTIVE")
+    createdAt        Timestamptz            @default(now()) @map("created_at")
+    updatedAt        Timestamptz            @default(now()) @map("updated_at")
+    auditLogs        AuditLog[]
+    customers        Customer?
+    payments         Payment[]
+    scheduleRequests ScheduleRequest[]
+    staff            Staff?
 
-// ============================================================
-// MODELS
-// ============================================================
+    @@index([role], map: "idx_accounts_role")
+    @@index([status], map: "idx_accounts_status")
+    @@rls
+    @@map("accounts")
+  }
 
-model Account {
-  id           String   @id @default(dbgenerated("gen_random_uuid()"))
-  email        String   @unique
-  passwordHash String
-  role         AccountRole @default(CUSTOMER)
-  status       AccountStatus @default(ACTIVE)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @default(now()) @map("updated_at")
+  model Customer {
+    id           Uuid           @id(map: "customers_pkey") @default(sql`gen_random_uuid()`)
+    accountId    Uuid           @unique(map: "customers_account_id_key") @map("account_id")
+    firstName    VarChar(100)   @map("first_name")
+    lastName     VarChar(100)   @map("last_name")
+    gender       VarChar(30)?
+    phone        VarChar(30)?
+    createdAt    Timestamptz    @default(now()) @map("created_at")
+    updatedAt    Timestamptz    @default(now()) @map("updated_at")
+    appointments Appointment[]
+    reviews      Review[]
+    account      Account       @relation(fields: [accountId], references: [id], onDelete: Restrict, map: "fk_customer_account")
 
-  // Relations - Account is the auth base; Customer and Staff extend it
-  customer Customer?
-  staff    Staff?
+    @@index([accountId], map: "idx_customers_account_id")
+    @@rls
+    @@map("customers")
+  }
 
-  @@map("accounts")
-}
+  model Appointment {
+    id                  Uuid                       @id(map: "appointments_pkey") @default(sql`gen_random_uuid()`)
+    appointmentCode     VarChar(40)                @unique(map: "appointments_appointment_code_key") @map("appointment_code")
+    customerId          Uuid                       @map("customer_id")
+    appointmentDate     Date                       @map("appointment_date")
+    startTime           Time                       @map("start_time")
+    endTime             Time                       @map("end_time")
+    totalAmount         Numeric(10, 2)             @default(0) @map("total_amount")
+    status              pg.enum(AppointmentStatus) @default("RESERVED")
+    createdAt           Timestamptz                @default(now()) @map("created_at")
+    updatedAt           Timestamptz                @default(now()) @map("updated_at")
+    staffId             Uuid?                      @map("staff_id")
+    appointmentServices AppointmentService[]
+    payments            Payment?
+    reviews             Review?
+    customer            Customer                  @relation(fields: [customerId], references: [id], onDelete: Restrict, map: "fk_appointment_customer")
+    staff               Staff?                    @relation(fields: [staffId], references: [id], onDelete: Restrict, map: "fk_appointment_staff", index: false)
 
-model Customer {
-  id         String   @id @default(dbgenerated("gen_random_uuid()"))
-  accountId  String   @unique @map("account_id")
-  firstName  String   @map("first_name")
-  lastName   String   @map("last_name")
-  gender     String?
-  phone      String?
-  createdAt  DateTime @default(now()) @map("created_at")
-  updatedAt  DateTime @default(now()) @map("updated_at")
+    @@index([customerId], map: "idx_appointments_customer_id")
+    @@index([staffId, appointmentDate], map: "idx_appointments_staff_id_date")
+    @@index([appointmentDate], map: "idx_appointments_date")
+    @@index([appointmentDate, startTime, endTime], map: "idx_appointments_date_time")
+    @@index([status], map: "idx_appointments_status")
+    @@check(expression: "(total_amount >= (0)::numeric)", map: "valid_appointment_amount")
+    @@check(expression: "(start_time < end_time)", map: "valid_appointment_time")
+    @@rls
+    @@map("appointments")
+  }
 
-  // Relations
-  account    Account        @relation(fields: [accountId], references: [id], onDelete: Restrict)
-  appointments Appointment[]
-  reviews    Review[]
+  model ServiceCategory {
+    id        Uuid         @id(map: "service_categories_pkey") @default(sql`gen_random_uuid()`)
+    name      VarChar(100) @unique(map: "service_categories_name_key")
+    isActive  Boolean      @default(true) @map("is_active")
+    createdAt Timestamptz  @default(now()) @map("created_at")
+    updatedAt Timestamptz  @default(now()) @map("updated_at")
+    services  Service[]
 
-  @@map("customers")
-}
+    @@rls
+    @@map("service_categories")
+  }
 
-model Staff {
-  id              String   @id @default(dbgenerated("gen_random_uuid()"))
-  accountId       String   @unique @map("account_id")
-  firstName       String   @map("first_name")
-  lastName        String   @map("last_name")
-  phone           String?
-  primaryRole     String   @map("primary_role")
-  employmentType  EmploymentType
-  workStatus      StaffWorkStatus @default(DAY_OFF)
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @default(now()) @map("updated_at")
+  model Service {
+    id                  Uuid                  @id(map: "services_pkey") @default(sql`gen_random_uuid()`)
+    categoryId          Uuid                  @map("category_id")
+    name                VarChar(200)
+    description         String?
+    price               Numeric(10, 2)
+    durationMinutes     Int                   @map("duration_minutes")
+    isActive            Boolean               @default(true) @map("is_active")
+    createdAt           Timestamptz           @default(now()) @map("created_at")
+    updatedAt           Timestamptz           @default(now()) @map("updated_at")
+    appointmentServices AppointmentService[]
+    staffServices       StaffService[]
+    category            ServiceCategory     @relation(fields: [categoryId], references: [id], onDelete: Restrict, map: "fk_service_category")
 
-  // Relations
-  account         Account              @relation(fields: [accountId], references: [id], onDelete: Restrict)
-  staffServices   StaffService[]
-  schedules       StaffSchedule[]
-  scheduleRequests ScheduleRequest[]
-  appointments    Appointment[]
+    @@index([isActive], map: "idx_services_active")
+    @@index([categoryId], map: "idx_services_category_id")
+    @@check(expression: "(duration_minutes > 0)", map: "service_duration_positive")
+    @@check(expression: "(price >= (0)::numeric)", map: "service_price_positive")
+    @@rls
+    @@map("services")
+  }
 
-  @@map("staff")
-}
+  model AppointmentService {
+    id              Uuid           @id(map: "appointment_services_pkey") @default(sql`gen_random_uuid()`)
+    appointmentId   Uuid           @map("appointment_id")
+    serviceId       Uuid           @map("service_id")
+    serviceName     VarChar(200)   @map("service_name")
+    price           Numeric(10, 2)
+    durationMinutes Int            @map("duration_minutes")
+    createdAt       Timestamptz    @default(now()) @map("created_at")
+    appointment     Appointment   @relation(fields: [appointmentId], references: [id], onDelete: Cascade, map: "fk_appointment_service_appointment")
+    service         Service       @relation(fields: [serviceId], references: [id], onDelete: Restrict, map: "fk_appointment_service_service", index: false)
 
-model ServiceCategory {
-  id        String   @id @default(dbgenerated("gen_random_uuid()"))
-  name      String   @unique
-  isActive  Boolean       @default(true) @map("is_active")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @default(now()) @map("updated_at")
+    @@unique([appointmentId, serviceId], map: "unique_appointment_service")
+    @@index([appointmentId], map: "idx_appointment_services_appointment_id")
+    @@check(expression: "(duration_minutes > 0)", map: "appointment_service_duration_positive")
+    @@check(expression: "(price >= (0)::numeric)", map: "appointment_service_price_positive")
+    @@rls
+    @@map("appointment_services")
+  }
 
-  // Relations
-  services Service[]
+  model AuditLog {
+    id             Uuid         @id(map: "audit_logs_pkey") @default(sql`gen_random_uuid()`)
+    actorAccountId Uuid?        @map("actor_account_id")
+    action         VarChar(100)
+    entityType     VarChar(100) @map("entity_type")
+    entityId       Uuid?        @map("entity_id")
+    oldData        Jsonb?       @map("old_data")
+    newData        Jsonb?       @map("new_data")
+    createdAt      Timestamptz  @default(now()) @map("created_at")
+    actorAccount   Account?    @relation(fields: [actorAccountId], references: [id], onDelete: SetNull, map: "fk_audit_actor")
 
-  @@map("service_categories")
-}
+    @@index([actorAccountId], map: "idx_audit_logs_actor")
+    @@index([createdAt], map: "idx_audit_logs_created_at")
+    @@index([entityType, entityId], map: "idx_audit_logs_entity")
+    @@rls
+    @@map("audit_logs")
+  }
 
-model Service {
-  id              String   @id @default(dbgenerated("gen_random_uuid()"))
-  categoryId      String   @map("category_id")
-  name            String
-  description     String?
-  price           Decimal
-  durationMinutes Int
-  isActive        Boolean     @default(true) @map("is_active")
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @default(now()) @map("updated_at")
+  model BusinessHour {
+    id        Uuid        @id(map: "business_hours_pkey") @default(sql`gen_random_uuid()`)
+    dayOfWeek SmallInt    @unique(map: "unique_business_day") @map("day_of_week")
+    openTime  Time?       @map("open_time")
+    closeTime Time?       @map("close_time")
+    isOpen    Boolean     @default(true) @map("is_open")
+    createdAt Timestamptz @default(now()) @map("created_at")
+    updatedAt Timestamptz @default(now()) @map("updated_at")
 
-  // Relations
-  category        ServiceCategory    @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  staffServices   StaffService[]
-  appointmentServices AppointmentService[]
+    @@check(expression: "((is_open = false) OR ((open_time IS NOT NULL) AND (close_time IS NOT NULL) AND (open_time < close_time)))", map: "valid_business_time")
+    @@check(expression: "((day_of_week >= 0) AND (day_of_week <= 6))", map: "valid_day_of_week")
+    @@rls
+    @@map("business_hours")
+  }
 
-  @@map("services")
-}
+  model Payment {
+    id            Uuid                   @id(map: "payments_pkey") @default(sql`gen_random_uuid()`)
+    appointmentId Uuid                   @unique(map: "payments_appointment_id_key") @map("appointment_id")
+    amount        Numeric(10, 2)
+    paymentMethod pg.enum(PaymentMethod) @map("payment_method")
+    status        pg.enum(PaymentStatus) @default("UNVERIFIED")
+    verifiedBy    Uuid?                  @map("verified_by")
+    verifiedAt    Timestamptz?           @map("verified_at")
+    createdAt     Timestamptz            @default(now()) @map("created_at")
+    updatedAt     Timestamptz            @default(now()) @map("updated_at")
+    appointment   Appointment           @relation(fields: [appointmentId], references: [id], onDelete: Restrict, map: "fk_payment_appointment")
+    accounts      Account?              @relation(fields: [verifiedBy], references: [id], onDelete: Restrict, map: "fk_payment_verifier", index: false)
 
-model StaffService {
-  staffId    String   @map("staff_id")
-  serviceId  String   @map("service_id")
-  createdAt  DateTime @default(now()) @map("created_at")
+    @@index([createdAt], map: "idx_payments_created_at")
+    @@index([status], map: "idx_payments_status")
+    @@check(expression: "(amount >= (0)::numeric)", map: "payment_amount_positive")
+    @@check(expression: "((status <> 'VERIFIED'::payment_status) OR ((verified_by IS NOT NULL) AND (verified_at IS NOT NULL)))", map: "valid_verified_payment")
+    @@rls
+    @@map("payments")
+  }
 
-  // Relations
-  staff      Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
-  service    Service  @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  model ExternalUser {
+    @@control(external)
+    id        Int         @id(map: "user_pkey") @default(autoincrement())
+    createdAt Timestamptz @default(now())
+    email     String      @unique(map: "user_email_key")
+    name      String?
+    updatedAt Timestamptz
+    username  String?
+    posts     ExternalPost[]
 
-  @@id([staffId, serviceId])
-  @@map("staff_services")
-}
+    @@map("user")
+  }
 
-model BusinessHour {
-  id        String   @id @default(dbgenerated("gen_random_uuid()"))
-  dayOfWeek Int
-  openTime  String?
-  closeTime String?
-  isOpen    Boolean   @default(true) @map("is_open")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @default(now()) @map("updated_at")
+  model ExternalPost {
+    @@control(external)
+    id        Int         @id(map: "post_pkey") @default(autoincrement())
+    authorId  Int
+    content   String?
+    createdAt Timestamptz @default(now())
+    title     String
+    updatedAt Timestamptz
+    author    ExternalUser        @relation(fields: [authorId], references: [id], map: "post_authorId_fkey")
 
-  @@map("business_hours")
-  @@unique([dayOfWeek])
-}
+    @@index([authorId], name: "post_authorId_idx")
+    @@map("post")
+  }
 
-model StaffSchedule {
-  id             String   @id @default(dbgenerated("gen_random_uuid()"))
-  staffId        String   @map("staff_id")
-  dayOfWeek      Int
-  startTime      String
-  endTime        String
-  effectiveFrom  DateTime
-  effectiveUntil DateTime?
-  isActive       Boolean    @default(true) @map("is_active")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @default(now()) @map("updated_at")
+  model ExternalUsers {
+    @@control(external)
+    id                  Int           @id(map: "users_pkey") @default(autoincrement())
+    username            VarChar(30)   @unique(map: "users_username_key")
+    email               VarChar(255)  @unique(map: "users_email_key")
+    passwordHash        VarChar(255)  @map("password_hash")
+    isVerified          Boolean?      @default(false) @map("is_verified")
+    verificationToken   VarChar(255)? @map("verification_token")
+    verificationExpires Timestamp?    @map("verification_expires")
+    createdAt           Timestamp?    @default(now()) @map("created_at")
+    posts               ExternalPosts[]
 
-  // Relations
-  staff          Staff       @relation(fields: [staffId], references: [id], onDelete: Cascade)
+    @@rls
+    @@map("users")
+  }
 
-  @@map("staff_schedules")
-}
+  model ExternalPosts {
+    @@control(external)
+    id            Int          @id(map: "posts_pkey") @default(autoincrement())
+    userId        Int          @map("user_id")
+    imageUrl      VarChar(500) @map("image_url")
+    caption       String?
+    fileSizeBytes Int?         @map("file_size_bytes")
+    createdAt     Timestamp?   @default(now()) @map("created_at")
+    user          ExternalUsers        @relation(fields: [userId], references: [id], onDelete: Cascade, map: "posts_user_id_fkey", index: false)
 
-model ScheduleRequest {
-  id                 String   @id @default(dbgenerated("gen_random_uuid()"))
-  staffId            String   @map("staff_id")
-  requestedDate      DateTime @map("requested_date")
-  requestedStartTime String?
-  requestedEndTime   String?
-  requestType        String
-  reason             String?
-  status             ScheduleRequestStatus @default(PENDING)
-  reviewedBy         String?
-  reviewedAt         DateTime?
-  createdAt          DateTime @default(now()) @map("created_at")
+    @@rls
+    @@map("posts")
+  }
 
-  // Relations
-  staff              Staff         @relation(fields: [staffId], references: [id], onDelete: Cascade)
-  reviewer           Account?      @relation(fields: [reviewedBy], references: [id], onDelete: Restrict)
+  model Review {
+    id            Uuid         @id(map: "reviews_pkey") @default(sql`gen_random_uuid()`)
+    appointmentId Uuid         @unique(map: "reviews_appointment_id_key") @map("appointment_id")
+    customerId    Uuid         @map("customer_id")
+    rating        SmallInt
+    comment       String?
+    createdAt     Timestamptz  @default(now()) @map("created_at")
+    updatedAt     Timestamptz  @default(now()) @map("updated_at")
+    appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Restrict, map: "fk_review_appointment")
+    customer      Customer    @relation(fields: [customerId], references: [id], onDelete: Restrict, map: "fk_review_customer")
 
-  @@map("schedule_requests")
-}
+    @@index([customerId], map: "idx_reviews_customer_id")
+    @@check(expression: "((rating >= 1) AND (rating <= 5))", map: "valid_rating")
+    @@rls
+    @@map("reviews")
+  }
 
-model Appointment {
-  id              String   @id @default(dbgenerated("gen_random_uuid()"))
-  appointmentCode String   @unique @map("appointment_code")
-  customerId      String   @map("customer_id")
-  staffId         String?  @map("staff_id")
-  appointmentDate DateTime @map("appointment_date")
-  startTime       String
-  endTime         String
-  totalAmount     Decimal  @default("0") @map("total_amount")
-  status          AppointmentStatus @default(RESERVED)
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @default(now()) @map("updated_at")
+  model Staff {
+    id               Uuid                     @id(map: "staff_pkey") @default(sql`gen_random_uuid()`)
+    accountId        Uuid                     @unique(map: "staff_account_id_key") @map("account_id")
+    firstName        VarChar(100)             @map("first_name")
+    lastName         VarChar(100)             @map("last_name")
+    phone            VarChar(30)?
+    primaryRole      VarChar(100)             @map("primary_role")
+    employmentType   pg.enum(EmploymentType)  @map("employment_type")
+    workStatus       pg.enum(StaffWorkStatus) @default("DAY_OFF") @map("work_status")
+    createdAt        Timestamptz              @default(now()) @map("created_at")
+    updatedAt        Timestamptz              @default(now()) @map("updated_at")
+    appointments    Appointment[]
+    scheduleRequests ScheduleRequest[]
+    staffSchedules   StaffSchedule[]
+    staffServices    StaffService[]
+    account          Account                 @relation(fields: [accountId], references: [id], onDelete: Restrict, map: "fk_staff_account")
 
-  // Relations
-  customer        Customer              @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  staff           Staff?                @relation(fields: [staffId], references: [id], onDelete: Restrict)
-  services        AppointmentService[]
-  payment         Payment?
+    @@index([accountId], map: "idx_staff_account_id")
+    @@index([workStatus], map: "idx_staff_work_status")
+    @@rls
+    @@map("staff")
+  }
 
-  @@map("appointments")
-  @@index([staffId, appointmentDate])
-}
+  model ScheduleRequest {
+    id                 Uuid                           @id(map: "schedule_requests_pkey") @default(sql`gen_random_uuid()`)
+    staffId            Uuid                           @map("staff_id")
+    requestedDate      Date                           @map("requested_date")
+    requestedStartTime Time?                          @map("requested_start_time")
+    requestedEndTime   Time?                          @map("requested_end_time")
+    requestType        VarChar(50)                    @map("request_type")
+    reason             String?
+    status             pg.enum(ScheduleRequestStatus) @default("PENDING")
+    reviewedBy         Uuid?                          @map("reviewed_by")
+    reviewedAt         Timestamptz?                   @map("reviewed_at")
+    createdAt          Timestamptz                    @default(now()) @map("created_at")
+    accounts           Account?                      @relation(fields: [reviewedBy], references: [id], onDelete: Restrict, map: "fk_schedule_request_reviewer", index: false)
+    staff              Staff                          @relation(fields: [staffId], references: [id], onDelete: Cascade, map: "fk_schedule_request_staff")
 
-model AppointmentService {
-  id              String   @id @default(dbgenerated("gen_random_uuid()"))
-  appointmentId   String   @map("appointment_id")
-  serviceId       String   @map("service_id")
-  serviceName     String
-  price           Decimal
-  durationMinutes Int
-  createdAt       DateTime @default(now()) @map("created_at")
+    @@index([staffId], map: "idx_schedule_requests_staff_id")
+    @@index([status], map: "idx_schedule_requests_status")
+    @@check(expression: "(((requested_start_time IS NULL) AND (requested_end_time IS NULL)) OR ((requested_start_time IS NOT NULL) AND (requested_end_time IS NOT NULL) AND (requested_start_time < requested_end_time)))", map: "valid_requested_time")
+    @@rls
+    @@map("schedule_requests")
+  }
 
-  // Relations
-  appointment     Appointment  @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
-  service         Service      @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  model StaffSchedule {
+    id             Uuid        @id(map: "staff_schedules_pkey") @default(sql`gen_random_uuid()`)
+    staffId        Uuid        @map("staff_id")
+    dayOfWeek      SmallInt    @map("day_of_week")
+    startTime      Time        @map("start_time")
+    endTime        Time        @map("end_time")
+    effectiveFrom  Date        @map("effective_from")
+    effectiveUntil Date?       @map("effective_until")
+    isActive       Boolean     @default(true) @map("is_active")
+    createdAt      Timestamptz @default(now()) @map("created_at")
+    updatedAt      Timestamptz @default(now()) @map("updated_at")
+    staff          Staff       @relation(fields: [staffId], references: [id], onDelete: Cascade, map: "fk_staff_schedule_staff")
 
-  @@map("appointment_services")
-  @@unique([appointmentId, serviceId])
-}
+    @@index([staffId], map: "idx_staff_schedules_staff_id")
+    @@check(expression: "((effective_until IS NULL) OR (effective_until >= effective_from))", map: "valid_schedule_dates")
+    @@check(expression: "((day_of_week >= 0) AND (day_of_week <= 6))", map: "valid_schedule_day")
+    @@check(expression: "(start_time < end_time)", map: "valid_staff_schedule_time")
+    @@rls
+    @@map("staff_schedules")
+  }
 
-model Payment {
-  id            String   @id @default(dbgenerated("gen_random_uuid()"))
-  appointmentId String   @unique @map("appointment_id")
-  amount        Decimal
-  paymentMethod PaymentMethod
-  status        PaymentStatus @default(UNVERIFIED)
-  verifiedBy    String?
-  verifiedAt    DateTime?
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @default(now()) @map("updated_at")
+  model StaffService {
+    staffId   Uuid        @map("staff_id")
+    serviceId Uuid        @map("service_id")
+    createdAt Timestamptz @default(now()) @map("created_at")
+    service   Service    @relation(fields: [serviceId], references: [id], onDelete: Restrict, map: "fk_staff_services_service")
+    staff     Staff       @relation(fields: [staffId], references: [id], onDelete: Cascade, map: "fk_staff_services_staff", index: false)
 
-  // Relations
-  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Restrict)
-  verifier      Account?    @relation(fields: [verifiedBy], references: [id], onDelete: Restrict)
+    @@id([staffId, serviceId], map: "staff_services_pkey")
+    @@index([serviceId], map: "idx_staff_services_service_id")
+    @@rls
+    @@map("staff_services")
+  }
 
-  @@map("payments")
-}
 
-model Review {
-  id            String   @id @default(dbgenerated("gen_random_uuid()"))
-  appointmentId String   @unique @map("appointment_id")
-  customerId    String   @map("customer_id")
-  rating        Int
-  comment       String?
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @default(now()) @map("updated_at")
 
-  // Relations
-  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Restrict)
-  customer      Customer    @relation(fields: [customerId], references: [id], onDelete: Restrict)
 
-  @@map("reviews")
-}
 
-model AuditLog {
-  id             String   @id @default(dbgenerated("gen_random_uuid()"))
-  actorAccountId String?
-  action         String
-  entityType     String
-  entityId       String?
-  oldData        Json?
-  newData        Json?
-  createdAt      DateTime @default(now()) @map("created_at")
 
-  // Relations
-  actor          Account?  @relation(fields: [actorAccountId], references: [id], onDelete: SetNull)
 
-  @@map("audit_logs")
+
 }

@@ -1,4 +1,5 @@
 import { db } from '../../prisma/db.js';
+import { pgVarchar } from '../../prisma/contract-compat.js';
 import { NotFoundError, ForbiddenError, ConflictError, BadRequestError } from '../../errors/index.js';
 import { generateAuditLog } from '../../utils/audit.js';
 import { isStaffEligibleForServices } from './staff.rules.js';
@@ -173,10 +174,10 @@ export class StaffService {
 
     const staff = await db.orm.public.Staff.create({
       accountId: data.accountId,
-      firstName: data.firstName,
-      lastName: data.lastName,
-      phone: data.phone ?? null,
-      primaryRole: data.primaryRole,
+      firstName: pgVarchar<100>(data.firstName),
+      lastName: pgVarchar<100>(data.lastName),
+      phone: data.phone ? pgVarchar<30>(data.phone) : null,
+      primaryRole: pgVarchar<100>(data.primaryRole),
       employmentType: data.employmentType,
       workStatus: data.workStatus ?? 'DAY_OFF',
     });

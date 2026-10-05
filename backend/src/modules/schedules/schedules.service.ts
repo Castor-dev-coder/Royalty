@@ -1,4 +1,5 @@
 import { db } from '../../prisma/db.js';
+import { pgVarchar } from '../../prisma/contract-compat.js';
 import { NotFoundError, ForbiddenError, ConflictError, BadRequestError } from '../../errors/index.js';
 import { generateAuditLog } from '../../utils/audit.js';
 import {
@@ -410,8 +411,8 @@ export class SchedulesService {
       dayOfWeek: isoWeekdayToPostgres(data.dayOfWeek),
       startTime: data.startTime,
       endTime: data.endTime,
-      effectiveFrom: effectiveFromDate,
-      effectiveUntil: effectiveUntilDate,
+      effectiveFrom: normalizeDateOnly(effectiveFromDate),
+      effectiveUntil: effectiveUntilDate ? normalizeDateOnly(effectiveUntilDate) : null,
       isActive: data.isActive,
     });
 
@@ -517,8 +518,8 @@ export class SchedulesService {
       dayOfWeek: isoWeekdayToPostgres(dayOfWeek),
       startTime,
       endTime,
-      effectiveFrom: effectiveFromDate,
-      effectiveUntil: effectiveUntilDate,
+      effectiveFrom: normalizeDateOnly(effectiveFromDate),
+      effectiveUntil: effectiveUntilDate ? normalizeDateOnly(effectiveUntilDate) : null,
       isActive,
     });
 
@@ -680,10 +681,10 @@ export class SchedulesService {
 
     const request = await db.orm.public.ScheduleRequest.create({
       staffId: staff.id,
-      requestedDate: requestedDate,
+      requestedDate: normalizeDateOnly(requestedDate),
       requestedStartTime: requestedStartTime ?? null,
       requestedEndTime: requestedEndTime ?? null,
-      requestType: data.requestType,
+      requestType: pgVarchar<50>(data.requestType),
       reason: data.reason ?? null,
       status: 'PENDING',
     });

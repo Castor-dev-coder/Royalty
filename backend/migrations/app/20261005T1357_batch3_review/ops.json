@@ -1,0 +1,350 @@
+[
+  {
+    "id": "column.public.appointments.staff_id",
+    "label": "Add column \"staff_id\" to \"appointments\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "staff_id",
+        "table": "appointments"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"staff_id\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "appointments",
+          "staff_id"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"staff_id\"",
+        "sql": "ALTER TABLE \"public\".\"appointments\" ADD COLUMN \"staff_id\" uuid"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"staff_id\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "appointments",
+          "staff_id"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "data_migration.typechange-appointment_services-service_name",
+    "label": "Data transform: typechange-appointment_services-service_name",
+    "operationClass": "data",
+    "target": {
+      "id": "postgres"
+    },
+    "precheck": [
+      {
+        "description": "Check typechange-appointment_services-service_name has work to do",
+        "sql": "SELECT EXISTS (SELECT 1 AS violation FROM public.appointment_services WHERE char_length(service_name) > 200 LIMIT 1) AS ok",
+        "params": []
+      }
+    ],
+    "execute": [
+      {
+        "description": "Run typechange-appointment_services-service_name",
+        "sql": "UPDATE public.appointment_services SET service_name = service_name WHERE char_length(service_name) > 200",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "Verify typechange-appointment_services-service_name resolved all violations",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS violation FROM public.appointment_services WHERE char_length(service_name) > 200 LIMIT 1) AS ok",
+        "params": []
+      }
+    ]
+  },
+  {
+    "id": "alterType.appointment_services.service_name",
+    "label": "Alter type of \"appointment_services\".\"service_name\" to character varying(200)",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "service_name",
+        "table": "appointment_services"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"service_name\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "appointment_services",
+          "service_name"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "alter type of \"service_name\"",
+        "sql": "ALTER TABLE \"public\".\"appointment_services\" ALTER COLUMN \"service_name\" TYPE character varying(200) USING \"service_name\"::character varying(200)"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"service_name\" has type \"character varying(200)\"",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_attribute\" AS \"a\" INNER JOIN \"pg_class\" AS \"c\" ON \"c\".\"oid\" = \"a\".\"attrelid\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"relnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"c\".\"relname\" = $2 AND \"a\".\"attname\" = $3 AND (format_type(\"a\".\"atttypid\", \"a\".\"atttypmod\")) = $4 AND NOT (\"a\".\"attisdropped\"))) AS \"result\"",
+        "params": [
+          "public",
+          "appointment_services",
+          "service_name",
+          "character varying(200)"
+        ]
+      }
+    ],
+    "meta": {
+      "warning": "TABLE_REWRITE"
+    }
+  },
+  {
+    "id": "data_migration.typechange-appointments-appointment_code",
+    "label": "Data transform: typechange-appointments-appointment_code",
+    "operationClass": "data",
+    "target": {
+      "id": "postgres"
+    },
+    "precheck": [
+      {
+        "description": "Check typechange-appointments-appointment_code has work to do",
+        "sql": "SELECT EXISTS (SELECT 1 AS violation FROM public.appointments WHERE char_length(appointment_code) > 40 LIMIT 1) AS ok",
+        "params": []
+      }
+    ],
+    "execute": [
+      {
+        "description": "Run typechange-appointments-appointment_code",
+        "sql": "UPDATE public.appointments SET appointment_code = appointment_code WHERE char_length(appointment_code) > 40",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "Verify typechange-appointments-appointment_code resolved all violations",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS violation FROM public.appointments WHERE char_length(appointment_code) > 40 LIMIT 1) AS ok",
+        "params": []
+      }
+    ]
+  },
+  {
+    "id": "alterType.appointments.appointment_code",
+    "label": "Alter type of \"appointments\".\"appointment_code\" to character varying(40)",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "appointment_code",
+        "table": "appointments"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"appointment_code\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "appointments",
+          "appointment_code"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "alter type of \"appointment_code\"",
+        "sql": "ALTER TABLE \"public\".\"appointments\" ALTER COLUMN \"appointment_code\" TYPE character varying(40) USING \"appointment_code\"::character varying(40)"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"appointment_code\" has type \"character varying(40)\"",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_attribute\" AS \"a\" INNER JOIN \"pg_class\" AS \"c\" ON \"c\".\"oid\" = \"a\".\"attrelid\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"relnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"c\".\"relname\" = $2 AND \"a\".\"attname\" = $3 AND (format_type(\"a\".\"atttypid\", \"a\".\"atttypmod\")) = $4 AND NOT (\"a\".\"attisdropped\"))) AS \"result\"",
+        "params": [
+          "public",
+          "appointments",
+          "appointment_code",
+          "character varying(40)"
+        ]
+      }
+    ],
+    "meta": {
+      "warning": "TABLE_REWRITE"
+    }
+  },
+  {
+    "id": "data_migration.typechange-services-name",
+    "label": "Data transform: typechange-services-name",
+    "operationClass": "data",
+    "target": {
+      "id": "postgres"
+    },
+    "precheck": [
+      {
+        "description": "Check typechange-services-name has work to do",
+        "sql": "SELECT EXISTS (SELECT 1 AS violation FROM public.services WHERE char_length(name) > 200 LIMIT 1) AS ok",
+        "params": []
+      }
+    ],
+    "execute": [
+      {
+        "description": "Run typechange-services-name",
+        "sql": "UPDATE public.services SET name = name WHERE char_length(name) > 200",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "Verify typechange-services-name resolved all violations",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS violation FROM public.services WHERE char_length(name) > 200 LIMIT 1) AS ok",
+        "params": []
+      }
+    ]
+  },
+  {
+    "id": "alterType.services.name",
+    "label": "Alter type of \"services\".\"name\" to character varying(200)",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "name",
+        "table": "services"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"name\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "services",
+          "name"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "alter type of \"name\"",
+        "sql": "ALTER TABLE \"public\".\"services\" ALTER COLUMN \"name\" TYPE character varying(200) USING \"name\"::character varying(200)"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"name\" has type \"character varying(200)\"",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_attribute\" AS \"a\" INNER JOIN \"pg_class\" AS \"c\" ON \"c\".\"oid\" = \"a\".\"attrelid\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"relnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"c\".\"relname\" = $2 AND \"a\".\"attname\" = $3 AND (format_type(\"a\".\"atttypid\", \"a\".\"atttypmod\")) = $4 AND NOT (\"a\".\"attisdropped\"))) AS \"result\"",
+        "params": [
+          "public",
+          "services",
+          "name",
+          "character varying(200)"
+        ]
+      }
+    ],
+    "meta": {
+      "warning": "TABLE_REWRITE"
+    }
+  },
+  {
+    "id": "index.appointments.idx_appointments_staff_id_date",
+    "label": "Create index \"idx_appointments_staff_id_date\" on \"appointments\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "idx_appointments_staff_id_date",
+        "table": "appointments"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"idx_appointments_staff_id_date\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_appointments_staff_id_date\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"idx_appointments_staff_id_date\"",
+        "sql": "CREATE INDEX \"idx_appointments_staff_id_date\" ON \"public\".\"appointments\" (\"staff_id\", \"appointment_date\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"idx_appointments_staff_id_date\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_appointments_staff_id_date\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "foreignKey.appointments.fk_appointment_staff",
+    "label": "Add foreign key \"fk_appointment_staff\" on \"appointments\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "foreignKey",
+        "name": "fk_appointment_staff",
+        "table": "appointments"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure FK \"fk_appointment_staff\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_appointment_staff",
+          "public",
+          "\"public\".\"appointments\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add FK \"fk_appointment_staff\"",
+        "sql": "ALTER TABLE \"public\".\"appointments\"\nADD CONSTRAINT \"fk_appointment_staff\"\nFOREIGN KEY (\"staff_id\")\nREFERENCES \"public\".\"staff\" (\"id\")\nON DELETE RESTRICT"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify FK \"fk_appointment_staff\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_appointment_staff",
+          "public",
+          "\"public\".\"appointments\""
+        ]
+      }
+    ]
+  }
+]

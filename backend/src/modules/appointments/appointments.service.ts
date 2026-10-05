@@ -1,5 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { db } from '../../prisma/db.js';
+import {
+  pgNumeric,
+  pgVarchar,
+  staffIdOf,
+  staffWhere,
+  withStaffAssignment,
+} from '../../prisma/contract-compat.js';
 import { env } from '../../config/env.js';
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../errors/index.js';
 import { generateAuditLog } from '../../utils/audit.js';
@@ -47,7 +54,8 @@ interface BookingService {
 }
 
 interface BookingPlan {
-  appointmentDate: Date | string;
+  /** Date-only column: already normalized to 'YYYY-MM-DD' at the DB boundary. */
+  appointmentDate: string;
   endTime: string;
   totalAmount: string;
   services: BookingService[];
@@ -140,7 +148,7 @@ export class AppointmentsService {
       for (const staff of selectedStaff) {
         const [schedules, appointments] = await Promise.all([
           db.orm.public.StaffSchedule.where({ staffId: staff.id, dayOfWeek, isActive: true }).all(),
-          db.orm.public.Appointment.where({ staffId: staff.id, appointmentDate: dateOnly(date) }).all(),
+          db.orm.public.Appointment.where(staffWhere({ staffId: staff.id, appointmentDate: date })).all(),
         ]);
         const scheduleWindows = schedules
           .filter((schedule) => {
@@ -186,24 +194,23 @@ export class AppointmentsService {
 
     let appointmentId = '';
     await db.transaction(async (tx: TransactionContext) => {
-      const appointment = await tx.orm.public.Appointment.create({
-        appointmentCode: `APT-${randomUUID().toUpperCase()}`,
+      const appointment = await tx.orm.public.Appointment.create(withStaffAssignment({
+        appointmentCode: pgVarchar<40>(`APT-${randomUUID().toUpperCase()}`),
         customerId: customer.id,
-        staffId: data.staffId,
         appointmentDate: plan.appointmentDate,
         startTime: data.startTime,
         endTime: plan.endTime,
-        totalAmount: plan.totalAmount,
+        totalAmount: pgNumeric(plan.totalAmount),
         status: 'RESERVED',
-      });
+      }, data.staffId));
       appointmentId = appointment.id;
 
       for (const service of plan.services) {
         await tx.orm.public.AppointmentService.create({
           appointmentId: appointment.id,
           serviceId: service.id,
-          serviceName: service.name,
-          price: service.price,
+          serviceName: pgVarchar<200>(service.name),
+          price: pgNumeric(service.price),
           durationMinutes: service.durationMinutes,
         });
       }
@@ -220,7 +227,7 @@ export class AppointmentsService {
       newData: {
         appointmentCode: appointment.appointmentCode,
         customerId: appointment.customerId,
-        staffId: appointment.staffId,
+        staffId: staffIdOf(appointment),
         appointmentDate: appointment.appointmentDate,
         startTime: appointment.startTime,
         endTime: appointment.endTime,
@@ -333,10 +340,10 @@ export class AppointmentsService {
     const staff = await db.orm.public.Staff.where({ accountId: requestingUserId }).first();
     if (!staff) throw new NotFoundError('No staff profile found for this account');
 
-    const totalResult = await db.orm.public.Appointment.where({ staffId: staff.id }).count();
+    const totalResult = await db.orm.public.Appointment.where(staffWhere({ staffId: staff.id })).count();
     const total = typeof totalResult === 'number' ? totalResult : 0;
     const skip = (page - 1) * limit;
-    const query = db.orm.public.Appointment.where({ staffId: staff.id })
+    const query = db.orm.public.Appointment.where(staffWhere({ staffId: staff.id }))
       .orderBy((appointment) => appointment.appointmentDate.desc());
     // @ts-expect-error - Prisma 8 RC types omit supported skip/take methods on ordered collections
     const appointmentsRaw = await query.skip(skip).take(limit).all();
@@ -376,7 +383,7 @@ export class AppointmentsService {
         throw new ConflictError('An appointment can only be cancelled before its start time');
       }
     } else if (role === 'STAFF') {
-      if (appointment.staffId === null) throw new ForbiddenError('This appointment is not assigned to a staff member');
+      if (staffIdOf(appointment) === null) throw new ForbiddenError('This appointment is not assigned to a staff member');
     } else if (role !== 'ADMIN' && role !== 'MANAGER') {
       throw new ForbiddenError('You do not have permission to change this appointment');
     }
@@ -457,7 +464,7 @@ export class AppointmentsService {
     });
     if (!hasMatchingSchedule || !Number.isFinite(dateValue)) available = false;
 
-    const staffAppointments = await db.orm.public.Appointment.where({ staffId: staff.id }).all();
+    const staffAppointments = await db.orm.public.Appointment.where(staffWhere({ staffId: staff.id })).all();
     const hasConflict = staffAppointments.some((appointment) => {
       if (dateString(appointment.appointmentDate) !== data.appointmentDate) return false;
       if (appointment.status !== 'RESERVED' && appointment.status !== 'CONFIRMED') return false;
@@ -466,7 +473,7 @@ export class AppointmentsService {
     if (hasConflict) available = false;
 
     return {
-      appointmentDate: requestedDate,
+      appointmentDate: dateString(requestedDate),
       endTime,
       totalAmount: sumDecimalStrings(serviceRows.map((service) => service.price)),
       services: serviceRows,
@@ -475,7 +482,7 @@ export class AppointmentsService {
   }
 
   private static async assertCanView(
-    appointment: { customerId: string; staffId: string | null },
+    appointment: { customerId: string },
     requestingUserId: string,
     role: string
   ): Promise<void> {
@@ -489,7 +496,7 @@ export class AppointmentsService {
     if (role === 'STAFF') {
       const staff = await db.orm.public.Staff.where({ accountId: requestingUserId }).first();
       if (!staff) throw new NotFoundError('No staff profile found for this account');
-      if (appointment.staffId !== staff.id) throw new ForbiddenError('You can only access appointments assigned to you');
+      if (staffIdOf(appointment) !== staff.id) throw new ForbiddenError('You can only access appointments assigned to you');
       return;
     }
     throw new ForbiddenError('You do not have permission to access this appointment');
@@ -499,7 +506,6 @@ export class AppointmentsService {
     id: string;
     appointmentCode: string;
     customerId: string;
-    staffId: string | null;
     appointmentDate: Date | string;
     startTime: Date | string;
     endTime: Date | string;
@@ -513,7 +519,7 @@ export class AppointmentsService {
       id: appointment.id,
       appointmentCode: appointment.appointmentCode,
       customerId: appointment.customerId,
-      staffId: appointment.staffId,
+      staffId: staffIdOf(appointment),
       appointmentDate: dateString(appointment.appointmentDate),
       startTime: normalizeTimeOnly(appointment.startTime),
       endTime: normalizeTimeOnly(appointment.endTime),

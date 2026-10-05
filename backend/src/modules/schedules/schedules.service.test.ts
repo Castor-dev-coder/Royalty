@@ -148,7 +148,8 @@ test('staff schedule creation stores PostgreSQL weekday and date-only values', a
   }, staffAccountId);
 
   assert.equal(inserted?.dayOfWeek, 0);
-  assert.equal(inserted?.effectiveFrom.toISOString(), '2099-01-04T00:00:00.000Z');
+  // `effective_from` is a PostgreSQL `date` column: the boundary receives a date-only string.
+  assert.equal(inserted?.effectiveFrom, '2099-01-04');
   assert.equal(result.dayOfWeek, 7);
   assert.equal(result.startTime, '09:00');
   assert.equal(result.effectiveFrom.toISOString(), '2099-01-04T00:00:00.000Z');
@@ -225,7 +226,8 @@ test('schedule request creation stores a calendar date and returns normalized ti
     requestedEndTime: '10:00',
     requestType: 'TIME_OFF',
   }, staffAccountId);
-  assert.equal(requestInput[0]?.requestedDate.toISOString(), '2099-01-05T00:00:00.000Z');
+  // `requested_date` is a PostgreSQL `date` column: the boundary receives a date-only string.
+  assert.equal(requestInput[0]?.requestedDate, '2099-01-05');
   assert.equal(result.requestedDate.toISOString(), '2099-01-05T00:00:00.000Z');
   assert.equal(result.requestedStartTime, '09:00');
   assert.equal(result.requestedEndTime, '10:00');

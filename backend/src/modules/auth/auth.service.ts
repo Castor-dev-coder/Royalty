@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs';
 import { db } from '../../prisma/db.js';
+import { pgVarchar } from '../../prisma/contract-compat.js';
 import { createAccessToken, createRefreshToken, verifyRefreshToken } from '../../lib/jwt.js';
 import { ConflictError, UnauthorizedError, NotFoundError } from '../../errors/index.js';
 
@@ -30,7 +31,7 @@ interface TransactionContext {
 export class AuthService {
   static async register(email: string, password: string, profile: CustomerRegistrationProfile): Promise<AuthResult> {
     // Check if account already exists
-    const existing = await db.orm.public.Account.where({ email }).first();
+    const existing = await db.orm.public.Account.where({ email: pgVarchar<255>(email) }).first();
     if (existing) {
       throw new ConflictError('An account with this email already exists');
     }
@@ -40,7 +41,7 @@ export class AuthService {
 
     const account = await db.transaction(async (tx: TransactionContext) => {
       const createdAccount = await tx.orm.public.Account.create({
-        email,
+        email: pgVarchar<255>(email),
         passwordHash,
         role: 'CUSTOMER',
         status: 'ACTIVE',
@@ -48,10 +49,10 @@ export class AuthService {
 
       await tx.orm.public.Customer.create({
         accountId: createdAccount.id,
-        firstName: profile.firstName,
-        lastName: profile.lastName,
-        gender: profile.gender ?? null,
-        phone: profile.phone ?? null,
+        firstName: pgVarchar<100>(profile.firstName),
+        lastName: pgVarchar<100>(profile.lastName),
+        gender: profile.gender ? pgVarchar<30>(profile.gender) : null,
+        phone: profile.phone ? pgVarchar<30>(profile.phone) : null,
       });
 
       return createdAccount;
@@ -73,7 +74,7 @@ export class AuthService {
 
   static async login(email: string, password: string): Promise<AuthResult> {
     // Find account
-    const account = await db.orm.public.Account.where({ email }).first();
+    const account = await db.orm.public.Account.where({ email: pgVarchar<255>(email) }).first();
     if (!account) {
       throw new UnauthorizedError('Invalid email or password');
     }

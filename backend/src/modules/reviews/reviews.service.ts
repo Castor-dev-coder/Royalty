@@ -1,4 +1,5 @@
 import { db } from '../../prisma/db.js';
+import { staffIdOf } from '../../prisma/contract-compat.js';
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../errors/index.js';
 import { dateString } from '../appointments/appointments.rules.js';
 import { getReviewEligibility } from './reviews.rules.js';
@@ -113,9 +114,10 @@ export class ReviewsService {
   }): Promise<ReviewInfo> {
     const appointment = await db.orm.public.Appointment.where({ id: review.appointmentId }).first();
     if (!appointment) throw new NotFoundError('Review appointment not found');
+    const appointmentStaffId = staffIdOf(appointment);
     const [serviceRows, staff] = await Promise.all([
       db.orm.public.AppointmentService.where({ appointmentId: appointment.id }).all(),
-      appointment.staffId ? db.orm.public.Staff.where({ id: appointment.staffId }).first() : Promise.resolve(null),
+      appointmentStaffId ? db.orm.public.Staff.where({ id: appointmentStaffId }).first() : Promise.resolve(null),
     ]);
 
     return {

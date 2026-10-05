@@ -19,7 +19,8 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@prisma/orm-postgres": "^8.0.0-rc.11",
+    "@prisma/orm-postgres": "^8.0.0-rc.12",
+    "@prisma/orm-target-postgres": "^8.0.0-rc.12",
     "bcryptjs": "^3.0.3",
     "dotenv": "^18.0.0",
     "express": "^5.2.1",
@@ -31,7 +32,7 @@
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^26.6.1",
-    "prisma": "^8.0.0-rc.15",
+    "prisma": "^8.0.0-rc.17",
     "tsx": "^4.23.13",
     "typescript": "^5.9.3"
   }

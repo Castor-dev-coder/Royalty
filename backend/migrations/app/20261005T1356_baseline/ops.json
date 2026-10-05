@@ -1,0 +1,3195 @@
+[
+  {
+    "id": "schema.public",
+    "label": "Create schema \"public\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres"
+    },
+    "precheck": [],
+    "execute": [
+      {
+        "description": "Create schema \"public\"",
+        "sql": "CREATE SCHEMA IF NOT EXISTS \"public\"",
+        "params": []
+      }
+    ],
+    "postcheck": []
+  },
+  {
+    "id": "createNativeEnumType.account_role",
+    "label": "Create enum type \"account_role\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "type",
+        "name": "account_role"
+      }
+    },
+    "precheck": [],
+    "execute": [
+      {
+        "description": "create enum type \"account_role\"",
+        "sql": "CREATE TYPE \"public\".\"account_role\" AS ENUM ('ADMIN', 'MANAGER', 'STAFF', 'CUSTOMER')",
+        "params": []
+      }
+    ],
+    "postcheck": []
+  },
+  {
+    "id": "createNativeEnumType.account_status",
+    "label": "Create enum type \"account_status\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "type",
+        "name": "account_status"
+      }
+    },
+    "precheck": [],
+    "execute": [
+      {
+        "description": "create enum type \"account_status\"",
+        "sql": "CREATE TYPE \"public\".\"account_status\" AS ENUM ('ACTIVE', 'DEACTIVATED')",
+        "params": []
+      }
+    ],
+    "postcheck": []
+  },
+  {
+    "id": "createNativeEnumType.appointment_status",
+    "label": "Create enum type \"appointment_status\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "type",
+        "name": "appointment_status"
+      }
+    },
+    "precheck": [],
+    "execute": [
+      {
+        "description": "create enum type \"appointment_status\"",
+        "sql": "CREATE TYPE \"public\".\"appointment_status\" AS ENUM ('RESERVED', 'CONFIRMED', 'COMPLETED', 'CANCELLED', 'NO_SHOW')",
+        "params": []
+      }
+    ],
+    "postcheck": []
+  },
+  {
+    "id": "createNativeEnumType.employment_type",
+    "label": "Create enum type \"employment_type\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "type",
+        "name": "employment_type"
+      }
+    },
+    "precheck": [],
+    "execute": [
+      {
+        "description": "create enum type \"employment_type\"",
+        "sql": "CREATE TYPE \"public\".\"employment_type\" AS ENUM ('FULL_TIME', 'PART_TIME')",
+        "params": []
+      }
+    ],
+    "postcheck": []
+  },
+  {
+    "id": "createNativeEnumType.payment_method",
+    "label": "Create enum type \"payment_method\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "type",
+        "name": "payment_method"
+      }
+    },
+    "precheck": [],
+    "execute": [
+      {
+        "description": "create enum type \"payment_method\"",
+        "sql": "CREATE TYPE \"public\".\"payment_method\" AS ENUM ('CASH', 'GCASH')",
+        "params": []
+      }
+    ],
+    "postcheck": []
+  },
+  {
+    "id": "createNativeEnumType.payment_status",
+    "label": "Create enum type \"payment_status\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "type",
+        "name": "payment_status"
+      }
+    },
+    "precheck": [],
+    "execute": [
+      {
+        "description": "create enum type \"payment_status\"",
+        "sql": "CREATE TYPE \"public\".\"payment_status\" AS ENUM ('UNVERIFIED', 'VERIFIED', 'REJECTED')",
+        "params": []
+      }
+    ],
+    "postcheck": []
+  },
+  {
+    "id": "createNativeEnumType.schedule_request_status",
+    "label": "Create enum type \"schedule_request_status\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "type",
+        "name": "schedule_request_status"
+      }
+    },
+    "precheck": [],
+    "execute": [
+      {
+        "description": "create enum type \"schedule_request_status\"",
+        "sql": "CREATE TYPE \"public\".\"schedule_request_status\" AS ENUM ('PENDING', 'APPROVED', 'REJECTED')",
+        "params": []
+      }
+    ],
+    "postcheck": []
+  },
+  {
+    "id": "createNativeEnumType.staff_work_status",
+    "label": "Create enum type \"staff_work_status\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "type",
+        "name": "staff_work_status"
+      }
+    },
+    "precheck": [],
+    "execute": [
+      {
+        "description": "create enum type \"staff_work_status\"",
+        "sql": "CREATE TYPE \"public\".\"staff_work_status\" AS ENUM ('ON_DUTY', 'DAY_OFF', 'UNAVAILABLE')",
+        "params": []
+      }
+    ],
+    "postcheck": []
+  },
+  {
+    "id": "table.accounts",
+    "label": "Create table \"accounts\"",
+    "summary": "Creates table \"accounts\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "accounts"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"accounts\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"accounts\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"accounts\"",
+        "sql": "CREATE TABLE \"public\".\"accounts\" (\n  \"created_at\" timestamptz DEFAULT (now()) NOT NULL,\n  \"email\" character varying(255) NOT NULL,\n  \"id\" uuid DEFAULT (gen_random_uuid()) NOT NULL,\n  \"password_hash\" text NOT NULL,\n  \"role\" \"account_role\" DEFAULT 'CUSTOMER'::\"account_role\" NOT NULL,\n  \"status\" \"account_status\" DEFAULT 'ACTIVE'::\"account_status\" NOT NULL,\n  \"updated_at\" timestamptz DEFAULT (now()) NOT NULL,\n  CONSTRAINT \"accounts_pkey\" PRIMARY KEY (\"id\")\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"accounts\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"accounts\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "table.appointment_services",
+    "label": "Create table \"appointment_services\"",
+    "summary": "Creates table \"appointment_services\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "appointment_services"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"appointment_services\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"appointment_services\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"appointment_services\"",
+        "sql": "CREATE TABLE \"public\".\"appointment_services\" (\n  \"appointment_id\" uuid NOT NULL,\n  \"created_at\" timestamptz DEFAULT (now()) NOT NULL,\n  \"duration_minutes\" int4 NOT NULL,\n  \"id\" uuid DEFAULT (gen_random_uuid()) NOT NULL,\n  \"price\" numeric(10,2) NOT NULL,\n  \"service_id\" uuid NOT NULL,\n  \"service_name\" character varying(150) NOT NULL,\n  CONSTRAINT \"appointment_services_pkey\" PRIMARY KEY (\"id\"),\n  CONSTRAINT \"appointment_service_duration_positive\" CHECK ((duration_minutes > 0)),\n  CONSTRAINT \"appointment_service_price_positive\" CHECK ((price >= (0)::numeric))\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"appointment_services\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"appointment_services\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "table.appointments",
+    "label": "Create table \"appointments\"",
+    "summary": "Creates table \"appointments\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "appointments"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"appointments\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"appointments\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"appointments\"",
+        "sql": "CREATE TABLE \"public\".\"appointments\" (\n  \"appointment_code\" character varying(6) NOT NULL,\n  \"appointment_date\" date NOT NULL,\n  \"created_at\" timestamptz DEFAULT (now()) NOT NULL,\n  \"customer_id\" uuid NOT NULL,\n  \"end_time\" time NOT NULL,\n  \"id\" uuid DEFAULT (gen_random_uuid()) NOT NULL,\n  \"start_time\" time NOT NULL,\n  \"status\" \"appointment_status\" DEFAULT 'RESERVED'::\"appointment_status\" NOT NULL,\n  \"total_amount\" numeric(10,2) DEFAULT '0'::numeric(10,2) NOT NULL,\n  \"updated_at\" timestamptz DEFAULT (now()) NOT NULL,\n  CONSTRAINT \"appointments_pkey\" PRIMARY KEY (\"id\"),\n  CONSTRAINT \"valid_appointment_amount\" CHECK ((total_amount >= (0)::numeric)),\n  CONSTRAINT \"valid_appointment_time\" CHECK ((start_time < end_time))\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"appointments\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"appointments\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "table.audit_logs",
+    "label": "Create table \"audit_logs\"",
+    "summary": "Creates table \"audit_logs\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "audit_logs"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"audit_logs\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"audit_logs\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"audit_logs\"",
+        "sql": "CREATE TABLE \"public\".\"audit_logs\" (\n  \"action\" character varying(100) NOT NULL,\n  \"actor_account_id\" uuid,\n  \"created_at\" timestamptz DEFAULT (now()) NOT NULL,\n  \"entity_id\" uuid,\n  \"entity_type\" character varying(100) NOT NULL,\n  \"id\" uuid DEFAULT (gen_random_uuid()) NOT NULL,\n  \"new_data\" jsonb,\n  \"old_data\" jsonb,\n  CONSTRAINT \"audit_logs_pkey\" PRIMARY KEY (\"id\")\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"audit_logs\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"audit_logs\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "table.business_hours",
+    "label": "Create table \"business_hours\"",
+    "summary": "Creates table \"business_hours\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "business_hours"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"business_hours\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"business_hours\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"business_hours\"",
+        "sql": "CREATE TABLE \"public\".\"business_hours\" (\n  \"close_time\" time,\n  \"created_at\" timestamptz DEFAULT (now()) NOT NULL,\n  \"day_of_week\" int2 NOT NULL,\n  \"id\" uuid DEFAULT (gen_random_uuid()) NOT NULL,\n  \"is_open\" bool DEFAULT true NOT NULL,\n  \"open_time\" time,\n  \"updated_at\" timestamptz DEFAULT (now()) NOT NULL,\n  CONSTRAINT \"business_hours_pkey\" PRIMARY KEY (\"id\"),\n  CONSTRAINT \"valid_business_time\" CHECK (((is_open = false) OR ((open_time IS NOT NULL) AND (close_time IS NOT NULL) AND (open_time < close_time)))),\n  CONSTRAINT \"valid_day_of_week\" CHECK (((day_of_week >= 0) AND (day_of_week <= 6)))\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"business_hours\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"business_hours\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "table.customers",
+    "label": "Create table \"customers\"",
+    "summary": "Creates table \"customers\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "customers"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"customers\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"customers\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"customers\"",
+        "sql": "CREATE TABLE \"public\".\"customers\" (\n  \"account_id\" uuid NOT NULL,\n  \"created_at\" timestamptz DEFAULT (now()) NOT NULL,\n  \"first_name\" character varying(100) NOT NULL,\n  \"gender\" character varying(30),\n  \"id\" uuid DEFAULT (gen_random_uuid()) NOT NULL,\n  \"last_name\" character varying(100) NOT NULL,\n  \"phone\" character varying(30),\n  \"updated_at\" timestamptz DEFAULT (now()) NOT NULL,\n  CONSTRAINT \"customers_pkey\" PRIMARY KEY (\"id\")\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"customers\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"customers\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "table.payments",
+    "label": "Create table \"payments\"",
+    "summary": "Creates table \"payments\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "payments"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"payments\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"payments\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"payments\"",
+        "sql": "CREATE TABLE \"public\".\"payments\" (\n  \"amount\" numeric(10,2) NOT NULL,\n  \"appointment_id\" uuid NOT NULL,\n  \"created_at\" timestamptz DEFAULT (now()) NOT NULL,\n  \"id\" uuid DEFAULT (gen_random_uuid()) NOT NULL,\n  \"payment_method\" \"payment_method\" NOT NULL,\n  \"status\" \"payment_status\" DEFAULT 'UNVERIFIED'::\"payment_status\" NOT NULL,\n  \"updated_at\" timestamptz DEFAULT (now()) NOT NULL,\n  \"verified_at\" timestamptz,\n  \"verified_by\" uuid,\n  CONSTRAINT \"payments_pkey\" PRIMARY KEY (\"id\"),\n  CONSTRAINT \"payment_amount_positive\" CHECK ((amount >= (0)::numeric)),\n  CONSTRAINT \"valid_verified_payment\" CHECK (((status <> 'VERIFIED'::payment_status) OR ((verified_by IS NOT NULL) AND (verified_at IS NOT NULL))))\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"payments\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"payments\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "table.reviews",
+    "label": "Create table \"reviews\"",
+    "summary": "Creates table \"reviews\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "reviews"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"reviews\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"reviews\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"reviews\"",
+        "sql": "CREATE TABLE \"public\".\"reviews\" (\n  \"appointment_id\" uuid NOT NULL,\n  \"comment\" text,\n  \"created_at\" timestamptz DEFAULT (now()) NOT NULL,\n  \"customer_id\" uuid NOT NULL,\n  \"id\" uuid DEFAULT (gen_random_uuid()) NOT NULL,\n  \"rating\" int2 NOT NULL,\n  \"updated_at\" timestamptz DEFAULT (now()) NOT NULL,\n  CONSTRAINT \"reviews_pkey\" PRIMARY KEY (\"id\"),\n  CONSTRAINT \"valid_rating\" CHECK (((rating >= 1) AND (rating <= 5)))\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"reviews\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"reviews\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "table.schedule_requests",
+    "label": "Create table \"schedule_requests\"",
+    "summary": "Creates table \"schedule_requests\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "schedule_requests"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"schedule_requests\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"schedule_requests\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"schedule_requests\"",
+        "sql": "CREATE TABLE \"public\".\"schedule_requests\" (\n  \"created_at\" timestamptz DEFAULT (now()) NOT NULL,\n  \"id\" uuid DEFAULT (gen_random_uuid()) NOT NULL,\n  \"reason\" text,\n  \"request_type\" character varying(50) NOT NULL,\n  \"requested_date\" date NOT NULL,\n  \"requested_end_time\" time,\n  \"requested_start_time\" time,\n  \"reviewed_at\" timestamptz,\n  \"reviewed_by\" uuid,\n  \"staff_id\" uuid NOT NULL,\n  \"status\" \"schedule_request_status\" DEFAULT 'PENDING'::\"schedule_request_status\" NOT NULL,\n  CONSTRAINT \"schedule_requests_pkey\" PRIMARY KEY (\"id\"),\n  CONSTRAINT \"valid_requested_time\" CHECK ((((requested_start_time IS NULL) AND (requested_end_time IS NULL)) OR ((requested_start_time IS NOT NULL) AND (requested_end_time IS NOT NULL) AND (requested_start_time < requested_end_time))))\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"schedule_requests\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"schedule_requests\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "table.service_categories",
+    "label": "Create table \"service_categories\"",
+    "summary": "Creates table \"service_categories\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "service_categories"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"service_categories\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"service_categories\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"service_categories\"",
+        "sql": "CREATE TABLE \"public\".\"service_categories\" (\n  \"created_at\" timestamptz DEFAULT (now()) NOT NULL,\n  \"id\" uuid DEFAULT (gen_random_uuid()) NOT NULL,\n  \"is_active\" bool DEFAULT true NOT NULL,\n  \"name\" character varying(100) NOT NULL,\n  \"updated_at\" timestamptz DEFAULT (now()) NOT NULL,\n  CONSTRAINT \"service_categories_pkey\" PRIMARY KEY (\"id\")\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"service_categories\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"service_categories\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "table.services",
+    "label": "Create table \"services\"",
+    "summary": "Creates table \"services\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "services"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"services\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"services\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"services\"",
+        "sql": "CREATE TABLE \"public\".\"services\" (\n  \"category_id\" uuid NOT NULL,\n  \"created_at\" timestamptz DEFAULT (now()) NOT NULL,\n  \"description\" text,\n  \"duration_minutes\" int4 NOT NULL,\n  \"id\" uuid DEFAULT (gen_random_uuid()) NOT NULL,\n  \"is_active\" bool DEFAULT true NOT NULL,\n  \"name\" character varying(150) NOT NULL,\n  \"price\" numeric(10,2) NOT NULL,\n  \"updated_at\" timestamptz DEFAULT (now()) NOT NULL,\n  CONSTRAINT \"services_pkey\" PRIMARY KEY (\"id\"),\n  CONSTRAINT \"service_duration_positive\" CHECK ((duration_minutes > 0)),\n  CONSTRAINT \"service_price_positive\" CHECK ((price >= (0)::numeric))\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"services\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"services\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "table.staff",
+    "label": "Create table \"staff\"",
+    "summary": "Creates table \"staff\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "staff"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"staff\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"staff\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"staff\"",
+        "sql": "CREATE TABLE \"public\".\"staff\" (\n  \"account_id\" uuid NOT NULL,\n  \"created_at\" timestamptz DEFAULT (now()) NOT NULL,\n  \"employment_type\" \"employment_type\" NOT NULL,\n  \"first_name\" character varying(100) NOT NULL,\n  \"id\" uuid DEFAULT (gen_random_uuid()) NOT NULL,\n  \"last_name\" character varying(100) NOT NULL,\n  \"phone\" character varying(30),\n  \"primary_role\" character varying(100) NOT NULL,\n  \"updated_at\" timestamptz DEFAULT (now()) NOT NULL,\n  \"work_status\" \"staff_work_status\" DEFAULT 'DAY_OFF'::\"staff_work_status\" NOT NULL,\n  CONSTRAINT \"staff_pkey\" PRIMARY KEY (\"id\")\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"staff\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"staff\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "table.staff_schedules",
+    "label": "Create table \"staff_schedules\"",
+    "summary": "Creates table \"staff_schedules\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "staff_schedules"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"staff_schedules\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"staff_schedules\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"staff_schedules\"",
+        "sql": "CREATE TABLE \"public\".\"staff_schedules\" (\n  \"created_at\" timestamptz DEFAULT (now()) NOT NULL,\n  \"day_of_week\" int2 NOT NULL,\n  \"effective_from\" date NOT NULL,\n  \"effective_until\" date,\n  \"end_time\" time NOT NULL,\n  \"id\" uuid DEFAULT (gen_random_uuid()) NOT NULL,\n  \"is_active\" bool DEFAULT true NOT NULL,\n  \"staff_id\" uuid NOT NULL,\n  \"start_time\" time NOT NULL,\n  \"updated_at\" timestamptz DEFAULT (now()) NOT NULL,\n  CONSTRAINT \"staff_schedules_pkey\" PRIMARY KEY (\"id\"),\n  CONSTRAINT \"valid_schedule_dates\" CHECK (((effective_until IS NULL) OR (effective_until >= effective_from))),\n  CONSTRAINT \"valid_schedule_day\" CHECK (((day_of_week >= 0) AND (day_of_week <= 6))),\n  CONSTRAINT \"valid_staff_schedule_time\" CHECK ((start_time < end_time))\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"staff_schedules\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"staff_schedules\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "table.staff_services",
+    "label": "Create table \"staff_services\"",
+    "summary": "Creates table \"staff_services\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "staff_services"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"staff_services\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"staff_services\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"staff_services\"",
+        "sql": "CREATE TABLE \"public\".\"staff_services\" (\n  \"created_at\" timestamptz DEFAULT (now()) NOT NULL,\n  \"service_id\" uuid NOT NULL,\n  \"staff_id\" uuid NOT NULL,\n  CONSTRAINT \"staff_services_pkey\" PRIMARY KEY (\"staff_id\", \"service_id\")\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"staff_services\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"staff_services\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "unique.accounts.accounts_email_key",
+    "label": "Add unique constraint on \"accounts\" (email)",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "unique",
+        "name": "accounts_email_key",
+        "table": "accounts"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure constraint \"accounts_email_key\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "accounts_email_key",
+          "public",
+          "\"public\".\"accounts\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add unique constraint \"accounts_email_key\"",
+        "sql": "ALTER TABLE \"public\".\"accounts\" ADD CONSTRAINT \"accounts_email_key\" UNIQUE (\"email\")"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify constraint \"accounts_email_key\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "accounts_email_key",
+          "public",
+          "\"public\".\"accounts\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "unique.appointment_services.unique_appointment_service",
+    "label": "Add unique constraint on \"appointment_services\" (appointment_id, service_id)",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "unique",
+        "name": "unique_appointment_service",
+        "table": "appointment_services"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure constraint \"unique_appointment_service\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "unique_appointment_service",
+          "public",
+          "\"public\".\"appointment_services\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add unique constraint \"unique_appointment_service\"",
+        "sql": "ALTER TABLE \"public\".\"appointment_services\" ADD CONSTRAINT \"unique_appointment_service\" UNIQUE (\"appointment_id\", \"service_id\")"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify constraint \"unique_appointment_service\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "unique_appointment_service",
+          "public",
+          "\"public\".\"appointment_services\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "unique.appointments.appointments_appointment_code_key",
+    "label": "Add unique constraint on \"appointments\" (appointment_code)",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "unique",
+        "name": "appointments_appointment_code_key",
+        "table": "appointments"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure constraint \"appointments_appointment_code_key\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "appointments_appointment_code_key",
+          "public",
+          "\"public\".\"appointments\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add unique constraint \"appointments_appointment_code_key\"",
+        "sql": "ALTER TABLE \"public\".\"appointments\" ADD CONSTRAINT \"appointments_appointment_code_key\" UNIQUE (\"appointment_code\")"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify constraint \"appointments_appointment_code_key\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "appointments_appointment_code_key",
+          "public",
+          "\"public\".\"appointments\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "unique.business_hours.unique_business_day",
+    "label": "Add unique constraint on \"business_hours\" (day_of_week)",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "unique",
+        "name": "unique_business_day",
+        "table": "business_hours"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure constraint \"unique_business_day\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "unique_business_day",
+          "public",
+          "\"public\".\"business_hours\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add unique constraint \"unique_business_day\"",
+        "sql": "ALTER TABLE \"public\".\"business_hours\" ADD CONSTRAINT \"unique_business_day\" UNIQUE (\"day_of_week\")"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify constraint \"unique_business_day\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "unique_business_day",
+          "public",
+          "\"public\".\"business_hours\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "unique.customers.customers_account_id_key",
+    "label": "Add unique constraint on \"customers\" (account_id)",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "unique",
+        "name": "customers_account_id_key",
+        "table": "customers"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure constraint \"customers_account_id_key\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "customers_account_id_key",
+          "public",
+          "\"public\".\"customers\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add unique constraint \"customers_account_id_key\"",
+        "sql": "ALTER TABLE \"public\".\"customers\" ADD CONSTRAINT \"customers_account_id_key\" UNIQUE (\"account_id\")"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify constraint \"customers_account_id_key\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "customers_account_id_key",
+          "public",
+          "\"public\".\"customers\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "unique.payments.payments_appointment_id_key",
+    "label": "Add unique constraint on \"payments\" (appointment_id)",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "unique",
+        "name": "payments_appointment_id_key",
+        "table": "payments"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure constraint \"payments_appointment_id_key\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "payments_appointment_id_key",
+          "public",
+          "\"public\".\"payments\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add unique constraint \"payments_appointment_id_key\"",
+        "sql": "ALTER TABLE \"public\".\"payments\" ADD CONSTRAINT \"payments_appointment_id_key\" UNIQUE (\"appointment_id\")"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify constraint \"payments_appointment_id_key\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "payments_appointment_id_key",
+          "public",
+          "\"public\".\"payments\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "unique.reviews.reviews_appointment_id_key",
+    "label": "Add unique constraint on \"reviews\" (appointment_id)",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "unique",
+        "name": "reviews_appointment_id_key",
+        "table": "reviews"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure constraint \"reviews_appointment_id_key\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "reviews_appointment_id_key",
+          "public",
+          "\"public\".\"reviews\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add unique constraint \"reviews_appointment_id_key\"",
+        "sql": "ALTER TABLE \"public\".\"reviews\" ADD CONSTRAINT \"reviews_appointment_id_key\" UNIQUE (\"appointment_id\")"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify constraint \"reviews_appointment_id_key\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "reviews_appointment_id_key",
+          "public",
+          "\"public\".\"reviews\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "unique.service_categories.service_categories_name_key",
+    "label": "Add unique constraint on \"service_categories\" (name)",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "unique",
+        "name": "service_categories_name_key",
+        "table": "service_categories"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure constraint \"service_categories_name_key\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "service_categories_name_key",
+          "public",
+          "\"public\".\"service_categories\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add unique constraint \"service_categories_name_key\"",
+        "sql": "ALTER TABLE \"public\".\"service_categories\" ADD CONSTRAINT \"service_categories_name_key\" UNIQUE (\"name\")"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify constraint \"service_categories_name_key\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "service_categories_name_key",
+          "public",
+          "\"public\".\"service_categories\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "unique.staff.staff_account_id_key",
+    "label": "Add unique constraint on \"staff\" (account_id)",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "unique",
+        "name": "staff_account_id_key",
+        "table": "staff"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure constraint \"staff_account_id_key\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "staff_account_id_key",
+          "public",
+          "\"public\".\"staff\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add unique constraint \"staff_account_id_key\"",
+        "sql": "ALTER TABLE \"public\".\"staff\" ADD CONSTRAINT \"staff_account_id_key\" UNIQUE (\"account_id\")"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify constraint \"staff_account_id_key\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "staff_account_id_key",
+          "public",
+          "\"public\".\"staff\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.accounts.idx_accounts_role",
+    "label": "Create index \"idx_accounts_role\" on \"accounts\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "idx_accounts_role",
+        "table": "accounts"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"idx_accounts_role\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_accounts_role\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"idx_accounts_role\"",
+        "sql": "CREATE INDEX \"idx_accounts_role\" ON \"public\".\"accounts\" (\"role\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"idx_accounts_role\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_accounts_role\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.accounts.idx_accounts_status",
+    "label": "Create index \"idx_accounts_status\" on \"accounts\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "idx_accounts_status",
+        "table": "accounts"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"idx_accounts_status\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_accounts_status\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"idx_accounts_status\"",
+        "sql": "CREATE INDEX \"idx_accounts_status\" ON \"public\".\"accounts\" (\"status\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"idx_accounts_status\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_accounts_status\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.appointment_services.idx_appointment_services_appointment_id",
+    "label": "Create index \"idx_appointment_services_appointment_id\" on \"appointment_services\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "idx_appointment_services_appointment_id",
+        "table": "appointment_services"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"idx_appointment_services_appointment_id\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_appointment_services_appointment_id\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"idx_appointment_services_appointment_id\"",
+        "sql": "CREATE INDEX \"idx_appointment_services_appointment_id\" ON \"public\".\"appointment_services\" (\"appointment_id\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"idx_appointment_services_appointment_id\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_appointment_services_appointment_id\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.appointments.idx_appointments_customer_id",
+    "label": "Create index \"idx_appointments_customer_id\" on \"appointments\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "idx_appointments_customer_id",
+        "table": "appointments"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"idx_appointments_customer_id\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_appointments_customer_id\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"idx_appointments_customer_id\"",
+        "sql": "CREATE INDEX \"idx_appointments_customer_id\" ON \"public\".\"appointments\" (\"customer_id\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"idx_appointments_customer_id\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_appointments_customer_id\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.appointments.idx_appointments_date",
+    "label": "Create index \"idx_appointments_date\" on \"appointments\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "idx_appointments_date",
+        "table": "appointments"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"idx_appointments_date\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_appointments_date\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"idx_appointments_date\"",
+        "sql": "CREATE INDEX \"idx_appointments_date\" ON \"public\".\"appointments\" (\"appointment_date\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"idx_appointments_date\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_appointments_date\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.appointments.idx_appointments_date_time",
+    "label": "Create index \"idx_appointments_date_time\" on \"appointments\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "idx_appointments_date_time",
+        "table": "appointments"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"idx_appointments_date_time\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_appointments_date_time\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"idx_appointments_date_time\"",
+        "sql": "CREATE INDEX \"idx_appointments_date_time\" ON \"public\".\"appointments\" (\"appointment_date\", \"start_time\", \"end_time\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"idx_appointments_date_time\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_appointments_date_time\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.appointments.idx_appointments_status",
+    "label": "Create index \"idx_appointments_status\" on \"appointments\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "idx_appointments_status",
+        "table": "appointments"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"idx_appointments_status\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_appointments_status\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"idx_appointments_status\"",
+        "sql": "CREATE INDEX \"idx_appointments_status\" ON \"public\".\"appointments\" (\"status\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"idx_appointments_status\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_appointments_status\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.audit_logs.idx_audit_logs_actor",
+    "label": "Create index \"idx_audit_logs_actor\" on \"audit_logs\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "idx_audit_logs_actor",
+        "table": "audit_logs"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"idx_audit_logs_actor\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_audit_logs_actor\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"idx_audit_logs_actor\"",
+        "sql": "CREATE INDEX \"idx_audit_logs_actor\" ON \"public\".\"audit_logs\" (\"actor_account_id\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"idx_audit_logs_actor\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_audit_logs_actor\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.audit_logs.idx_audit_logs_created_at",
+    "label": "Create index \"idx_audit_logs_created_at\" on \"audit_logs\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "idx_audit_logs_created_at",
+        "table": "audit_logs"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"idx_audit_logs_created_at\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_audit_logs_created_at\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"idx_audit_logs_created_at\"",
+        "sql": "CREATE INDEX \"idx_audit_logs_created_at\" ON \"public\".\"audit_logs\" (\"created_at\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"idx_audit_logs_created_at\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_audit_logs_created_at\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.audit_logs.idx_audit_logs_entity",
+    "label": "Create index \"idx_audit_logs_entity\" on \"audit_logs\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "idx_audit_logs_entity",
+        "table": "audit_logs"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"idx_audit_logs_entity\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_audit_logs_entity\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"idx_audit_logs_entity\"",
+        "sql": "CREATE INDEX \"idx_audit_logs_entity\" ON \"public\".\"audit_logs\" (\"entity_type\", \"entity_id\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"idx_audit_logs_entity\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_audit_logs_entity\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.customers.idx_customers_account_id",
+    "label": "Create index \"idx_customers_account_id\" on \"customers\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "idx_customers_account_id",
+        "table": "customers"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"idx_customers_account_id\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_customers_account_id\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"idx_customers_account_id\"",
+        "sql": "CREATE INDEX \"idx_customers_account_id\" ON \"public\".\"customers\" (\"account_id\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"idx_customers_account_id\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_customers_account_id\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.payments.idx_payments_created_at",
+    "label": "Create index \"idx_payments_created_at\" on \"payments\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "idx_payments_created_at",
+        "table": "payments"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"idx_payments_created_at\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_payments_created_at\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"idx_payments_created_at\"",
+        "sql": "CREATE INDEX \"idx_payments_created_at\" ON \"public\".\"payments\" (\"created_at\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"idx_payments_created_at\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_payments_created_at\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.payments.idx_payments_status",
+    "label": "Create index \"idx_payments_status\" on \"payments\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "idx_payments_status",
+        "table": "payments"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"idx_payments_status\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_payments_status\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"idx_payments_status\"",
+        "sql": "CREATE INDEX \"idx_payments_status\" ON \"public\".\"payments\" (\"status\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"idx_payments_status\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_payments_status\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.reviews.idx_reviews_customer_id",
+    "label": "Create index \"idx_reviews_customer_id\" on \"reviews\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "idx_reviews_customer_id",
+        "table": "reviews"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"idx_reviews_customer_id\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_reviews_customer_id\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"idx_reviews_customer_id\"",
+        "sql": "CREATE INDEX \"idx_reviews_customer_id\" ON \"public\".\"reviews\" (\"customer_id\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"idx_reviews_customer_id\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_reviews_customer_id\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.schedule_requests.idx_schedule_requests_staff_id",
+    "label": "Create index \"idx_schedule_requests_staff_id\" on \"schedule_requests\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "idx_schedule_requests_staff_id",
+        "table": "schedule_requests"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"idx_schedule_requests_staff_id\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_schedule_requests_staff_id\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"idx_schedule_requests_staff_id\"",
+        "sql": "CREATE INDEX \"idx_schedule_requests_staff_id\" ON \"public\".\"schedule_requests\" (\"staff_id\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"idx_schedule_requests_staff_id\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_schedule_requests_staff_id\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.schedule_requests.idx_schedule_requests_status",
+    "label": "Create index \"idx_schedule_requests_status\" on \"schedule_requests\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "idx_schedule_requests_status",
+        "table": "schedule_requests"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"idx_schedule_requests_status\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_schedule_requests_status\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"idx_schedule_requests_status\"",
+        "sql": "CREATE INDEX \"idx_schedule_requests_status\" ON \"public\".\"schedule_requests\" (\"status\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"idx_schedule_requests_status\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_schedule_requests_status\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.services.idx_services_active",
+    "label": "Create index \"idx_services_active\" on \"services\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "idx_services_active",
+        "table": "services"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"idx_services_active\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_services_active\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"idx_services_active\"",
+        "sql": "CREATE INDEX \"idx_services_active\" ON \"public\".\"services\" (\"is_active\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"idx_services_active\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_services_active\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.services.idx_services_category_id",
+    "label": "Create index \"idx_services_category_id\" on \"services\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "idx_services_category_id",
+        "table": "services"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"idx_services_category_id\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_services_category_id\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"idx_services_category_id\"",
+        "sql": "CREATE INDEX \"idx_services_category_id\" ON \"public\".\"services\" (\"category_id\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"idx_services_category_id\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_services_category_id\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.staff.idx_staff_account_id",
+    "label": "Create index \"idx_staff_account_id\" on \"staff\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "idx_staff_account_id",
+        "table": "staff"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"idx_staff_account_id\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_staff_account_id\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"idx_staff_account_id\"",
+        "sql": "CREATE INDEX \"idx_staff_account_id\" ON \"public\".\"staff\" (\"account_id\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"idx_staff_account_id\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_staff_account_id\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.staff.idx_staff_work_status",
+    "label": "Create index \"idx_staff_work_status\" on \"staff\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "idx_staff_work_status",
+        "table": "staff"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"idx_staff_work_status\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_staff_work_status\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"idx_staff_work_status\"",
+        "sql": "CREATE INDEX \"idx_staff_work_status\" ON \"public\".\"staff\" (\"work_status\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"idx_staff_work_status\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_staff_work_status\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.staff_schedules.idx_staff_schedules_staff_id",
+    "label": "Create index \"idx_staff_schedules_staff_id\" on \"staff_schedules\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "idx_staff_schedules_staff_id",
+        "table": "staff_schedules"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"idx_staff_schedules_staff_id\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_staff_schedules_staff_id\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"idx_staff_schedules_staff_id\"",
+        "sql": "CREATE INDEX \"idx_staff_schedules_staff_id\" ON \"public\".\"staff_schedules\" (\"staff_id\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"idx_staff_schedules_staff_id\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_staff_schedules_staff_id\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.staff_services.idx_staff_services_service_id",
+    "label": "Create index \"idx_staff_services_service_id\" on \"staff_services\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "idx_staff_services_service_id",
+        "table": "staff_services"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"idx_staff_services_service_id\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_staff_services_service_id\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"idx_staff_services_service_id\"",
+        "sql": "CREATE INDEX \"idx_staff_services_service_id\" ON \"public\".\"staff_services\" (\"service_id\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"idx_staff_services_service_id\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_staff_services_service_id\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "foreignKey.appointment_services.fk_appointment_service_appointment",
+    "label": "Add foreign key \"fk_appointment_service_appointment\" on \"appointment_services\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "foreignKey",
+        "name": "fk_appointment_service_appointment",
+        "table": "appointment_services"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure FK \"fk_appointment_service_appointment\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_appointment_service_appointment",
+          "public",
+          "\"public\".\"appointment_services\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add FK \"fk_appointment_service_appointment\"",
+        "sql": "ALTER TABLE \"public\".\"appointment_services\"\nADD CONSTRAINT \"fk_appointment_service_appointment\"\nFOREIGN KEY (\"appointment_id\")\nREFERENCES \"public\".\"appointments\" (\"id\")\nON DELETE CASCADE"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify FK \"fk_appointment_service_appointment\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_appointment_service_appointment",
+          "public",
+          "\"public\".\"appointment_services\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "foreignKey.appointment_services.fk_appointment_service_service",
+    "label": "Add foreign key \"fk_appointment_service_service\" on \"appointment_services\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "foreignKey",
+        "name": "fk_appointment_service_service",
+        "table": "appointment_services"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure FK \"fk_appointment_service_service\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_appointment_service_service",
+          "public",
+          "\"public\".\"appointment_services\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add FK \"fk_appointment_service_service\"",
+        "sql": "ALTER TABLE \"public\".\"appointment_services\"\nADD CONSTRAINT \"fk_appointment_service_service\"\nFOREIGN KEY (\"service_id\")\nREFERENCES \"public\".\"services\" (\"id\")\nON DELETE RESTRICT"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify FK \"fk_appointment_service_service\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_appointment_service_service",
+          "public",
+          "\"public\".\"appointment_services\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "foreignKey.appointments.fk_appointment_customer",
+    "label": "Add foreign key \"fk_appointment_customer\" on \"appointments\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "foreignKey",
+        "name": "fk_appointment_customer",
+        "table": "appointments"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure FK \"fk_appointment_customer\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_appointment_customer",
+          "public",
+          "\"public\".\"appointments\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add FK \"fk_appointment_customer\"",
+        "sql": "ALTER TABLE \"public\".\"appointments\"\nADD CONSTRAINT \"fk_appointment_customer\"\nFOREIGN KEY (\"customer_id\")\nREFERENCES \"public\".\"customers\" (\"id\")\nON DELETE RESTRICT"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify FK \"fk_appointment_customer\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_appointment_customer",
+          "public",
+          "\"public\".\"appointments\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "foreignKey.audit_logs.fk_audit_actor",
+    "label": "Add foreign key \"fk_audit_actor\" on \"audit_logs\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "foreignKey",
+        "name": "fk_audit_actor",
+        "table": "audit_logs"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure FK \"fk_audit_actor\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_audit_actor",
+          "public",
+          "\"public\".\"audit_logs\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add FK \"fk_audit_actor\"",
+        "sql": "ALTER TABLE \"public\".\"audit_logs\"\nADD CONSTRAINT \"fk_audit_actor\"\nFOREIGN KEY (\"actor_account_id\")\nREFERENCES \"public\".\"accounts\" (\"id\")\nON DELETE SET NULL"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify FK \"fk_audit_actor\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_audit_actor",
+          "public",
+          "\"public\".\"audit_logs\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "foreignKey.customers.fk_customer_account",
+    "label": "Add foreign key \"fk_customer_account\" on \"customers\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "foreignKey",
+        "name": "fk_customer_account",
+        "table": "customers"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure FK \"fk_customer_account\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_customer_account",
+          "public",
+          "\"public\".\"customers\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add FK \"fk_customer_account\"",
+        "sql": "ALTER TABLE \"public\".\"customers\"\nADD CONSTRAINT \"fk_customer_account\"\nFOREIGN KEY (\"account_id\")\nREFERENCES \"public\".\"accounts\" (\"id\")\nON DELETE RESTRICT"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify FK \"fk_customer_account\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_customer_account",
+          "public",
+          "\"public\".\"customers\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "foreignKey.payments.fk_payment_appointment",
+    "label": "Add foreign key \"fk_payment_appointment\" on \"payments\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "foreignKey",
+        "name": "fk_payment_appointment",
+        "table": "payments"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure FK \"fk_payment_appointment\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_payment_appointment",
+          "public",
+          "\"public\".\"payments\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add FK \"fk_payment_appointment\"",
+        "sql": "ALTER TABLE \"public\".\"payments\"\nADD CONSTRAINT \"fk_payment_appointment\"\nFOREIGN KEY (\"appointment_id\")\nREFERENCES \"public\".\"appointments\" (\"id\")\nON DELETE RESTRICT"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify FK \"fk_payment_appointment\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_payment_appointment",
+          "public",
+          "\"public\".\"payments\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "foreignKey.payments.fk_payment_verifier",
+    "label": "Add foreign key \"fk_payment_verifier\" on \"payments\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "foreignKey",
+        "name": "fk_payment_verifier",
+        "table": "payments"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure FK \"fk_payment_verifier\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_payment_verifier",
+          "public",
+          "\"public\".\"payments\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add FK \"fk_payment_verifier\"",
+        "sql": "ALTER TABLE \"public\".\"payments\"\nADD CONSTRAINT \"fk_payment_verifier\"\nFOREIGN KEY (\"verified_by\")\nREFERENCES \"public\".\"accounts\" (\"id\")\nON DELETE RESTRICT"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify FK \"fk_payment_verifier\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_payment_verifier",
+          "public",
+          "\"public\".\"payments\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "foreignKey.reviews.fk_review_appointment",
+    "label": "Add foreign key \"fk_review_appointment\" on \"reviews\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "foreignKey",
+        "name": "fk_review_appointment",
+        "table": "reviews"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure FK \"fk_review_appointment\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_review_appointment",
+          "public",
+          "\"public\".\"reviews\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add FK \"fk_review_appointment\"",
+        "sql": "ALTER TABLE \"public\".\"reviews\"\nADD CONSTRAINT \"fk_review_appointment\"\nFOREIGN KEY (\"appointment_id\")\nREFERENCES \"public\".\"appointments\" (\"id\")\nON DELETE RESTRICT"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify FK \"fk_review_appointment\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_review_appointment",
+          "public",
+          "\"public\".\"reviews\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "foreignKey.reviews.fk_review_customer",
+    "label": "Add foreign key \"fk_review_customer\" on \"reviews\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "foreignKey",
+        "name": "fk_review_customer",
+        "table": "reviews"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure FK \"fk_review_customer\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_review_customer",
+          "public",
+          "\"public\".\"reviews\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add FK \"fk_review_customer\"",
+        "sql": "ALTER TABLE \"public\".\"reviews\"\nADD CONSTRAINT \"fk_review_customer\"\nFOREIGN KEY (\"customer_id\")\nREFERENCES \"public\".\"customers\" (\"id\")\nON DELETE RESTRICT"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify FK \"fk_review_customer\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_review_customer",
+          "public",
+          "\"public\".\"reviews\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "foreignKey.schedule_requests.fk_schedule_request_reviewer",
+    "label": "Add foreign key \"fk_schedule_request_reviewer\" on \"schedule_requests\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "foreignKey",
+        "name": "fk_schedule_request_reviewer",
+        "table": "schedule_requests"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure FK \"fk_schedule_request_reviewer\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_schedule_request_reviewer",
+          "public",
+          "\"public\".\"schedule_requests\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add FK \"fk_schedule_request_reviewer\"",
+        "sql": "ALTER TABLE \"public\".\"schedule_requests\"\nADD CONSTRAINT \"fk_schedule_request_reviewer\"\nFOREIGN KEY (\"reviewed_by\")\nREFERENCES \"public\".\"accounts\" (\"id\")\nON DELETE RESTRICT"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify FK \"fk_schedule_request_reviewer\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_schedule_request_reviewer",
+          "public",
+          "\"public\".\"schedule_requests\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "foreignKey.schedule_requests.fk_schedule_request_staff",
+    "label": "Add foreign key \"fk_schedule_request_staff\" on \"schedule_requests\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "foreignKey",
+        "name": "fk_schedule_request_staff",
+        "table": "schedule_requests"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure FK \"fk_schedule_request_staff\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_schedule_request_staff",
+          "public",
+          "\"public\".\"schedule_requests\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add FK \"fk_schedule_request_staff\"",
+        "sql": "ALTER TABLE \"public\".\"schedule_requests\"\nADD CONSTRAINT \"fk_schedule_request_staff\"\nFOREIGN KEY (\"staff_id\")\nREFERENCES \"public\".\"staff\" (\"id\")\nON DELETE CASCADE"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify FK \"fk_schedule_request_staff\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_schedule_request_staff",
+          "public",
+          "\"public\".\"schedule_requests\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "foreignKey.services.fk_service_category",
+    "label": "Add foreign key \"fk_service_category\" on \"services\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "foreignKey",
+        "name": "fk_service_category",
+        "table": "services"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure FK \"fk_service_category\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_service_category",
+          "public",
+          "\"public\".\"services\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add FK \"fk_service_category\"",
+        "sql": "ALTER TABLE \"public\".\"services\"\nADD CONSTRAINT \"fk_service_category\"\nFOREIGN KEY (\"category_id\")\nREFERENCES \"public\".\"service_categories\" (\"id\")\nON DELETE RESTRICT"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify FK \"fk_service_category\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_service_category",
+          "public",
+          "\"public\".\"services\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "foreignKey.staff.fk_staff_account",
+    "label": "Add foreign key \"fk_staff_account\" on \"staff\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "foreignKey",
+        "name": "fk_staff_account",
+        "table": "staff"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure FK \"fk_staff_account\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_staff_account",
+          "public",
+          "\"public\".\"staff\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add FK \"fk_staff_account\"",
+        "sql": "ALTER TABLE \"public\".\"staff\"\nADD CONSTRAINT \"fk_staff_account\"\nFOREIGN KEY (\"account_id\")\nREFERENCES \"public\".\"accounts\" (\"id\")\nON DELETE RESTRICT"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify FK \"fk_staff_account\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_staff_account",
+          "public",
+          "\"public\".\"staff\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "foreignKey.staff_schedules.fk_staff_schedule_staff",
+    "label": "Add foreign key \"fk_staff_schedule_staff\" on \"staff_schedules\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "foreignKey",
+        "name": "fk_staff_schedule_staff",
+        "table": "staff_schedules"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure FK \"fk_staff_schedule_staff\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_staff_schedule_staff",
+          "public",
+          "\"public\".\"staff_schedules\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add FK \"fk_staff_schedule_staff\"",
+        "sql": "ALTER TABLE \"public\".\"staff_schedules\"\nADD CONSTRAINT \"fk_staff_schedule_staff\"\nFOREIGN KEY (\"staff_id\")\nREFERENCES \"public\".\"staff\" (\"id\")\nON DELETE CASCADE"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify FK \"fk_staff_schedule_staff\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_staff_schedule_staff",
+          "public",
+          "\"public\".\"staff_schedules\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "foreignKey.staff_services.fk_staff_services_service",
+    "label": "Add foreign key \"fk_staff_services_service\" on \"staff_services\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "foreignKey",
+        "name": "fk_staff_services_service",
+        "table": "staff_services"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure FK \"fk_staff_services_service\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_staff_services_service",
+          "public",
+          "\"public\".\"staff_services\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add FK \"fk_staff_services_service\"",
+        "sql": "ALTER TABLE \"public\".\"staff_services\"\nADD CONSTRAINT \"fk_staff_services_service\"\nFOREIGN KEY (\"service_id\")\nREFERENCES \"public\".\"services\" (\"id\")\nON DELETE RESTRICT"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify FK \"fk_staff_services_service\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_staff_services_service",
+          "public",
+          "\"public\".\"staff_services\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "foreignKey.staff_services.fk_staff_services_staff",
+    "label": "Add foreign key \"fk_staff_services_staff\" on \"staff_services\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "foreignKey",
+        "name": "fk_staff_services_staff",
+        "table": "staff_services"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure FK \"fk_staff_services_staff\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_staff_services_staff",
+          "public",
+          "\"public\".\"staff_services\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add FK \"fk_staff_services_staff\"",
+        "sql": "ALTER TABLE \"public\".\"staff_services\"\nADD CONSTRAINT \"fk_staff_services_staff\"\nFOREIGN KEY (\"staff_id\")\nREFERENCES \"public\".\"staff\" (\"id\")\nON DELETE CASCADE"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify FK \"fk_staff_services_staff\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_staff_services_staff",
+          "public",
+          "\"public\".\"staff_services\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "rowLevelSecurity.public.accounts",
+    "label": "Enable row-level security on \"accounts\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "rowLevelSecurity",
+        "name": "accounts"
+      }
+    },
+    "precheck": [
+      {
+        "description": "check RLS is not already enabled on \"accounts\"",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_class\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"relnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"c\".\"relname\" = $2 AND NOT (\"c\".\"relrowsecurity\"))) AS \"result\"",
+        "params": [
+          "public",
+          "accounts"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "enable row-level security on \"accounts\"",
+        "sql": "ALTER TABLE \"public\".\"accounts\" ENABLE ROW LEVEL SECURITY"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify row-level security is enabled on \"accounts\"",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_class\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"relnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"c\".\"relname\" = $2 AND \"c\".\"relrowsecurity\")) AS \"result\"",
+        "params": [
+          "public",
+          "accounts"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "rowLevelSecurity.public.appointment_services",
+    "label": "Enable row-level security on \"appointment_services\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "rowLevelSecurity",
+        "name": "appointment_services"
+      }
+    },
+    "precheck": [
+      {
+        "description": "check RLS is not already enabled on \"appointment_services\"",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_class\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"relnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"c\".\"relname\" = $2 AND NOT (\"c\".\"relrowsecurity\"))) AS \"result\"",
+        "params": [
+          "public",
+          "appointment_services"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "enable row-level security on \"appointment_services\"",
+        "sql": "ALTER TABLE \"public\".\"appointment_services\" ENABLE ROW LEVEL SECURITY"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify row-level security is enabled on \"appointment_services\"",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_class\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"relnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"c\".\"relname\" = $2 AND \"c\".\"relrowsecurity\")) AS \"result\"",
+        "params": [
+          "public",
+          "appointment_services"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "rowLevelSecurity.public.appointments",
+    "label": "Enable row-level security on \"appointments\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "rowLevelSecurity",
+        "name": "appointments"
+      }
+    },
+    "precheck": [
+      {
+        "description": "check RLS is not already enabled on \"appointments\"",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_class\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"relnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"c\".\"relname\" = $2 AND NOT (\"c\".\"relrowsecurity\"))) AS \"result\"",
+        "params": [
+          "public",
+          "appointments"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "enable row-level security on \"appointments\"",
+        "sql": "ALTER TABLE \"public\".\"appointments\" ENABLE ROW LEVEL SECURITY"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify row-level security is enabled on \"appointments\"",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_class\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"relnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"c\".\"relname\" = $2 AND \"c\".\"relrowsecurity\")) AS \"result\"",
+        "params": [
+          "public",
+          "appointments"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "rowLevelSecurity.public.audit_logs",
+    "label": "Enable row-level security on \"audit_logs\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "rowLevelSecurity",
+        "name": "audit_logs"
+      }
+    },
+    "precheck": [
+      {
+        "description": "check RLS is not already enabled on \"audit_logs\"",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_class\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"relnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"c\".\"relname\" = $2 AND NOT (\"c\".\"relrowsecurity\"))) AS \"result\"",
+        "params": [
+          "public",
+          "audit_logs"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "enable row-level security on \"audit_logs\"",
+        "sql": "ALTER TABLE \"public\".\"audit_logs\" ENABLE ROW LEVEL SECURITY"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify row-level security is enabled on \"audit_logs\"",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_class\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"relnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"c\".\"relname\" = $2 AND \"c\".\"relrowsecurity\")) AS \"result\"",
+        "params": [
+          "public",
+          "audit_logs"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "rowLevelSecurity.public.business_hours",
+    "label": "Enable row-level security on \"business_hours\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "rowLevelSecurity",
+        "name": "business_hours"
+      }
+    },
+    "precheck": [
+      {
+        "description": "check RLS is not already enabled on \"business_hours\"",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_class\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"relnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"c\".\"relname\" = $2 AND NOT (\"c\".\"relrowsecurity\"))) AS \"result\"",
+        "params": [
+          "public",
+          "business_hours"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "enable row-level security on \"business_hours\"",
+        "sql": "ALTER TABLE \"public\".\"business_hours\" ENABLE ROW LEVEL SECURITY"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify row-level security is enabled on \"business_hours\"",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_class\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"relnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"c\".\"relname\" = $2 AND \"c\".\"relrowsecurity\")) AS \"result\"",
+        "params": [
+          "public",
+          "business_hours"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "rowLevelSecurity.public.customers",
+    "label": "Enable row-level security on \"customers\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "rowLevelSecurity",
+        "name": "customers"
+      }
+    },
+    "precheck": [
+      {
+        "description": "check RLS is not already enabled on \"customers\"",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_class\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"relnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"c\".\"relname\" = $2 AND NOT (\"c\".\"relrowsecurity\"))) AS \"result\"",
+        "params": [
+          "public",
+          "customers"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "enable row-level security on \"customers\"",
+        "sql": "ALTER TABLE \"public\".\"customers\" ENABLE ROW LEVEL SECURITY"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify row-level security is enabled on \"customers\"",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_class\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"relnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"c\".\"relname\" = $2 AND \"c\".\"relrowsecurity\")) AS \"result\"",
+        "params": [
+          "public",
+          "customers"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "rowLevelSecurity.public.payments",
+    "label": "Enable row-level security on \"payments\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "rowLevelSecurity",
+        "name": "payments"
+      }
+    },
+    "precheck": [
+      {
+        "description": "check RLS is not already enabled on \"payments\"",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_class\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"relnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"c\".\"relname\" = $2 AND NOT (\"c\".\"relrowsecurity\"))) AS \"result\"",
+        "params": [
+          "public",
+          "payments"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "enable row-level security on \"payments\"",
+        "sql": "ALTER TABLE \"public\".\"payments\" ENABLE ROW LEVEL SECURITY"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify row-level security is enabled on \"payments\"",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_class\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"relnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"c\".\"relname\" = $2 AND \"c\".\"relrowsecurity\")) AS \"result\"",
+        "params": [
+          "public",
+          "payments"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "rowLevelSecurity.public.reviews",
+    "label": "Enable row-level security on \"reviews\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "rowLevelSecurity",
+        "name": "reviews"
+      }
+    },
+    "precheck": [
+      {
+        "description": "check RLS is not already enabled on \"reviews\"",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_class\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"relnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"c\".\"relname\" = $2 AND NOT (\"c\".\"relrowsecurity\"))) AS \"result\"",
+        "params": [
+          "public",
+          "reviews"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "enable row-level security on \"reviews\"",
+        "sql": "ALTER TABLE \"public\".\"reviews\" ENABLE ROW LEVEL SECURITY"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify row-level security is enabled on \"reviews\"",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_class\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"relnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"c\".\"relname\" = $2 AND \"c\".\"relrowsecurity\")) AS \"result\"",
+        "params": [
+          "public",
+          "reviews"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "rowLevelSecurity.public.schedule_requests",
+    "label": "Enable row-level security on \"schedule_requests\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "rowLevelSecurity",
+        "name": "schedule_requests"
+      }
+    },
+    "precheck": [
+      {
+        "description": "check RLS is not already enabled on \"schedule_requests\"",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_class\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"relnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"c\".\"relname\" = $2 AND NOT (\"c\".\"relrowsecurity\"))) AS \"result\"",
+        "params": [
+          "public",
+          "schedule_requests"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "enable row-level security on \"schedule_requests\"",
+        "sql": "ALTER TABLE \"public\".\"schedule_requests\" ENABLE ROW LEVEL SECURITY"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify row-level security is enabled on \"schedule_requests\"",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_class\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"relnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"c\".\"relname\" = $2 AND \"c\".\"relrowsecurity\")) AS \"result\"",
+        "params": [
+          "public",
+          "schedule_requests"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "rowLevelSecurity.public.service_categories",
+    "label": "Enable row-level security on \"service_categories\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "rowLevelSecurity",
+        "name": "service_categories"
+      }
+    },
+    "precheck": [
+      {
+        "description": "check RLS is not already enabled on \"service_categories\"",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_class\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"relnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"c\".\"relname\" = $2 AND NOT (\"c\".\"relrowsecurity\"))) AS \"result\"",
+        "params": [
+          "public",
+          "service_categories"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "enable row-level security on \"service_categories\"",
+        "sql": "ALTER TABLE \"public\".\"service_categories\" ENABLE ROW LEVEL SECURITY"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify row-level security is enabled on \"service_categories\"",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_class\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"relnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"c\".\"relname\" = $2 AND \"c\".\"relrowsecurity\")) AS \"result\"",
+        "params": [
+          "public",
+          "service_categories"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "rowLevelSecurity.public.services",
+    "label": "Enable row-level security on \"services\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "rowLevelSecurity",
+        "name": "services"
+      }
+    },
+    "precheck": [
+      {
+        "description": "check RLS is not already enabled on \"services\"",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_class\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"relnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"c\".\"relname\" = $2 AND NOT (\"c\".\"relrowsecurity\"))) AS \"result\"",
+        "params": [
+          "public",
+          "services"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "enable row-level security on \"services\"",
+        "sql": "ALTER TABLE \"public\".\"services\" ENABLE ROW LEVEL SECURITY"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify row-level security is enabled on \"services\"",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_class\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"relnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"c\".\"relname\" = $2 AND \"c\".\"relrowsecurity\")) AS \"result\"",
+        "params": [
+          "public",
+          "services"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "rowLevelSecurity.public.staff",
+    "label": "Enable row-level security on \"staff\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "rowLevelSecurity",
+        "name": "staff"
+      }
+    },
+    "precheck": [
+      {
+        "description": "check RLS is not already enabled on \"staff\"",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_class\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"relnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"c\".\"relname\" = $2 AND NOT (\"c\".\"relrowsecurity\"))) AS \"result\"",
+        "params": [
+          "public",
+          "staff"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "enable row-level security on \"staff\"",
+        "sql": "ALTER TABLE \"public\".\"staff\" ENABLE ROW LEVEL SECURITY"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify row-level security is enabled on \"staff\"",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_class\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"relnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"c\".\"relname\" = $2 AND \"c\".\"relrowsecurity\")) AS \"result\"",
+        "params": [
+          "public",
+          "staff"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "rowLevelSecurity.public.staff_schedules",
+    "label": "Enable row-level security on \"staff_schedules\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "rowLevelSecurity",
+        "name": "staff_schedules"
+      }
+    },
+    "precheck": [
+      {
+        "description": "check RLS is not already enabled on \"staff_schedules\"",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_class\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"relnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"c\".\"relname\" = $2 AND NOT (\"c\".\"relrowsecurity\"))) AS \"result\"",
+        "params": [
+          "public",
+          "staff_schedules"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "enable row-level security on \"staff_schedules\"",
+        "sql": "ALTER TABLE \"public\".\"staff_schedules\" ENABLE ROW LEVEL SECURITY"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify row-level security is enabled on \"staff_schedules\"",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_class\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"relnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"c\".\"relname\" = $2 AND \"c\".\"relrowsecurity\")) AS \"result\"",
+        "params": [
+          "public",
+          "staff_schedules"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "rowLevelSecurity.public.staff_services",
+    "label": "Enable row-level security on \"staff_services\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "rowLevelSecurity",
+        "name": "staff_services"
+      }
+    },
+    "precheck": [
+      {
+        "description": "check RLS is not already enabled on \"staff_services\"",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_class\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"relnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"c\".\"relname\" = $2 AND NOT (\"c\".\"relrowsecurity\"))) AS \"result\"",
+        "params": [
+          "public",
+          "staff_services"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "enable row-level security on \"staff_services\"",
+        "sql": "ALTER TABLE \"public\".\"staff_services\" ENABLE ROW LEVEL SECURITY"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify row-level security is enabled on \"staff_services\"",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_class\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"relnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"c\".\"relname\" = $2 AND \"c\".\"relrowsecurity\")) AS \"result\"",
+        "params": [
+          "public",
+          "staff_services"
+        ]
+      }
+    ]
+  }
+]

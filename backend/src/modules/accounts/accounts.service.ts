@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs';
 import { db } from '../../prisma/db.js';
+import { pgVarchar } from '../../prisma/contract-compat.js';
 import { NotFoundError, ForbiddenError, ConflictError, BadRequestError } from '../../errors/index.js';
 import { generateAuditLog } from '../../utils/audit.js';
 
@@ -163,7 +164,7 @@ export class AccountService {
   static async updateOwnProfile(accountId: string, newEmail: string): Promise<AccountProfile> {
     // Check if email is already taken by another account
     if (newEmail) {
-      const existing = await db.orm.public.Account.where({ email: newEmail }).first();
+      const existing = await db.orm.public.Account.where({ email: pgVarchar<255>(newEmail) }).first();
       if (existing && existing.id !== accountId) {
         throw new ConflictError('This email is already in use by another account');
       }

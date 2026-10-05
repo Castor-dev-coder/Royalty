@@ -1,6 +1,7 @@
 import { db } from '../../prisma/db.js';
 import { NotFoundError, ForbiddenError, ConflictError, BadRequestError } from '../../errors/index.js';
 import { generateAuditLog } from '../../utils/audit.js';
+import { pgNumeric, pgVarchar } from '../../prisma/contract-compat.js';
 
 // Decimal serialization for JSON responses
 function serializeDecimal(value: unknown): number {
@@ -82,13 +83,13 @@ export class ServiceService {
     }
 
     // Check for duplicate name (case-insensitive would require raw SQL)
-    const existing = await db.orm.public.ServiceCategory.where({ name: data.name }).first();
+    const existing = await db.orm.public.ServiceCategory.where({ name: pgVarchar<100>(data.name) }).first();
     if (existing) {
       throw new ConflictError('A service category with this name already exists');
     }
 
     const category = await db.orm.public.ServiceCategory.create({
-      name: data.name,
+      name: pgVarchar<100>(data.name),
       isActive: true,
     });
 
@@ -125,7 +126,7 @@ export class ServiceService {
 
     // Check for duplicate name if changing
     if (data.name && data.name !== category.name) {
-      const existing = await db.orm.public.ServiceCategory.where({ name: data.name }).first();
+      const existing = await db.orm.public.ServiceCategory.where({ name: pgVarchar<100>(data.name) }).first();
       if (existing) {
         throw new ConflictError('A service category with this name already exists');
       }
@@ -228,16 +229,16 @@ export class ServiceService {
     }
 
     // Check for duplicate service name in the same category
-    const existing = await db.orm.public.Service.where({ name: data.name, categoryId: data.categoryId }).first();
+    const existing = await db.orm.public.Service.where({ name: pgVarchar<200>(data.name), categoryId: data.categoryId }).first();
     if (existing) {
       throw new ConflictError('A service with this name already exists in this category');
     }
 
     const service = await db.orm.public.Service.create({
       categoryId: data.categoryId,
-      name: data.name,
+      name: pgVarchar<200>(data.name),
       description: data.description ?? null,
-      price: data.price.toString(),
+      price: pgNumeric(data.price.toString()),
       durationMinutes: data.durationMinutes,
       isActive: true,
     });
@@ -301,7 +302,7 @@ export class ServiceService {
       // Check for duplicate name in new category
       if (data.name && data.name !== service.name) {
         const existing = await db.orm.public.Service.where({
-          name: data.name,
+          name: pgVarchar<200>(data.name),
           categoryId: data.categoryId,
         }).first();
         if (existing) {
@@ -311,7 +312,7 @@ export class ServiceService {
     } else if (data.name && data.name !== service.name) {
       // Check for duplicate name in same category
       const existing = await db.orm.public.Service.where({
-        name: data.name,
+        name: pgVarchar<200>(data.name),
         categoryId: service.categoryId,
       }).first();
       if (existing) {
