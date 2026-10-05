@@ -1,4 +1,5 @@
 import { BadRequestError } from '../../errors/index.js';
+import { dateOnlyToUtcDate, normalizeDateOnly } from '../../utils/date-time.js';
 
 export type AppointmentStatus = 'RESERVED' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW';
 
@@ -33,11 +34,11 @@ export function localDateAndTime(now: Date, timeZone: string): { date: string; t
 }
 
 export function dateOnly(value: string): Date {
-  return new Date(`${value}T00:00:00.000Z`);
+  return dateOnlyToUtcDate(value);
 }
 
-export function dateString(value: Date): string {
-  return value.toISOString().slice(0, 10);
+export function dateString(value: Date | string): string {
+  return normalizeDateOnly(value);
 }
 
 export function isoDayOfWeek(value: string): number {
@@ -125,7 +126,7 @@ export function sumDecimalStrings(values: string[]): string {
 }
 
 export function hasAppointmentTimePassed(
-  appointmentDate: Date,
+  appointmentDate: Date | string,
   appointmentTime: string,
   now: Date,
   timeZone: string

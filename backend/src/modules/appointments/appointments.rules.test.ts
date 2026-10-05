@@ -12,6 +12,14 @@ import {
   sumDecimalStrings,
   timeRangesOverlap,
 } from './appointments.rules.js';
+import {
+  dateOnlyToUtcDate,
+  dateTimeInputToDateOnly,
+  isoWeekdayToPostgres,
+  normalizeDateOnly,
+  normalizeTimeOnly,
+  postgresWeekdayToIso,
+} from '../../utils/date-time.js';
 
 const id = '00000000-0000-4000-8000-000000000001';
 
@@ -56,6 +64,30 @@ test('time ranges use half-open boundaries for adjacent appointments', () => {
 test('appointment weekdays use ISO numbering', () => {
   assert.equal(isoDayOfWeek('2026-09-28'), 1);
   assert.equal(isoDayOfWeek('2026-10-04'), 7);
+});
+
+test('weekdays convert at the database boundary between ISO and PostgreSQL conventions', () => {
+  assert.deepEqual([1, 2, 3, 4, 5, 6, 7].map(isoWeekdayToPostgres), [1, 2, 3, 4, 5, 6, 0]);
+  assert.deepEqual([0, 1, 2, 3, 4, 5, 6].map(postgresWeekdayToIso), [7, 1, 2, 3, 4, 5, 6]);
+  assert.throws(() => isoWeekdayToPostgres(0), RangeError);
+  assert.throws(() => postgresWeekdayToIso(7), RangeError);
+});
+
+test('date-only values retain their calendar date and serialize at UTC midnight', () => {
+  assert.equal(normalizeDateOnly('2026-10-05'), '2026-10-05');
+  assert.equal(normalizeDateOnly('2026-10-05T23:30:00-07:00'), '2026-10-05');
+  assert.equal(dateOnlyToUtcDate('2026-10-05').toISOString(), '2026-10-05T00:00:00.000Z');
+  assert.equal(dateTimeInputToDateOnly('2026-10-05T23:30:00-07:00').toISOString(), '2026-10-05T00:00:00.000Z');
+  assert.equal(normalizeDateOnly(new Date('2026-10-05T00:00:00.000Z')), '2026-10-05');
+  assert.equal(normalizeDateOnly(new Date(2026, 9, 5, 0, 0, 0)), '2026-10-05');
+  assert.throws(() => normalizeDateOnly('2026-02-30'), RangeError);
+});
+
+test('time-only values normalize PostgreSQL seconds to the public HH:MM shape', () => {
+  assert.equal(normalizeTimeOnly('09:05'), '09:05');
+  assert.equal(normalizeTimeOnly('09:05:37'), '09:05');
+  assert.equal(normalizeTimeOnly(new Date('2026-10-05T09:05:00.000Z')), '09:05');
+  assert.throws(() => normalizeTimeOnly('24:00:00'), RangeError);
 });
 
 test('same-day future checks use the configured studio timezone', () => {

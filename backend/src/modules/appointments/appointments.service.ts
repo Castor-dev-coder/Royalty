@@ -3,6 +3,7 @@ import { db } from '../../prisma/db.js';
 import { env } from '../../config/env.js';
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../errors/index.js';
 import { generateAuditLog } from '../../utils/audit.js';
+import { isoWeekdayToPostgres, normalizeTimeOnly } from '../../utils/date-time.js';
 import { StaffService, type EligibleStaffInfo } from '../staff/staff.service.js';
 import type { CreateAppointmentInput } from './appointments.schemas.js';
 import type { CalendarAvailabilityQuery } from './appointments.schemas.js';
@@ -25,7 +26,7 @@ type AppointmentRecord = {
   appointmentCode: string;
   customerId: string;
   staffId: string | null;
-  appointmentDate: Date;
+  appointmentDate: Date | string;
   startTime: string;
   endTime: string;
   totalAmount: unknown;
@@ -46,7 +47,7 @@ interface BookingService {
 }
 
 interface BookingPlan {
-  appointmentDate: Date;
+  appointmentDate: Date | string;
   endTime: string;
   totalAmount: string;
   services: BookingService[];
@@ -129,9 +130,11 @@ export class AppointmentsService {
     for (let dateValue = firstDate; dateValue <= lastDate; dateValue += 24 * 60 * 60 * 1000) {
       const date = new Date(dateValue).toISOString().slice(0, 10);
       if (date < localNow.date) continue;
-      const dayOfWeek = isoDayOfWeek(date);
+      const dayOfWeek = isoWeekdayToPostgres(isoDayOfWeek(date));
       const businessHour = await db.orm.public.BusinessHour.where({ dayOfWeek }).first();
       if (!businessHour?.isOpen || !businessHour.openTime || !businessHour.closeTime) continue;
+      const businessOpen = normalizeTimeOnly(businessHour.openTime);
+      const businessClose = normalizeTimeOnly(businessHour.closeTime);
 
       const availableStaff: Array<EligibleCalendarStaff & { windows: ReturnType<typeof buildAvailableStartWindows> }> = [];
       for (const staff of selectedStaff) {
@@ -145,8 +148,8 @@ export class AppointmentsService {
             return dateString(schedule.effectiveFrom) <= date && (!effectiveUntil || effectiveUntil >= date);
           })
           .map((schedule) => ({
-            startTime: schedule.startTime > businessHour.openTime! ? schedule.startTime : businessHour.openTime!,
-            endTime: schedule.endTime < businessHour.closeTime! ? schedule.endTime : businessHour.closeTime!,
+            startTime: normalizeTimeOnly(schedule.startTime) > businessOpen ? normalizeTimeOnly(schedule.startTime) : businessOpen,
+            endTime: normalizeTimeOnly(schedule.endTime) < businessClose ? normalizeTimeOnly(schedule.endTime) : businessClose,
           }))
           .filter((window) => window.startTime < window.endTime);
         if (date === localNow.date) {
@@ -159,7 +162,10 @@ export class AppointmentsService {
 
         const bookedWindows = appointments
           .filter((appointment) => appointment.status === 'RESERVED' || appointment.status === 'CONFIRMED')
-          .map((appointment) => ({ startTime: appointment.startTime, endTime: appointment.endTime }));
+          .map((appointment) => ({
+            startTime: normalizeTimeOnly(appointment.startTime),
+            endTime: normalizeTimeOnly(appointment.endTime),
+          }));
         const windows = buildAvailableStartWindows(scheduleWindows, bookedWindows, durationMinutes);
         if (windows.length > 0) availableStaff.push({ ...staff, windows });
       }
@@ -366,7 +372,7 @@ export class AppointmentsService {
       if (nextStatus !== 'CANCELLED') {
         throw new ForbiddenError('Customers may only cancel their own appointments');
       }
-      if (hasAppointmentTimePassed(appointment.appointmentDate, appointment.startTime, new Date(), env.STUDIO_TIME_ZONE)) {
+      if (hasAppointmentTimePassed(appointment.appointmentDate, normalizeTimeOnly(appointment.startTime), new Date(), env.STUDIO_TIME_ZONE)) {
         throw new ConflictError('An appointment can only be cancelled before its start time');
       }
     } else if (role === 'STAFF') {
@@ -375,10 +381,10 @@ export class AppointmentsService {
       throw new ForbiddenError('You do not have permission to change this appointment');
     }
 
-    if (nextStatus === 'COMPLETED' && !hasAppointmentTimePassed(appointment.appointmentDate, appointment.endTime, new Date(), env.STUDIO_TIME_ZONE)) {
+    if (nextStatus === 'COMPLETED' && !hasAppointmentTimePassed(appointment.appointmentDate, normalizeTimeOnly(appointment.endTime), new Date(), env.STUDIO_TIME_ZONE)) {
       throw new ConflictError('An appointment cannot be completed before its end time');
     }
-    if (nextStatus === 'NO_SHOW' && !hasAppointmentTimePassed(appointment.appointmentDate, appointment.endTime, new Date(), env.STUDIO_TIME_ZONE)) {
+    if (nextStatus === 'NO_SHOW' && !hasAppointmentTimePassed(appointment.appointmentDate, normalizeTimeOnly(appointment.endTime), new Date(), env.STUDIO_TIME_ZONE)) {
       throw new ConflictError('An appointment cannot be marked as no-show before its end time');
     }
 
@@ -432,10 +438,12 @@ export class AppointmentsService {
     }
 
     let available = staff.workStatus === 'ON_DUTY';
-    const dayOfWeek = isoDayOfWeek(data.appointmentDate);
+    const dayOfWeek = isoWeekdayToPostgres(isoDayOfWeek(data.appointmentDate));
     const businessHour = await db.orm.public.BusinessHour.where({ dayOfWeek }).first();
+    const businessOpen = businessHour?.openTime ? normalizeTimeOnly(businessHour.openTime) : null;
+    const businessClose = businessHour?.closeTime ? normalizeTimeOnly(businessHour.closeTime) : null;
     if (!businessHour || !businessHour.isOpen || !businessHour.openTime || !businessHour.closeTime ||
-      data.startTime < businessHour.openTime || endTime > businessHour.closeTime) {
+      !businessOpen || !businessClose || data.startTime < businessOpen || endTime > businessClose) {
       available = false;
     }
 
@@ -445,15 +453,15 @@ export class AppointmentsService {
       const scheduleEndDate = schedule.effectiveUntil ? dateString(schedule.effectiveUntil) : null;
       return dateString(schedule.effectiveFrom) <= data.appointmentDate &&
         (!scheduleEndDate || scheduleEndDate >= data.appointmentDate) &&
-        data.startTime >= schedule.startTime && endTime <= schedule.endTime;
+        data.startTime >= normalizeTimeOnly(schedule.startTime) && endTime <= normalizeTimeOnly(schedule.endTime);
     });
     if (!hasMatchingSchedule || !Number.isFinite(dateValue)) available = false;
 
     const staffAppointments = await db.orm.public.Appointment.where({ staffId: staff.id }).all();
     const hasConflict = staffAppointments.some((appointment) => {
-      if (appointment.appointmentDate.toISOString().slice(0, 10) !== data.appointmentDate) return false;
+      if (dateString(appointment.appointmentDate) !== data.appointmentDate) return false;
       if (appointment.status !== 'RESERVED' && appointment.status !== 'CONFIRMED') return false;
-      return timeRangesOverlap(data.startTime, endTime, appointment.startTime, appointment.endTime);
+      return timeRangesOverlap(data.startTime, endTime, normalizeTimeOnly(appointment.startTime), normalizeTimeOnly(appointment.endTime));
     });
     if (hasConflict) available = false;
 
@@ -492,9 +500,9 @@ export class AppointmentsService {
     appointmentCode: string;
     customerId: string;
     staffId: string | null;
-    appointmentDate: Date;
-    startTime: string;
-    endTime: string;
+    appointmentDate: Date | string;
+    startTime: Date | string;
+    endTime: Date | string;
     totalAmount: unknown;
     status: AppointmentStatus;
     createdAt: Date;
@@ -507,8 +515,8 @@ export class AppointmentsService {
       customerId: appointment.customerId,
       staffId: appointment.staffId,
       appointmentDate: dateString(appointment.appointmentDate),
-      startTime: appointment.startTime,
-      endTime: appointment.endTime,
+      startTime: normalizeTimeOnly(appointment.startTime),
+      endTime: normalizeTimeOnly(appointment.endTime),
       totalAmount: serializeDecimal(appointment.totalAmount),
       status: appointment.status,
       services: services.map((service) => ({
