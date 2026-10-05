@@ -41,8 +41,8 @@ schedulesRouter.patch('/business-hours', requireRole('ADMIN', 'MANAGER'), valida
 // ============================================================
 
 schedulesRouter.get('/staff', requireRole('ADMIN', 'MANAGER'), getAllStaffSchedulesController);
-schedulesRouter.get('/staff/:id', getStaffSchedulesByIdController);
 schedulesRouter.get('/staff/me', getMySchedulesController);
+schedulesRouter.get('/staff/:id', getStaffSchedulesByIdController);
 schedulesRouter.post('/staff', requireRole('ADMIN', 'MANAGER'), validateRequest(createStaffScheduleSchema), createStaffScheduleController);
 schedulesRouter.patch('/staff/:id', requireRole('ADMIN', 'MANAGER'), validateRequest(updateStaffScheduleSchema), updateStaffScheduleController);
 schedulesRouter.delete('/staff/:id', requireRole('ADMIN', 'MANAGER'), deleteStaffScheduleController);

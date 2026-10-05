@@ -1,6 +1,14 @@
 import { db } from '../../prisma/db.js';
 import { NotFoundError, ForbiddenError, ConflictError, BadRequestError } from '../../errors/index.js';
 import { generateAuditLog } from '../../utils/audit.js';
+import {
+  dateOnlyToUtcDate,
+  dateTimeInputToDateOnly,
+  isoWeekdayToPostgres,
+  normalizeDateOnly,
+  normalizeTimeOnly,
+  postgresWeekdayToIso,
+} from '../../utils/date-time.js';
 
 interface TxContext {
   orm: typeof db.orm;
@@ -50,18 +58,63 @@ function timeRangesOverlap(start1: string, end1: string, start2: string, end2: s
 
 // Check if two date ranges overlap
 function dateRangesOverlap(
-  effectiveFrom1: Date,
-  effectiveUntil1: Date | null,
-  effectiveFrom2: Date,
-  effectiveUntil2: Date | null
+  effectiveFrom1: Date | string,
+  effectiveUntil1: Date | string | null,
+  effectiveFrom2: Date | string,
+  effectiveUntil2: Date | string | null
 ): boolean {
-  const start1 = effectiveFrom1;
-  const end1 = effectiveUntil1 ?? new Date(8640000000000000); // Max safe date if null
-  const start2 = effectiveFrom2;
-  const end2 = effectiveUntil2 ?? new Date(8640000000000000);
+  const start1 = normalizeDateOnly(effectiveFrom1);
+  const end1 = effectiveUntil1 ? normalizeDateOnly(effectiveUntil1) : '9999-12-31';
+  const start2 = normalizeDateOnly(effectiveFrom2);
+  const end2 = effectiveUntil2 ? normalizeDateOnly(effectiveUntil2) : '9999-12-31';
 
-  // Ranges overlap if one starts before the other ends
-  return start1 < end2 && start2 < end1;
+  return start1 <= end2 && start2 <= end1;
+}
+
+function mapBusinessHour(hour: {
+  id: string;
+  dayOfWeek: number;
+  openTime: string | null;
+  closeTime: string | null;
+  isOpen: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}): BusinessHoursInfo {
+  return {
+    id: hour.id,
+    dayOfWeek: postgresWeekdayToIso(hour.dayOfWeek),
+    openTime: hour.openTime === null ? null : normalizeTimeOnly(hour.openTime),
+    closeTime: hour.closeTime === null ? null : normalizeTimeOnly(hour.closeTime),
+    isOpen: hour.isOpen,
+    createdAt: hour.createdAt,
+    updatedAt: hour.updatedAt,
+  };
+}
+
+function mapStaffSchedule(schedule: {
+  id: string;
+  staffId: string;
+  dayOfWeek: number;
+  startTime: string;
+  endTime: string;
+  effectiveFrom: Date | string;
+  effectiveUntil: Date | string | null;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}): StaffScheduleInfo {
+  return {
+    id: schedule.id,
+    staffId: schedule.staffId,
+    dayOfWeek: postgresWeekdayToIso(schedule.dayOfWeek),
+    startTime: normalizeTimeOnly(schedule.startTime),
+    endTime: normalizeTimeOnly(schedule.endTime),
+    effectiveFrom: dateOnlyToUtcDate(schedule.effectiveFrom),
+    effectiveUntil: schedule.effectiveUntil === null ? null : dateOnlyToUtcDate(schedule.effectiveUntil),
+    isActive: schedule.isActive,
+    createdAt: schedule.createdAt,
+    updatedAt: schedule.updatedAt,
+  };
 }
 
 export interface BusinessHoursInfo {
@@ -113,15 +166,7 @@ export class SchedulesService {
     }
 
     const hours = await db.orm.public.BusinessHour.orderBy((b) => b.dayOfWeek.asc()).all();
-    return hours.map((h) => ({
-      id: h.id,
-      dayOfWeek: h.dayOfWeek,
-      openTime: h.openTime,
-      closeTime: h.closeTime,
-      isOpen: h.isOpen,
-      createdAt: h.createdAt,
-      updatedAt: h.updatedAt,
-    }));
+    return hours.map(mapBusinessHour).sort((left, right) => left.dayOfWeek - right.dayOfWeek);
   }
 
   /** Replace entire business hours configuration atomically */
@@ -172,7 +217,7 @@ export class SchedulesService {
         // Insert new business hours
         for (const day of days) {
           await tx.orm.public.BusinessHour.create({
-            dayOfWeek: day.dayOfWeek,
+            dayOfWeek: isoWeekdayToPostgres(day.dayOfWeek),
             openTime: day.openTime,
             closeTime: day.closeTime,
             isOpen: day.isOpen,
@@ -181,7 +226,7 @@ export class SchedulesService {
       });
 
       // Fetch and return the updated business hours
-      result = await this.getBusinessHours(requestingUserId);
+      result = await this.getBusinessHours(requester.role);
     } catch (error) {
       throw new BadRequestError(`Failed to replace business hours: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
@@ -213,7 +258,7 @@ export class SchedulesService {
     const existingSchedules = await db.orm.public.StaffSchedule
       .where({
         staffId,
-        dayOfWeek,
+        dayOfWeek: isoWeekdayToPostgres(dayOfWeek),
         isActive: true,
       })
       .all();
@@ -225,7 +270,7 @@ export class SchedulesService {
       }
 
       // Check time overlap
-      if (timeRangesOverlap(startTime, endTime, schedule.startTime, schedule.endTime)) {
+      if (timeRangesOverlap(startTime, endTime, normalizeTimeOnly(schedule.startTime), normalizeTimeOnly(schedule.endTime))) {
         // Check effective date overlap
         if (dateRangesOverlap(
           effectiveFrom,
@@ -246,18 +291,7 @@ export class SchedulesService {
     }
 
     const schedules = await db.orm.public.StaffSchedule.orderBy((s) => s.dayOfWeek.asc()).all();
-    return schedules.map((s) => ({
-      id: s.id,
-      staffId: s.staffId,
-      dayOfWeek: s.dayOfWeek,
-      startTime: s.startTime,
-      endTime: s.endTime,
-      effectiveFrom: s.effectiveFrom,
-      effectiveUntil: s.effectiveUntil,
-      isActive: s.isActive,
-      createdAt: s.createdAt,
-      updatedAt: s.updatedAt,
-    }));
+    return schedules.map(mapStaffSchedule).sort((left, right) => left.dayOfWeek - right.dayOfWeek);
   }
 
   /** Get staff schedules by staff ID */
@@ -266,9 +300,11 @@ export class SchedulesService {
     requestingUserId: string,
     requestingRole: string
   ): Promise<StaffScheduleInfo[]> {
-    // STAFF can only view their own schedules
-    if (requestingRole === 'STAFF' && staffId !== requestingUserId) {
-      throw new ForbiddenError('You can only view your own schedules');
+    if (requestingRole === 'STAFF') {
+      const ownStaff = await db.orm.public.Staff.where({ accountId: requestingUserId }).first();
+      if (!ownStaff || staffId !== ownStaff.id) {
+        throw new ForbiddenError('You can only view your own schedules');
+      }
     }
 
     // Verify staff exists
@@ -282,39 +318,20 @@ export class SchedulesService {
       .orderBy((s) => s.dayOfWeek.asc())
       .all();
 
-    return schedules.map((s) => ({
-      id: s.id,
-      staffId: s.staffId,
-      dayOfWeek: s.dayOfWeek,
-      startTime: s.startTime,
-      endTime: s.endTime,
-      effectiveFrom: s.effectiveFrom,
-      effectiveUntil: s.effectiveUntil,
-      isActive: s.isActive,
-      createdAt: s.createdAt,
-      updatedAt: s.updatedAt,
-    }));
+    return schedules.map(mapStaffSchedule).sort((left, right) => left.dayOfWeek - right.dayOfWeek);
   }
 
   /** Get own schedules (for STAFF) */
   static async getMySchedules(userId: string): Promise<StaffScheduleInfo[]> {
+    const staff = await db.orm.public.Staff.where({ accountId: userId }).first();
+    if (!staff) throw new NotFoundError('No staff profile found for this account');
+
     const schedules = await db.orm.public.StaffSchedule
-      .where({ staffId: userId })
+      .where({ staffId: staff.id })
       .orderBy((s) => s.dayOfWeek.asc())
       .all();
 
-    return schedules.map((s) => ({
-      id: s.id,
-      staffId: s.staffId,
-      dayOfWeek: s.dayOfWeek,
-      startTime: s.startTime,
-      endTime: s.endTime,
-      effectiveFrom: s.effectiveFrom,
-      effectiveUntil: s.effectiveUntil,
-      isActive: s.isActive,
-      createdAt: s.createdAt,
-      updatedAt: s.updatedAt,
-    }));
+    return schedules.map(mapStaffSchedule).sort((left, right) => left.dayOfWeek - right.dayOfWeek);
   }
 
   /** Create a staff schedule */
@@ -348,17 +365,19 @@ export class SchedulesService {
       throw new BadRequestError('startTime must be before endTime');
     }
 
-    const effectiveFromDate = parseDatetime(data.effectiveFrom);
-    if (effectiveFromDate <= new Date()) {
+    const effectiveFromInstant = parseDatetime(data.effectiveFrom);
+    if (effectiveFromInstant <= new Date()) {
       throw new BadRequestError('effectiveFrom must be in the future');
     }
+    const effectiveFromDate = dateTimeInputToDateOnly(data.effectiveFrom);
 
     let effectiveUntilDate: Date | null = null;
     if (data.effectiveUntil) {
-      effectiveUntilDate = parseDatetime(data.effectiveUntil);
-      if (effectiveUntilDate <= effectiveFromDate) {
+      const effectiveUntilInstant = parseDatetime(data.effectiveUntil);
+      if (effectiveUntilInstant <= effectiveFromInstant) {
         throw new BadRequestError('effectiveUntil must be after effectiveFrom');
       }
+      effectiveUntilDate = dateTimeInputToDateOnly(data.effectiveUntil);
     }
 
     // Verify staff exists and check DAY_OFF status
@@ -388,7 +407,7 @@ export class SchedulesService {
 
     const schedule = await db.orm.public.StaffSchedule.create({
       staffId: data.staffId,
-      dayOfWeek: data.dayOfWeek,
+      dayOfWeek: isoWeekdayToPostgres(data.dayOfWeek),
       startTime: data.startTime,
       endTime: data.endTime,
       effectiveFrom: effectiveFromDate,
@@ -403,7 +422,7 @@ export class SchedulesService {
       entityId: schedule.id,
       newData: {
         staffId: schedule.staffId,
-        dayOfWeek: schedule.dayOfWeek,
+        dayOfWeek: data.dayOfWeek,
         startTime: schedule.startTime,
         endTime: schedule.endTime,
         effectiveFrom: schedule.effectiveFrom,
@@ -412,18 +431,7 @@ export class SchedulesService {
       },
     });
 
-    return {
-      id: schedule.id,
-      staffId: schedule.staffId,
-      dayOfWeek: schedule.dayOfWeek,
-      startTime: schedule.startTime,
-      endTime: schedule.endTime,
-      effectiveFrom: schedule.effectiveFrom,
-      effectiveUntil: schedule.effectiveUntil,
-      isActive: schedule.isActive,
-      createdAt: schedule.createdAt,
-      updatedAt: schedule.updatedAt,
-    };
+    return mapStaffSchedule(schedule);
   }
 
   /** Update a staff schedule */
@@ -454,13 +462,15 @@ export class SchedulesService {
     }
 
     // Determine the effective values (use existing if not provided)
-    const dayOfWeek = data.dayOfWeek ?? schedule.dayOfWeek;
-    const startTime = data.startTime ?? schedule.startTime;
-    const endTime = data.endTime ?? schedule.endTime;
-    const effectiveFromDate = data.effectiveFrom ? parseDatetime(data.effectiveFrom) : schedule.effectiveFrom;
+    const dayOfWeek = data.dayOfWeek ?? postgresWeekdayToIso(schedule.dayOfWeek);
+    const startTime = data.startTime ?? normalizeTimeOnly(schedule.startTime);
+    const endTime = data.endTime ?? normalizeTimeOnly(schedule.endTime);
+    const effectiveFromDate = data.effectiveFrom
+      ? dateTimeInputToDateOnly(data.effectiveFrom)
+      : dateOnlyToUtcDate(schedule.effectiveFrom);
     const effectiveUntilDate = data.effectiveUntil !== undefined
-      ? data.effectiveUntil === null ? null : parseDatetime(data.effectiveUntil)
-      : schedule.effectiveUntil;
+      ? data.effectiveUntil === null ? null : dateTimeInputToDateOnly(data.effectiveUntil)
+      : schedule.effectiveUntil === null ? null : dateOnlyToUtcDate(schedule.effectiveUntil);
     const isActive = data.isActive ?? schedule.isActive;
 
     // Validate
@@ -472,12 +482,16 @@ export class SchedulesService {
       throw new BadRequestError('startTime must be before endTime');
     }
 
-    if (effectiveFromDate <= new Date()) {
+    if (data.effectiveFrom !== undefined && parseDatetime(data.effectiveFrom) <= new Date()) {
       throw new BadRequestError('effectiveFrom must be in the future');
     }
 
-    if (effectiveUntilDate && effectiveUntilDate <= effectiveFromDate) {
+    if (data.effectiveUntil && data.effectiveFrom &&
+      parseDatetime(data.effectiveUntil) <= parseDatetime(data.effectiveFrom)) {
       throw new BadRequestError('effectiveUntil must be after effectiveFrom');
+    }
+    if (effectiveUntilDate && normalizeDateOnly(effectiveUntilDate) < normalizeDateOnly(effectiveFromDate)) {
+      throw new BadRequestError('effectiveUntil must be on or after effectiveFrom');
     }
 
     // Check DAY_OFF status for active schedules
@@ -500,7 +514,7 @@ export class SchedulesService {
     );
 
     const updated = await db.orm.public.StaffSchedule.where({ id: scheduleId }).update({
-      dayOfWeek,
+      dayOfWeek: isoWeekdayToPostgres(dayOfWeek),
       startTime,
       endTime,
       effectiveFrom: effectiveFromDate,
@@ -519,7 +533,7 @@ export class SchedulesService {
       entityId: scheduleId,
       oldData: {
         staffId: schedule.staffId,
-        dayOfWeek: schedule.dayOfWeek,
+        dayOfWeek: postgresWeekdayToIso(schedule.dayOfWeek),
         startTime: schedule.startTime,
         endTime: schedule.endTime,
         effectiveFrom: schedule.effectiveFrom,
@@ -537,18 +551,7 @@ export class SchedulesService {
       },
     });
 
-    return {
-      id: updated.id,
-      staffId: updated.staffId,
-      dayOfWeek: updated.dayOfWeek,
-      startTime: updated.startTime,
-      endTime: updated.endTime,
-      effectiveFrom: updated.effectiveFrom,
-      effectiveUntil: updated.effectiveUntil,
-      isActive: updated.isActive,
-      createdAt: updated.createdAt,
-      updatedAt: updated.updatedAt,
-    };
+    return mapStaffSchedule(updated);
   }
 
   /** Delete a staff schedule */
@@ -615,8 +618,11 @@ export class SchedulesService {
     }
 
     // Validate access
-    if (requestingRole === 'STAFF' && request.staffId !== requestingUserId) {
-      throw new ForbiddenError('You can only view your own schedule requests');
+    if (requestingRole === 'STAFF') {
+      const ownStaff = await db.orm.public.Staff.where({ accountId: requestingUserId }).first();
+      if (!ownStaff || request.staffId !== ownStaff.id) {
+        throw new ForbiddenError('You can only view your own schedule requests');
+      }
     }
 
     return this.mapScheduleRequest(request);
@@ -624,8 +630,11 @@ export class SchedulesService {
 
   /** Get own schedule requests (for STAFF) */
   static async getMyScheduleRequests(userId: string): Promise<ScheduleRequestInfo[]> {
+    const staff = await db.orm.public.Staff.where({ accountId: userId }).first();
+    if (!staff) throw new NotFoundError('No staff profile found for this account');
+
     const requests = await db.orm.public.ScheduleRequest
-      .where({ staffId: userId })
+      .where({ staffId: staff.id })
       .orderBy((r) => r.createdAt.desc())
       .all();
 
@@ -650,27 +659,30 @@ export class SchedulesService {
     }
 
     // Validate input
-    const requestedDate = parseDatetime(data.requestedDate);
-    if (requestedDate <= new Date()) {
+    const requestedDateInstant = parseDatetime(data.requestedDate);
+    if (requestedDateInstant <= new Date()) {
       throw new BadRequestError('requestedDate must be in the future');
     }
+    const requestedDate = dateTimeInputToDateOnly(data.requestedDate);
 
+    const requestedStartTime = data.requestedStartTime ? normalizeTimeOnly(data.requestedStartTime) : undefined;
+    const requestedEndTime = data.requestedEndTime ? normalizeTimeOnly(data.requestedEndTime) : undefined;
     if (data.requestedStartTime) {
-      validateTimeFormat(data.requestedStartTime);
+      validateTimeFormat(requestedStartTime!);
     }
     if (data.requestedEndTime) {
-      validateTimeFormat(data.requestedEndTime);
+      validateTimeFormat(requestedEndTime!);
     }
 
-    if (data.requestedStartTime && data.requestedEndTime && data.requestedStartTime >= data.requestedEndTime) {
+    if (requestedStartTime && requestedEndTime && requestedStartTime >= requestedEndTime) {
       throw new BadRequestError('requestedStartTime must be before requestedEndTime');
     }
 
     const request = await db.orm.public.ScheduleRequest.create({
       staffId: staff.id,
       requestedDate: requestedDate,
-      requestedStartTime: data.requestedStartTime ?? null,
-      requestedEndTime: data.requestedEndTime ?? null,
+      requestedStartTime: requestedStartTime ?? null,
+      requestedEndTime: requestedEndTime ?? null,
       requestType: data.requestType,
       reason: data.reason ?? null,
       status: 'PENDING',
@@ -717,7 +729,8 @@ export class SchedulesService {
     }
 
     // Cannot approve own request
-    if (request.staffId === requestingUserId) {
+    const requestOwner = await db.orm.public.Staff.where({ accountId: requestingUserId }).first();
+    if (requestOwner?.id === request.staffId) {
       throw new ForbiddenError('You cannot approve your own schedule request');
     }
 
@@ -769,7 +782,8 @@ export class SchedulesService {
     }
 
     // Cannot reject own request
-    if (request.staffId === requestingUserId) {
+    const requestOwner = await db.orm.public.Staff.where({ accountId: requestingUserId }).first();
+    if (requestOwner?.id === request.staffId) {
       throw new ForbiddenError('You cannot reject your own schedule request');
     }
 
@@ -803,9 +817,9 @@ export class SchedulesService {
   private static mapScheduleRequest(request: {
     id: string;
     staffId: string;
-    requestedDate: Date;
-    requestedStartTime: string | null;
-    requestedEndTime: string | null;
+    requestedDate: Date | string;
+    requestedStartTime: Date | string | null;
+    requestedEndTime: Date | string | null;
     requestType: string;
     reason: string | null;
     status: 'PENDING' | 'APPROVED' | 'REJECTED';
@@ -816,9 +830,9 @@ export class SchedulesService {
     return {
       id: request.id,
       staffId: request.staffId,
-      requestedDate: request.requestedDate,
-      requestedStartTime: request.requestedStartTime,
-      requestedEndTime: request.requestedEndTime,
+      requestedDate: dateOnlyToUtcDate(request.requestedDate),
+      requestedStartTime: request.requestedStartTime === null ? null : normalizeTimeOnly(request.requestedStartTime),
+      requestedEndTime: request.requestedEndTime === null ? null : normalizeTimeOnly(request.requestedEndTime),
       requestType: request.requestType,
       reason: request.reason,
       status: request.status,
