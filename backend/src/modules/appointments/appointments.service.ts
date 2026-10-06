@@ -276,8 +276,10 @@ export class AppointmentsService {
   }
 
   static async listAll(page: number, limit: number): Promise<{ appointments: AppointmentInfo[]; total: number }> {
-    const totalResult = await db.orm.public.Appointment.where({}).count();
-    const total = typeof totalResult === 'number' ? totalResult : 0;
+    const totalResult = await db.orm.public.Appointment
+      .where({})
+      .aggregate((aggregate) => ({ total: aggregate.count() }));
+    const total = typeof totalResult.total === 'number' ? totalResult.total : 0;
     const skip = (page - 1) * limit;
     const query = db.orm.public.Appointment.orderBy((appointment) => appointment.appointmentDate.desc());
     const appointmentsRaw = await query.offset(skip).limit(limit).all();
@@ -363,8 +365,10 @@ export class AppointmentsService {
     const staff = await db.orm.public.Staff.where({ accountId: requestingUserId }).first();
     if (!staff) throw new NotFoundError('No staff profile found for this account');
 
-    const totalResult = await db.orm.public.Appointment.where(staffWhere({ staffId: staff.id })).count();
-    const total = typeof totalResult === 'number' ? totalResult : 0;
+    const totalResult = await db.orm.public.Appointment
+      .where(staffWhere({ staffId: staff.id }))
+      .aggregate((aggregate) => ({ total: aggregate.count() }));
+    const total = typeof totalResult.total === 'number' ? totalResult.total : 0;
     const skip = (page - 1) * limit;
     const query = db.orm.public.Appointment.where(staffWhere({ staffId: staff.id }))
       .orderBy((appointment) => appointment.appointmentDate.desc());

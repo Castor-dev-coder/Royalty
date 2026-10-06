@@ -88,8 +88,10 @@ export class CustomerService {
     const skip = (page - 1) * clampedLimit;
 
     // Get total count
-    const totalResult = await db.orm.public.Customer.where({}).count();
-    const total = typeof totalResult === 'number' ? totalResult : 0;
+    const totalResult = await db.orm.public.Customer
+      .where({})
+      .aggregate((aggregate) => ({ total: aggregate.count() }));
+    const total = typeof totalResult.total === 'number' ? totalResult.total : 0;
 
     // Get paginated results using database-level pagination
     const customersRaw = db.orm.public.Customer

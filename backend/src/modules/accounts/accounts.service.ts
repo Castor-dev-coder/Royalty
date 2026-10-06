@@ -55,8 +55,10 @@ export class AccountService {
     const skip = (page - 1) * clampedLimit;
 
     // Get total count
-    const totalResult = await db.orm.public.Account.where({}).count();
-    const total = typeof totalResult === 'number' ? totalResult : 0;
+    const totalResult = await db.orm.public.Account
+      .where({})
+      .aggregate((aggregate) => ({ total: aggregate.count() }));
+    const total = typeof totalResult.total === 'number' ? totalResult.total : 0;
 
     // Get paginated results using database-level pagination.
     const accountsRaw = db.orm.public.Account
