@@ -53,7 +53,7 @@ schedulesRouter.delete('/staff/:id', requireRole('ADMIN', 'MANAGER'), deleteStaf
 
 schedulesRouter.get('/requests', requireRole('ADMIN', 'MANAGER'), getAllScheduleRequestsController);
 schedulesRouter.get('/requests/me', getMyScheduleRequestsController);
-schedulesRouter.get('/requests/:id', getScheduleRequestByIdController);
+schedulesRouter.get('/requests/:id', requireRole('ADMIN', 'MANAGER', 'STAFF'), getScheduleRequestByIdController);
 schedulesRouter.post('/requests', validateRequest(createScheduleRequestSchema), createScheduleRequestController);
 schedulesRouter.patch('/requests/:id/approve', requireRole('ADMIN', 'MANAGER'), approveScheduleRequestController);
 schedulesRouter.patch('/requests/:id/reject', requireRole('ADMIN', 'MANAGER'), rejectScheduleRequestController);

@@ -89,6 +89,11 @@ export function fromPrismaTime(value: Temporal.PlainTime | Date | string): strin
   return normalizeTimeOnly(`${String(value.hour).padStart(2, '0')}:${String(value.minute).padStart(2, '0')}`);
 }
 
+/** Converts a Date to the `Temporal.Instant` the `timestamptz` codec requires. */
+export function toTemporalInstant(value: Date): Temporal.Instant {
+  return Temporal.Instant.from(value.toISOString());
+}
+
 function isValidDateOnly(value: string): boolean {
   const date = new Date(`${value}T00:00:00.000Z`);
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;

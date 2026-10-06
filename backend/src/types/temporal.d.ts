@@ -46,4 +46,13 @@ declare namespace Temporal {
     from(value: string): PlainDate;
     compare(a: PlainDate, b: PlainDate): number;
   };
+
+  interface Instant extends Date {
+    toISOString(): string;
+    toJSON(): string;
+  }
+
+  const Instant: {
+    from(value: string): Instant;
+  };
 }

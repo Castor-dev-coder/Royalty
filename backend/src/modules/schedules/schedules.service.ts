@@ -12,6 +12,7 @@ import {
   postgresWeekdayToIso,
   toPlainDate,
   toPlainTime,
+  toTemporalInstant,
 } from '../../utils/date-time.js';
 
 interface TxContext {
@@ -779,7 +780,7 @@ export class SchedulesService {
     const updated = await db.orm.public.ScheduleRequest.where({ id: requestId }).update({
       status: 'APPROVED',
       reviewedBy: requestingUserId,
-      reviewedAt: now,
+      reviewedAt: toTemporalInstant(now),
     });
 
     if (!updated) {
@@ -832,7 +833,7 @@ export class SchedulesService {
     const updated = await db.orm.public.ScheduleRequest.where({ id: requestId }).update({
       status: 'REJECTED',
       reviewedBy: requestingUserId,
-      reviewedAt: now,
+      reviewedAt: toTemporalInstant(now),
     });
 
     if (!updated) {
