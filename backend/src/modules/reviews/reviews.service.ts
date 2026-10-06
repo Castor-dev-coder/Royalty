@@ -88,17 +88,16 @@ export class ReviewsService {
   }
 
   static async list(query: ReviewListQuery): Promise<{ reviews: ReviewInfo[]; total: number }> {
-    const reviewQuery = query.rating === undefined
+    const totalResult = await (query.rating === undefined
       ? db.orm.public.Review.where({})
-      : db.orm.public.Review.where({ rating: query.rating });
-    const totalResult = await reviewQuery.count();
-    const total = typeof totalResult === 'number' ? totalResult : 0;
+      : db.orm.public.Review.where({ rating: query.rating }))
+      .aggregate((aggregate) => ({ total: aggregate.count() }));
+    const total = typeof totalResult.total === 'number' ? totalResult.total : 0;
     const ordered = (query.rating === undefined
       ? db.orm.public.Review.where({})
       : db.orm.public.Review.where({ rating: query.rating }))
       .orderBy((review) => review.createdAt.desc());
-    // @ts-expect-error - Prisma 8 RC types omit supported skip/take methods on ordered collections
-    const queryRecords = ordered.skip((query.page - 1) * query.limit).take(query.limit).all() as
+    const queryRecords = ordered.offset((query.page - 1) * query.limit).limit(query.limit).all() as
       Iterable<ReviewRecord> | AsyncIterable<ReviewRecord>;
     const records = await collect(queryRecords);
     const reviews = await Promise.all(records.map((review) => this.mapReview(review)));

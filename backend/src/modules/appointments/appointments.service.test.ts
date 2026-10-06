@@ -120,9 +120,9 @@ test('completed appointments include snapshots, safe staff, and review eligibili
     first: async () => ({ id: 'customer-1' }),
   }));
   const appointmentWhere = mock.method(db.orm.public.Appointment, 'where', () => ({
-    count: async () => 1,
-    orderBy: () => ({ skip: () => ({ take: () => ({ all: async () => [appointment] }) }) }),
-  }) as unknown as ReturnType<typeof db.orm.public.Appointment.where>);
+    aggregate: async () => ({ total: 1 }),
+    orderBy: () => ({ offset: () => ({ limit: () => ({ all: async () => [appointment] }) }) }),
+  }));
   const appointmentServicesWhere = mock.method(db.orm.public.AppointmentService, 'where', () => ({
     all: async () => [{
       id: 'line-1', serviceId: 'service-1', serviceName: 'Cut', price: '30.00', durationMinutes: 60,

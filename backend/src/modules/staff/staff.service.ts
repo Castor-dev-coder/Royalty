@@ -117,9 +117,8 @@ export class StaffService {
     // Get paginated results using database-level pagination
     const staffRaw = db.orm.public.Staff
       .orderBy((s) => s.createdAt.desc())
-      // @ts-expect-error - Prisma 8 RC types don't expose skip on ordered Collection
-      .skip(skip)
-      .take(clampedLimit)
+      .offset(skip)
+      .limit(clampedLimit)
       .all();
 
     const staff: StaffProfile[] = [];

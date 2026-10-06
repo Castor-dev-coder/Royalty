@@ -280,8 +280,7 @@ export class AppointmentsService {
     const total = typeof totalResult === 'number' ? totalResult : 0;
     const skip = (page - 1) * limit;
     const query = db.orm.public.Appointment.orderBy((appointment) => appointment.appointmentDate.desc());
-    // @ts-expect-error - Prisma 8 RC types omit supported skip/take methods on ordered collections
-    const appointmentsRaw = await query.skip(skip).take(limit).all();
+    const appointmentsRaw = await query.offset(skip).limit(limit).all();
     const appointments = await collect(appointmentsRaw as Iterable<AppointmentRecord> | AsyncIterable<AppointmentRecord>);
     return {
       appointments: await Promise.all(appointments.map((appointment) => this.mapAppointment(toApplicationAppointment(appointment)))),
@@ -301,13 +300,14 @@ export class AppointmentsService {
       throw new ForbiddenError('Only customers and administrators can view customer appointments');
     }
 
-    const totalResult = await db.orm.public.Appointment.where({ customerId: customer.id }).count();
-    const total = typeof totalResult === 'number' ? totalResult : 0;
+    const totalResult = await db.orm.public.Appointment
+      .where({ customerId: customer.id })
+      .aggregate((aggregate) => ({ total: aggregate.count() }));
+    const total = typeof totalResult.total === 'number' ? totalResult.total : 0;
     const skip = (page - 1) * limit;
     const query = db.orm.public.Appointment.where({ customerId: customer.id })
       .orderBy((appointment) => appointment.appointmentDate.desc());
-    // @ts-expect-error - Prisma 8 RC types omit supported skip/take methods on ordered collections
-    const appointmentsRaw = await query.skip(skip).take(limit).all();
+    const appointmentsRaw = await query.offset(skip).limit(limit).all();
     const appointments = await collect(appointmentsRaw as Iterable<AppointmentRecord> | AsyncIterable<AppointmentRecord>);
     return {
       appointments: await Promise.all(appointments.map((appointment) => this.mapAppointment(toApplicationAppointment(appointment)))),
@@ -323,14 +323,14 @@ export class AppointmentsService {
     const customer = await db.orm.public.Customer.where({ accountId: requestingUserId }).first();
     if (!customer) throw new NotFoundError('No customer profile found for this account');
 
-    const query = db.orm.public.Appointment.where({ customerId: customer.id, status: 'COMPLETED' });
-    const totalResult = await query.count();
-    const total = typeof totalResult === 'number' ? totalResult : 0;
+    const totalResult = await db.orm.public.Appointment
+      .where({ customerId: customer.id, status: 'COMPLETED' })
+      .aggregate((aggregate) => ({ total: aggregate.count() }));
+    const total = typeof totalResult.total === 'number' ? totalResult.total : 0;
     const skip = (page - 1) * limit;
     const appointmentsRaw = db.orm.public.Appointment.where({ customerId: customer.id, status: 'COMPLETED' })
       .orderBy((appointment) => appointment.appointmentDate.desc());
-    // @ts-expect-error - Prisma 8 RC types omit supported skip/take methods on ordered collections
-    const appointmentRecords = await appointmentsRaw.skip(skip).take(limit).all();
+    const appointmentRecords = await appointmentsRaw.offset(skip).limit(limit).all();
     const appointments = await collect(appointmentRecords as Iterable<AppointmentRecord> | AsyncIterable<AppointmentRecord>);
     const completed = await Promise.all(appointments.map(async (appointment): Promise<CompletedAppointmentInfo> => {
       const [mapped, staff, review] = await Promise.all([
@@ -368,8 +368,7 @@ export class AppointmentsService {
     const skip = (page - 1) * limit;
     const query = db.orm.public.Appointment.where(staffWhere({ staffId: staff.id }))
       .orderBy((appointment) => appointment.appointmentDate.desc());
-    // @ts-expect-error - Prisma 8 RC types omit supported skip/take methods on ordered collections
-    const appointmentsRaw = await query.skip(skip).take(limit).all();
+    const appointmentsRaw = await query.offset(skip).limit(limit).all();
     const appointments = await collect(appointmentsRaw as Iterable<AppointmentRecord> | AsyncIterable<AppointmentRecord>);
     return {
       appointments: await Promise.all(appointments.map((appointment) => this.mapAppointment(toApplicationAppointment(appointment)))),

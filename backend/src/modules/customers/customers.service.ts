@@ -94,9 +94,8 @@ export class CustomerService {
     // Get paginated results using database-level pagination
     const customersRaw = db.orm.public.Customer
       .orderBy((c) => c.createdAt.desc())
-      // @ts-expect-error - Prisma 8 RC types don't expose skip on ordered Collection
-      .skip(skip)
-      .take(clampedLimit)
+      .offset(skip)
+      .limit(clampedLimit)
       .all();
 
     const customers: CustomerProfile[] = [];

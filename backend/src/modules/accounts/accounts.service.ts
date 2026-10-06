@@ -59,13 +59,10 @@ export class AccountService {
     const total = typeof totalResult === 'number' ? totalResult : 0;
 
     // Get paginated results using database-level pagination.
-    // Note: Prisma 8 RC11 supports skip/take at runtime but types may not fully reflect it.
-    // The documented API is orderBy().skip(n).take(n).all() for PostgreSQL.
     const accountsRaw = db.orm.public.Account
       .orderBy((a) => a.createdAt.desc())
-      // @ts-expect-error - Prisma 8 RC types don't expose skip on ordered Collection
-      .skip(skip)
-      .take(clampedLimit)
+      .offset(skip)
+      .limit(clampedLimit)
       .all();
 
     const accounts: AccountProfile[] = [];
