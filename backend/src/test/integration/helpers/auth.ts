@@ -36,13 +36,17 @@ export async function refreshToken(
   });
 }
 
+export interface MeResponse {
+  user: {
+    userId: string;
+    email: string;
+    role: string;
+  };
+}
+
 export async function getMe(
   baseUrl: string,
   accessToken: string,
-): Promise<HttpResponse<{ data: { id: string; email: string; role: string } }>> {
-  return request<{ data: { id: string; email: string; role: string } }>(
-    baseUrl,
-    '/api/me',
-    { token: accessToken },
-  );
+): Promise<HttpResponse<MeResponse>> {
+  return request<MeResponse>(baseUrl, '/api/me', { token: accessToken });
 }
