@@ -8,7 +8,7 @@
     "dev": "tsx src/server.ts",
     "build": "tsc",
     "test": "tsx --test src/modules/appointments/*.test.ts src/modules/auth/*.test.ts src/modules/staff/*.test.ts src/modules/schedules/*.test.ts src/modules/reviews/*.test.ts src/routes/*.test.ts",
-    "test:integration": "tsx --test --test-force-exit src/test/integration/*.test.ts",
+    "test:integration": "tsx --test --test-force-exit --test-concurrency=4 src/test/integration/*.test.ts",
     "start": "node dist/server.js",
     "contract:emit": "prisma contract emit",
     "db:init": "prisma db init",

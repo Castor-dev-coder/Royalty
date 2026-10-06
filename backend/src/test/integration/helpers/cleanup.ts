@@ -22,6 +22,112 @@ export interface CleanupResult {
 }
 
 /**
+ * Exact scope-marker format (Batch 5F onward)
+ * ------------------------------------------
+ * `[TEST:<batch>:<scope>:<run>]`, e.g. `[TEST:5f:reviews:c18e04ab]`.
+ *
+ * A marker is matched by exact substring, never by a normalized/partial token,
+ * so cleanup for one run can never reach another run of the same file:
+ *   cleanup('[TEST:5f:reviews:c18e04ab]') must NOT match
+ *   '[TEST:5f:reviews:91a4d2e7]'.
+ *
+ * Distinct from the looser Batch 5A-5E tokens ('batch5d'), which are still
+ * accepted for those files' existing fixtures.
+ *
+ * Three identifier forms embed the same unique run id, because different record
+ * types cannot carry the full bracketed marker:
+ *   - `reason` / free text      -> full marker  `[TEST:5f:reviews:c18e04ab]`
+ *   - account email local part  -> emailToken   `reviews-c18e04ab`
+ *   - appointment code          -> codeToken    `REV-c18e04ab`
+ * All three are checked, so cleanup reaches every record the run created while
+ * remaining scoped to exactly this run.
+ */
+export interface ScopeMarker {
+  /** Exact marker text, e.g. '[TEST:5f:reviews:c18e04ab]'. */
+  marker: string;
+  /** Cryptographically secure 8-char lowercase hex run id. */
+  run: string;
+  /** Human-readable label, e.g. 'reviews'. */
+  scope: string;
+  /** Short uppercase token for appointment codes, e.g. 'REV'. */
+  shortScope: string;
+  /** Email local-part token, e.g. 'reviews-c18e04ab'. */
+  emailToken: string;
+  /** Appointment-code token, e.g. 'REV-c18e04ab'. */
+  codeToken: string;
+}
+
+/** Returns true when `identifier` contains the exact marker (case-sensitive). */
+function containsMarker(identifier: string | null | undefined, marker: string): boolean {
+  return typeof identifier === 'string' && identifier.includes(marker);
+}
+
+/** Every token that identifies a record as belonging to this run. */
+function markerTokens(scope: ScopeMarker): string[] {
+  return [scope.marker, scope.emailToken, scope.codeToken];
+}
+
+/** True when a free-text/identifier field carries any token for this run. */
+function ownedByMarker(value: string | null | undefined, scope: ScopeMarker): boolean {
+  return markerTokens(scope).some((token) => containsMarker(value, token));
+}
+
+/**
+ * Reports remaining records still owned by `scope`, without deleting anything.
+ * Callers use it to prove "Remaining: 0 / Orphans: 0" after cleanup.
+ */
+export interface ScopeRemainder {
+  accounts: number;
+  customers: number;
+  staff: number;
+  services: number;
+  serviceCategories: number;
+  appointments: number;
+  reviews: number;
+  scheduleRequests: number;
+}
+
+export async function countScopedRecords(scope: string | ScopeMarker): Promise<ScopeRemainder> {
+  const isMarker = typeof scope !== 'string';
+  const normalizedScope = normalizeIdentifier(typeof scope === 'string' ? scope : scope.marker);
+  const owned = (value: string | null | undefined): boolean =>
+    isMarker ? ownedByMarker(value, scope) : isOwnedBy(value ?? '', normalizedScope);
+
+  const accounts = (await db.orm.public.Account.where({}).all()).filter((a) => owned(a.email));
+  const accountIds = accounts.map((a) => a.id);
+
+  const customers = (await db.orm.public.Customer.where({}).all()).filter((c) => accountIds.includes(c.accountId));
+  const staff = (await db.orm.public.Staff.where({}).all()).filter((s) => accountIds.includes(s.accountId));
+  const customerIds = customers.map((c) => c.id);
+  const staffIds = staff.map((s) => s.id);
+
+  const serviceCategories = (await db.orm.public.ServiceCategory.where({}).all()).filter((c) => owned(c.name));
+  const services = (await db.orm.public.Service.where({}).all()).filter((s) => owned(s.name));
+  const appointments = (await db.orm.public.Appointment.where({}).all()).filter(
+    (a) => owned(a.appointmentCode) || customerIds.includes(a.customerId),
+  );
+  const appointmentIds = appointments.map((a) => a.id);
+
+  const reviews = (await db.orm.public.Review.where({}).all()).filter(
+    (r) => appointmentIds.includes(r.appointmentId) || customerIds.includes(r.customerId),
+  );
+  const scheduleRequests = (await db.orm.public.ScheduleRequest.where({}).all()).filter(
+    (sr) => owned(sr.reason) || staffIds.includes(sr.staffId) || accountIds.includes(sr.reviewedBy ?? ''),
+  );
+
+  return {
+    accounts: accounts.length,
+    customers: customers.length,
+    staff: staff.length,
+    services: services.length,
+    serviceCategories: serviceCategories.length,
+    appointments: appointments.length,
+    reviews: reviews.length,
+    scheduleRequests: scheduleRequests.length,
+  };
+}
+
+/**
  * Ownership model
  * ---------------
  * The Node test runner executes integration test FILES in parallel child
@@ -47,13 +153,20 @@ function isOwnedBy(identifier: string, normalizedScope: string): boolean {
   return normalizeIdentifier(identifier).includes(normalizedScope);
 }
 
-export async function cleanupTestRecords(scope: string): Promise<CleanupResult> {
-  const normalizedScope = normalizeIdentifier(scope);
+export async function cleanupTestRecords(scope: string | ScopeMarker): Promise<CleanupResult> {
+  const isMarker = typeof scope !== 'string';
+  const normalizedScope = normalizeIdentifier(typeof scope === 'string' ? scope : scope.marker);
   if (normalizedScope.length < 4) {
     throw new Error(
-      `cleanupTestRecords requires an explicit scope token of at least 4 characters (received: ${scope})`,
+      `cleanupTestRecords requires an explicit scope token of at least 4 characters (received: ${normalizedScope})`,
     );
   }
+
+  // Marker scopes match the exact run tokens; legacy Batch 5A-5E tokens match by
+  // normalized containment. A marker scope must never fall back to the broad
+  // normalized rule, or one run could delete another run of the same file.
+  const owned = (value: string | null | undefined): boolean =>
+    isMarker ? ownedByMarker(value, scope) : isOwnedBy(value ?? '', normalizedScope);
 
   const result: CleanupResult = {
     appointmentServices: 0,
@@ -74,7 +187,7 @@ export async function cleanupTestRecords(scope: string): Promise<CleanupResult> 
   // Step 1: Find test accounts
   const testAccounts = await db.orm.public.Account.where({}).all();
   const testAccountIds = testAccounts
-    .filter((a) => isOwnedBy(a.email, normalizedScope))
+    .filter((a) => owned(a.email))
     .map((a) => a.id);
 
   // No early return here: a file may own services/categories without owning any
@@ -94,18 +207,18 @@ export async function cleanupTestRecords(scope: string): Promise<CleanupResult> 
   // Step 3: Find test services and categories
   const testCategories = await db.orm.public.ServiceCategory.where({}).all();
   const testCategoryIds = testCategories
-    .filter((c) => isOwnedBy(c.name, normalizedScope))
+    .filter((c) => owned(c.name))
     .map((c) => c.id);
 
   const testServices = await db.orm.public.Service.where({}).all();
   const testServiceIds = testServices
-    .filter((s) => isOwnedBy(s.name, normalizedScope))
+    .filter((s) => owned(s.name))
     .map((s) => s.id);
 
   // Step 4: Find test appointments (by code prefix OR by test customer ownership)
   const testAppointments = await db.orm.public.Appointment.where({}).all();
   const testAppointmentIds = testAppointments
-    .filter((a) => isOwnedBy(a.appointmentCode, normalizedScope) || testCustomerIds.includes(a.customerId))
+    .filter((a) => owned(a.appointmentCode) || testCustomerIds.includes(a.customerId))
     .map((a) => a.id);
 
   // Step 5: Delete in dependency order (children first)
@@ -145,15 +258,15 @@ export async function cleanupTestRecords(scope: string): Promise<CleanupResult> 
   }
 
   // 5d. schedule_requests (depends on staff, accounts)
-  if (testStaffIds.length > 0 || testAccountIds.length > 0) {
-    const requests = await db.orm.public.ScheduleRequest.where({}).all();
-    const toDelete = requests.filter(
-      (sr) => testStaffIds.includes(sr.staffId) || testAccountIds.includes(sr.reviewedBy ?? ''),
-    );
-    for (const sr of toDelete) {
-      await db.orm.public.ScheduleRequest.where({ id: sr.id }).delete();
-      result.scheduleRequests++;
-    }
+  // Matched by the exact scope marker in `reason` OR by scope-owned staff/account,
+  // so Batch 5F requests created with the seeded STAFF account are still removed.
+  const requests = await db.orm.public.ScheduleRequest.where({}).all();
+  const toDeleteRequests = requests.filter(
+    (sr) => owned(sr.reason) || testStaffIds.includes(sr.staffId) || testAccountIds.includes(sr.reviewedBy ?? ''),
+  );
+  for (const sr of toDeleteRequests) {
+    await db.orm.public.ScheduleRequest.where({ id: sr.id }).delete();
+    result.scheduleRequests++;
   }
 
   // 5e. staff_schedules (depends on staff)
