@@ -12,53 +12,61 @@ import { schedulesRouter } from './routes/schedules.js';
 import { appointmentsRouter } from './routes/appointments.js';
 import { reviewsRouter } from './routes/reviews.js';
 
-const app = express();
+export function createApp() {
+  const app = express();
+
+  // Middleware
+  app.use(express.json());
+
+  // Routes
+  app.get('/health', async (_req, res) => {
+    try {
+      // Use a simple query to verify DB connectivity
+      await db.orm.public.Account.where({}).first();
+      res.json({ status: 'ok', database: 'connected' });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const isConnectionError =
+        message.includes('connect') || message.includes('ECONNREFUSED');
+
+      if (isConnectionError) {
+        console.error('Database connection failed:', error);
+        res.status(500).json({ status: 'error', database: 'disconnected' });
+      } else {
+        // Table might not exist yet, but DB is reachable
+        res.json({ status: 'ok', database: 'connected' });
+      }
+    }
+  });
+
+  app.use('/auth', authRouter);
+  app.use('/accounts', accountsRouter);
+  app.use('/customers', customersRouter);
+  app.use('/staff', staffRouter);
+  app.use('/services', servicesRouter);
+  app.use('/schedules', schedulesRouter);
+  app.use('/appointments', appointmentsRouter);
+  app.use('/reviews', reviewsRouter);
+
+  // Protected test route (to verify auth works)
+  app.get('/api/me', authenticate, (req: AuthenticatedRequest, res) => {
+    res.json({ user: req.user });
+  });
+
+  // Error handling
+  app.use(notFoundHandler);
+  app.use(errorHandler);
+
+  return app;
+}
+
+const app = createApp();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
-app.use(express.json());
-
-// Routes
-app.get('/health', async (_req, res) => {
-  try {
-    // Use a simple query to verify DB connectivity
-    await db.orm.public.Account.where({}).first();
-    res.json({ status: 'ok', database: 'connected' });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const isConnectionError =
-      message.includes('connect') || message.includes('ECONNREFUSED');
-
-    if (isConnectionError) {
-      console.error('Database connection failed:', error);
-      res.status(500).json({ status: 'error', database: 'disconnected' });
-    } else {
-      // Table might not exist yet, but DB is reachable
-      res.json({ status: 'ok', database: 'connected' });
-    }
-  }
-});
-
-app.use('/auth', authRouter);
-app.use('/accounts', accountsRouter);
-app.use('/customers', customersRouter);
-app.use('/staff', staffRouter);
-app.use('/services', servicesRouter);
-app.use('/schedules', schedulesRouter);
-app.use('/appointments', appointmentsRouter);
-app.use('/reviews', reviewsRouter);
-
-// Protected test route (to verify auth works)
-app.get('/api/me', authenticate, (req: AuthenticatedRequest, res) => {
-  res.json({ user: req.user });
-});
-
-// Error handling
-app.use(notFoundHandler);
-app.use(errorHandler);
-
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}
 
 export { app };
