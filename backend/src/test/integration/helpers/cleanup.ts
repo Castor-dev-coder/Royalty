@@ -86,10 +86,10 @@ export async function cleanupTestRecords(): Promise<CleanupResult> {
     .filter((s) => isTestServiceName(s.name))
     .map((s) => s.id);
 
-  // Step 4: Find test appointments
+  // Step 4: Find test appointments (by code prefix OR by test customer ownership)
   const testAppointments = await db.orm.public.Appointment.where({}).all();
   const testAppointmentIds = testAppointments
-    .filter((a) => isTestAppointmentCode(a.appointmentCode))
+    .filter((a) => isTestAppointmentCode(a.appointmentCode) || testCustomerIds.includes(a.customerId))
     .map((a) => a.id);
 
   // Step 5: Delete in dependency order (children first)
