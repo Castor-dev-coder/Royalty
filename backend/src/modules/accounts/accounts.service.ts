@@ -119,8 +119,8 @@ export class AccountService {
     if (accountId === requestingUserId && newStatus === 'DEACTIVATED' && account.role === 'ADMIN') {
       const adminCountResult = await db.orm.public.Account
         .where({ role: 'ADMIN', status: 'ACTIVE' })
-        .count();
-      const adminCount = typeof adminCountResult === 'number' ? adminCountResult : 0;
+        .aggregate((aggregate) => ({ total: aggregate.count() }));
+      const adminCount = typeof adminCountResult.total === 'number' ? adminCountResult.total : 0;
       if (adminCount <= 1) {
         throw new BadRequestError('Cannot deactivate the only active admin account');
       }
