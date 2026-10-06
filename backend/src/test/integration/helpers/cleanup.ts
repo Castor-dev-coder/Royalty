@@ -21,23 +21,40 @@ export interface CleanupResult {
   accounts: number;
 }
 
-function isTestEmail(email: string): boolean {
-  return email.endsWith(TEST_EMAIL_DOMAIN);
+/**
+ * Ownership model
+ * ---------------
+ * The Node test runner executes integration test FILES in parallel child
+ * processes, so a shared cleanup helper must never treat another file's active
+ * fixtures as its own. A previous version matched every `@test.royalty.local`
+ * account, which let one file delete another file's test customer mid-run.
+ *
+ * Every caller therefore passes an explicit scope token (e.g. 'batch5d') and
+ * cleanup only ever touches records carrying that token. Passing a scope is
+ * mandatory, so no caller can accidentally request a broad, cross-file sweep.
+ *
+ * Matching normalizes the identifier — lowercased, non-alphanumerics stripped —
+ * so one rule covers emails, names and appointment codes:
+ *   'test-customer-batch5d@test.royalty.local' -> contains 'batch5d'
+ *   '[TEST] Batch 5E Category'                 -> contains 'batch5e'
+ *   'APT-TEST-BATCH5D-1A2B3C4D'                -> contains 'batch5d'
+ */
+function normalizeIdentifier(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
-function isTestAppointmentCode(code: string): boolean {
-  return code.startsWith(TEST_APPOINTMENT_CODE_PREFIX);
+function isOwnedBy(identifier: string, normalizedScope: string): boolean {
+  return normalizeIdentifier(identifier).includes(normalizedScope);
 }
 
-function isTestServiceName(name: string): boolean {
-  return name.startsWith(TEST_SERVICE_NAME_PREFIX);
-}
+export async function cleanupTestRecords(scope: string): Promise<CleanupResult> {
+  const normalizedScope = normalizeIdentifier(scope);
+  if (normalizedScope.length < 4) {
+    throw new Error(
+      `cleanupTestRecords requires an explicit scope token of at least 4 characters (received: ${scope})`,
+    );
+  }
 
-function isTestCategoryName(name: string): boolean {
-  return name.startsWith(TEST_CATEGORY_NAME_PREFIX);
-}
-
-export async function cleanupTestRecords(): Promise<CleanupResult> {
   const result: CleanupResult = {
     appointmentServices: 0,
     payments: 0,
@@ -57,12 +74,11 @@ export async function cleanupTestRecords(): Promise<CleanupResult> {
   // Step 1: Find test accounts
   const testAccounts = await db.orm.public.Account.where({}).all();
   const testAccountIds = testAccounts
-    .filter((a) => isTestEmail(a.email))
+    .filter((a) => isOwnedBy(a.email, normalizedScope))
     .map((a) => a.id);
 
-  if (testAccountIds.length === 0) {
-    return result;
-  }
+  // No early return here: a file may own services/categories without owning any
+  // account (Batch 5E uses the seed accounts), so those must still be collected.
 
   // Step 2: Find test customers and staff
   const testCustomers = await db.orm.public.Customer.where({}).all();
@@ -78,18 +94,18 @@ export async function cleanupTestRecords(): Promise<CleanupResult> {
   // Step 3: Find test services and categories
   const testCategories = await db.orm.public.ServiceCategory.where({}).all();
   const testCategoryIds = testCategories
-    .filter((c) => isTestCategoryName(c.name))
+    .filter((c) => isOwnedBy(c.name, normalizedScope))
     .map((c) => c.id);
 
   const testServices = await db.orm.public.Service.where({}).all();
   const testServiceIds = testServices
-    .filter((s) => isTestServiceName(s.name))
+    .filter((s) => isOwnedBy(s.name, normalizedScope))
     .map((s) => s.id);
 
   // Step 4: Find test appointments (by code prefix OR by test customer ownership)
   const testAppointments = await db.orm.public.Appointment.where({}).all();
   const testAppointmentIds = testAppointments
-    .filter((a) => isTestAppointmentCode(a.appointmentCode) || testCustomerIds.includes(a.customerId))
+    .filter((a) => isOwnedBy(a.appointmentCode, normalizedScope) || testCustomerIds.includes(a.customerId))
     .map((a) => a.id);
 
   // Step 5: Delete in dependency order (children first)

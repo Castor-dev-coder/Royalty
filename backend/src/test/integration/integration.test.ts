@@ -31,8 +31,8 @@ test('integration infrastructure preflight', async (t) => {
     const meResponse = await request(server.baseUrl, '/api/me');
     assert.equal(meResponse.status, 401);
 
-    // Step 5: Run cleanup (should be a no-op since no test data was created)
-    const cleanupResult = await cleanupTestRecords();
+    // Step 5: Run cleanup scoped to this file (no-op: this file creates no records)
+    const cleanupResult = await cleanupTestRecords('batch5a');
     assert.equal(cleanupResult.accounts, 0, 'No test accounts should exist');
     assert.equal(cleanupResult.appointments, 0, 'No test appointments should exist');
   } finally {

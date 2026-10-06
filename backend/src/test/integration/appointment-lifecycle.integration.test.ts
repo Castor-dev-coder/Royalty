@@ -1,10 +1,12 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { startTestServer, type TestServer } from './helpers/server.js';
 import { request } from './helpers/http.js';
 import { runPreflightChecks } from './helpers/preflight.js';
 import { login } from './helpers/auth.js';
 import { cleanupTestRecords } from './helpers/cleanup.js';
+import { pgVarchar } from '../../prisma/contract-compat.js';
 import { db } from '../../prisma/db.js';
 
 const TEST_EMAIL = 'test-customer-batch5d@test.royalty.local';
@@ -20,6 +22,7 @@ const SEED_SERVICE_IDS = [
 let server: TestServer;
 let accessToken: string;
 let testAppointmentId: string;
+let seededAppointmentId: string;
 
 function addDays(dateStr: string, days: number): string {
   const date = new Date(`${dateStr}T00:00:00.000Z`);
@@ -88,11 +91,28 @@ before(async () => {
   const loginResponse = await login(server.baseUrl, TEST_EMAIL, TEST_PASSWORD);
   assert.equal(loginResponse.status, 200, 'Test customer login should succeed');
   accessToken = loginResponse.body.data.accessToken;
+
+  // Fetch a seeded appointment ID for cross-customer access test
+  const seededCustomerPassword = process.env['SEED_CUSTOMER_PASSWORD'];
+  assert.ok(seededCustomerPassword, 'SEED_CUSTOMER_PASSWORD must be set');
+  const seededLogin = await login(server.baseUrl, 'customer@seed.royalty.local', seededCustomerPassword);
+  assert.equal(seededLogin.status, 200, 'Seeded customer login must succeed');
+  const seededAppointments = await request<{
+    data: { appointments: Array<{ id: string }> };
+  }>(server.baseUrl, '/appointments/me?page=1&limit=1', { token: seededLogin.body.data.accessToken });
+  assert.equal(seededAppointments.status, 200, 'Seeded customer appointments must be accessible');
+  seededAppointmentId = seededAppointments.body.data.appointments[0]!.id;
 });
 
 after(async () => {
+  // Cleanup runs in the lifecycle hook (not a test body) so it still executes
+  // when an earlier assertion fails. Scoped to this file's own fixtures.
   if (server) {
-    await server.close();
+    try {
+      await cleanupTestRecords('batch5d');
+    } finally {
+      await server.close();
+    }
   }
   await db.close();
 });
@@ -249,6 +269,15 @@ test('test customer can create appointment', async () => {
   assert.equal(appointment.services.length, 1, 'Should have 1 service');
   assert.equal(appointment.services[0]!.serviceId, slot!.serviceId, 'Service ID should match');
 
+  // Rewrite the generated code to carry the scoped test marker. The production
+  // generator emits `APT-{uuid}`; test data must be identifiable by code alone
+  // so cleanup never depends on the owning customer still existing.
+  const markedCode = pgVarchar<40>(`APT-TEST-BATCH5D-${randomUUID().slice(0, 8).toUpperCase()}`);
+  const rewritten = await db.orm.public.Appointment.where({ id: appointment.id }).update({
+    appointmentCode: markedCode,
+  });
+  assert.ok(rewritten, 'Test appointment code should be rewritten to the scoped marker');
+
   testAppointmentId = appointment.id;
 });
 
@@ -383,8 +412,7 @@ test('invalid status transition from CANCELLED is rejected', async () => {
 // ============================================================
 
 test('customer cannot access another customer\'s appointment', async () => {
-  // Use a seeded appointment ID that belongs to the seeded customer
-  const seededAppointmentId = '99999999-0000-4000-8000-000000000001';
+  assert.ok(seededAppointmentId, 'Seeded appointment ID must be available');
 
   const response = await request<{
     data: { appointment: { id: string } };
@@ -394,12 +422,22 @@ test('customer cannot access another customer\'s appointment', async () => {
 });
 
 // ============================================================
-// 11. Cleanup verification
+// 11. Test appointment is identifiable by the scoped marker
 // ============================================================
 
-test('test data is cleaned up', async () => {
-  const result = await cleanupTestRecords();
-  assert.ok(result.accounts > 0, 'Should have cleaned up test accounts');
-  assert.ok(result.customers > 0, 'Should have cleaned up test customers');
-  assert.ok(result.appointments > 0, 'Should have cleaned up test appointments');
+test('test appointment carries the APT-TEST marker for scoped cleanup', async () => {
+  assert.ok(testAppointmentId, 'Test appointment must be created first');
+
+  // Cleanup runs in after() and identifies this file's appointment by the
+  // APT-TEST-* marker, independently of whether its customer still exists.
+  const appointment = await db.orm.public.Appointment.where({ id: testAppointmentId }).first();
+  assert.ok(appointment, 'Test appointment should still exist at this point');
+  assert.ok(
+    appointment.appointmentCode.startsWith('APT-TEST-'),
+    `Test appointment code should carry the APT-TEST- marker (got: ${appointment.appointmentCode})`,
+  );
+  assert.ok(
+    appointment.appointmentCode.includes('BATCH5D'),
+    `Test appointment code should identify this file (got: ${appointment.appointmentCode})`,
+  );
 });
