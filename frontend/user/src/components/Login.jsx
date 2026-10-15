@@ -1,0 +1,99 @@
+import { useState } from 'react'
+import AuthModal from './AuthModal.jsx'
+import BrandMark from './BrandMark.jsx'
+
+function Login({ onClose, onSwitch }) {
+  const [showPassword, setShowPassword] = useState(false)
+  const [message, setMessage] = useState('')
+
+  function handleSubmit(event) {
+    event.preventDefault()
+    setMessage('This preview form is ready to connect to salon authentication.')
+  }
+
+  return (
+    <AuthModal onClose={onClose} variant="login">
+      <div className="flex flex-col items-center px-[clamp(24px,8vw,58px)] pt-[38px] pb-[35px] max-[680px]:px-[22px] max-[680px]:pt-8 max-[680px]:pb-[27px]">
+        <BrandMark className="size-[86px] max-[680px]:size-[72px]" />
+        <h2 className="my-[25px] mb-[27px] text-center text-[clamp(1.35rem,4vw,1.75rem)] font-normal text-[#f0efed]" id="login-title">
+          Login to your account
+        </h2>
+        <form className="flex w-full flex-col gap-[14px]" onSubmit={handleSubmit}>
+          <label className="flex min-h-[61px] items-center gap-[19px] rounded-[10px] border border-[#3a3835] bg-[rgba(29,29,29,0.75)] px-[18px] transition-[border-color,box-shadow] duration-[180ms] focus-within:border-[var(--gold)] focus-within:shadow-[0_0_0_2px_rgba(212,180,92,0.1)] max-[680px]:min-h-[55px] max-[680px]:gap-[13px] max-[680px]:px-[14px]">
+            <svg className="size-[26px] shrink-0 fill-none stroke-[var(--gold)] [stroke-linecap:round] [stroke-linejoin:round] [stroke-width:1.5]" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="3" y="5" width="18" height="14" rx="1.5" />
+              <path d="m4 7 8 6 8-6" />
+            </svg>
+            <input
+              className="min-w-0 w-full border-0 bg-transparent text-[0.88rem] text-[#f3f0e8] outline-none placeholder:text-[#898783] focus-visible:outline-0 max-[680px]:text-[0.78rem]"
+              autoComplete="email"
+              name="email"
+              placeholder="Email Address"
+              required
+              type="email"
+            />
+          </label>
+          <label className="flex min-h-[61px] items-center gap-[19px] rounded-[10px] border border-[#3a3835] bg-[rgba(29,29,29,0.75)] px-[18px] transition-[border-color,box-shadow] duration-[180ms] focus-within:border-[var(--gold)] focus-within:shadow-[0_0_0_2px_rgba(212,180,92,0.1)] max-[680px]:min-h-[55px] max-[680px]:gap-[13px] max-[680px]:px-[14px]">
+            <svg className="size-[26px] shrink-0 fill-none stroke-[var(--gold)] [stroke-linecap:round] [stroke-linejoin:round] [stroke-width:1.5]" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="5" y="10" width="14" height="11" rx="2" />
+              <path d="M8 10V7a4 4 0 0 1 8 0v3m-4 4v3" />
+            </svg>
+            <input
+              className="min-w-0 w-full border-0 bg-transparent text-[0.88rem] text-[#f3f0e8] outline-none placeholder:text-[#898783] focus-visible:outline-0 max-[680px]:text-[0.78rem]"
+              autoComplete="current-password"
+              name="password"
+              placeholder="Password"
+              required
+              type={showPassword ? 'text' : 'password'}
+            />
+            <button
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              className="grid h-[34px] w-7 shrink-0 cursor-pointer place-items-center border-0 bg-transparent text-[#b1b1b1]"
+              onClick={() => setShowPassword((visible) => !visible)}
+              type="button"
+            >
+              <svg className="w-[23px] fill-none stroke-current [stroke-linecap:round] [stroke-linejoin:round] [stroke-width:1.6]" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+            </button>
+          </label>
+          <div className="-mt-[5px] flex justify-end">
+            <button
+              className="cursor-pointer border-0 bg-transparent p-0 text-[0.65rem] text-[var(--gold)] no-underline hover:text-[var(--gold-bright)] hover:underline"
+              onClick={() =>
+                setMessage('Password recovery will be available when auth is connected.')
+              }
+              type="button"
+            >
+              Forgot password?
+            </button>
+          </div>
+          <button className="mt-1 inline-flex min-h-[46px] w-full cursor-pointer items-center justify-center rounded-[3px] border border-[var(--gold)] bg-[var(--gold)] px-[1.4rem] py-[0.8rem] text-[0.7rem] font-bold tracking-[0.13em] text-[#111] uppercase transition-[background-color,color,transform] duration-[180ms] hover:-translate-y-0.5 hover:bg-[var(--gold-bright)]" type="submit">
+            LOG IN
+          </button>
+        </form>
+        {message && <p className="mt-[13px] text-center text-[0.68rem] leading-[1.5] text-[var(--gold-bright)]" role="status">{message}</p>}
+        <p className="mt-[19px] text-center text-[0.68rem] text-[#aaa7a0]">
+          Don&apos;t have an account?{' '}
+          <button className="cursor-pointer border-0 bg-transparent p-0 text-[var(--gold)] no-underline hover:text-[var(--gold-bright)] hover:underline" onClick={onSwitch} type="button">
+            Sign up
+          </button>
+        </p>
+        <div className="relative my-[21px] w-full text-center text-[0.58rem] text-[#77736b] before:absolute before:top-1/2 before:right-0 before:left-0 before:h-px before:bg-[#34322e] before:content-['']">
+          <span className="relative bg-[#11110f] px-3">OR</span>
+        </div>
+        <button
+          className="flex min-h-11 w-full cursor-pointer items-center justify-center gap-[10px] rounded border border-[#34322e] bg-[#171716] text-[0.7rem] text-[#e1ded8] transition-[border-color,background] duration-[180ms] hover:border-[var(--gold)] hover:bg-[#1d1c19]"
+          onClick={() => setMessage('Google sign-in is not connected yet.')}
+          type="button"
+        >
+          <span className="font-[Arial,sans-serif] text-base font-bold text-[#4285f4]" aria-hidden="true">G</span>
+          Log in with Google
+        </button>
+      </div>
+    </AuthModal>
+  )
+}
+
+export default Login
