@@ -11,6 +11,9 @@ interface MockAccount {
   role: AccountRole;
   status: AccountStatus;
   createdAt: string;
+  passwordHash?: string;
+  requiresPasswordChange?: boolean;
+  passwordChangedAt?: string | null;
 }
 
 interface MockCustomer {
@@ -42,6 +45,7 @@ interface MockService {
   price: number;
   durationMinutes: number;
   isActive: boolean;
+  imageUrl?: string | null;
 }
 
 interface MockAppointment {
@@ -172,20 +176,80 @@ function isoAtOffset(days: number): string {
   return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
 }
 
+function hashString(value: string): string {
+  const bytes = new TextEncoder().encode(value);
+  const k = [
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+  ];
+  const words = new Uint32Array(64);
+  let h0 = 0x6a09e667, h1 = 0xbb67ae85, h2 = 0x3c6ef372, h3 = 0xa54ff53a;
+  let h4 = 0x510e527f, h5 = 0x9b05688c, h6 = 0x1f83d9ab, h7 = 0x5be0cd19;
+  const bitLength = bytes.length * 8;
+  const padded = new Uint8Array(((bytes.length + 9 + 63) & ~63));
+  padded.set(bytes);
+  padded[bytes.length] = 0x80;
+  const lengthBytes = new Uint8Array(8);
+  for (let i = 0; i < 8; i += 1) lengthBytes[7 - i] = (bitLength >>> (i * 8)) & 0xff;
+  padded.set(lengthBytes, padded.length - 8);
+
+  for (let chunk = 0; chunk < padded.length; chunk += 64) {
+    for (let i = 0; i < 16; i += 1) {
+      const start = chunk + i * 4;
+      words[i] = (padded[start] << 24) | (padded[start + 1] << 16) | (padded[start + 2] << 8) | padded[start + 3];
+    }
+    for (let i = 16; i < 64; i += 1) {
+      const s0 = rotr(words[i - 15], 7) ^ rotr(words[i - 15], 18) ^ (words[i - 15] >>> 3);
+      const s1 = rotr(words[i - 2], 17) ^ rotr(words[i - 2], 19) ^ (words[i - 2] >>> 10);
+      words[i] = (words[i - 16] + s0 + words[i - 7] + s1) >>> 0;
+    }
+
+    let a = h0, b = h1, c = h2, d = h3, e = h4, f = h5, g = h6, h = h7;
+    for (let i = 0; i < 64; i += 1) {
+      const s1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
+      const ch = (e & f) ^ (~e & g);
+      const temp1 = (h + s1 + ch + k[i] + words[i]) >>> 0;
+      const s0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
+      const maj = (a & b) ^ (a & c) ^ (b & c);
+      const temp2 = (s0 + maj) >>> 0;
+      h = g; g = f; f = e; e = (d + temp1) >>> 0; d = c; c = b; b = a; a = (temp1 + temp2) >>> 0;
+    }
+
+    h0 = (h0 + a) >>> 0; h1 = (h1 + b) >>> 0; h2 = (h2 + c) >>> 0; h3 = (h3 + d) >>> 0;
+    h4 = (h4 + e) >>> 0; h5 = (h5 + f) >>> 0; h6 = (h6 + g) >>> 0; h7 = (h7 + h) >>> 0;
+  }
+
+  return [h0, h1, h2, h3, h4, h5, h6, h7].map((value) => value.toString(16).padStart(8, '0')).join('');
+}
+
+function rotr(value: number, bits: number): number {
+  return (value >>> bits) | (value << (32 - bits));
+}
+
+function isValidPassword(password: string): boolean {
+  return /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/.test(password);
+}
+
 function makeDemoData(): MockData {
   const accounts: MockAccount[] = [
-    { id: '11111111-0000-4000-8000-000000000001', email: 'admin@seed.royalty.local', firstName: 'Morgan', lastName: 'Reyes', role: 'ADMIN', status: 'ACTIVE', createdAt: isoAtOffset(-180) },
-    { id: '11111111-0000-4000-8000-000000000002', email: 'manager@seed.royalty.local', firstName: 'Alex', lastName: 'Santos', role: 'MANAGER', status: 'ACTIVE', createdAt: isoAtOffset(-120) },
-    { id: '11111111-0000-4000-8000-000000000003', email: 'elena.morales@example.test', firstName: 'Elena', lastName: 'Morales', role: 'STAFF', status: 'ACTIVE', createdAt: isoAtOffset(-100) },
-    { id: '11111111-0000-4000-8000-000000000004', email: 'jules.navaro@example.test', firstName: 'Jules', lastName: 'Navarro', role: 'STAFF', status: 'ACTIVE', createdAt: isoAtOffset(-85) },
-    { id: '11111111-0000-4000-8000-000000000005', email: 'mika.tan@example.test', firstName: 'Mika', lastName: 'Tan', role: 'STAFF', status: 'ACTIVE', createdAt: isoAtOffset(-75) },
-    { id: '11111111-0000-4000-8000-000000000006', email: 'bea.lim@example.test', firstName: 'Bea', lastName: 'Lim', role: 'STAFF', status: 'DEACTIVATED', createdAt: isoAtOffset(-60) },
-    { id: '11111111-0000-4000-8000-000000000007', email: 'camille.dizon@example.test', firstName: 'Camille', lastName: 'Dizon', role: 'CUSTOMER', status: 'ACTIVE', createdAt: isoAtOffset(-55) },
-    { id: '11111111-0000-4000-8000-000000000008', email: 'marco.villanueva@example.test', firstName: 'Marco', lastName: 'Villanueva', role: 'CUSTOMER', status: 'ACTIVE', createdAt: isoAtOffset(-45) },
-    { id: '11111111-0000-4000-8000-000000000009', email: 'bea.santos@example.test', firstName: 'Bea', lastName: 'Santos', role: 'CUSTOMER', status: 'ACTIVE', createdAt: isoAtOffset(-35) },
-    { id: '11111111-0000-4000-8000-000000000010', email: 'renz.aguilar@example.test', firstName: 'Renz', lastName: 'Aguilar', role: 'CUSTOMER', status: 'ACTIVE', createdAt: isoAtOffset(-25) },
-    { id: '11111111-0000-4000-8000-000000000011', email: 'nicole.ramos@example.test', firstName: 'Nicole', lastName: 'Ramos', role: 'CUSTOMER', status: 'ACTIVE', createdAt: isoAtOffset(-18) },
-    { id: '11111111-0000-4000-8000-000000000012', email: 'sophie.lee@example.test', firstName: 'Sophie', lastName: 'Lee', role: 'CUSTOMER', status: 'ACTIVE', createdAt: isoAtOffset(-8) },
+    { id: '11111111-0000-4000-8000-000000000001', email: 'admin@seed.royalty.local', firstName: 'Morgan', lastName: 'Reyes', role: 'ADMIN', status: 'ACTIVE', createdAt: isoAtOffset(-180), passwordHash: hashString('RoyaltyDemo2026!'), requiresPasswordChange: false, passwordChangedAt: isoAtOffset(-180) },
+    { id: '11111111-0000-4000-8000-000000000002', email: 'manager@seed.royalty.local', firstName: 'Alex', lastName: 'Santos', role: 'MANAGER', status: 'ACTIVE', createdAt: isoAtOffset(-120), requiresPasswordChange: true },
+    { id: '11111111-0000-4000-8000-000000000003', email: 'elena.morales@example.test', firstName: 'Elena', lastName: 'Morales', role: 'STAFF', status: 'ACTIVE', createdAt: isoAtOffset(-100), requiresPasswordChange: true },
+    { id: '11111111-0000-4000-8000-000000000004', email: 'jules.navaro@example.test', firstName: 'Jules', lastName: 'Navarro', role: 'STAFF', status: 'ACTIVE', createdAt: isoAtOffset(-85), requiresPasswordChange: true },
+    { id: '11111111-0000-4000-8000-000000000005', email: 'mika.tan@example.test', firstName: 'Mika', lastName: 'Tan', role: 'STAFF', status: 'ACTIVE', createdAt: isoAtOffset(-75), requiresPasswordChange: true },
+    { id: '11111111-0000-4000-8000-000000000006', email: 'bea.lim@example.test', firstName: 'Bea', lastName: 'Lim', role: 'STAFF', status: 'DEACTIVATED', createdAt: isoAtOffset(-60), requiresPasswordChange: true },
+    { id: '11111111-0000-4000-8000-000000000007', email: 'camille.dizon@example.test', firstName: 'Camille', lastName: 'Dizon', role: 'CUSTOMER', status: 'ACTIVE', createdAt: isoAtOffset(-55), requiresPasswordChange: true },
+    { id: '11111111-0000-4000-8000-000000000008', email: 'marco.villanueva@example.test', firstName: 'Marco', lastName: 'Villanueva', role: 'CUSTOMER', status: 'ACTIVE', createdAt: isoAtOffset(-45), requiresPasswordChange: true },
+    { id: '11111111-0000-4000-8000-000000000009', email: 'bea.santos@example.test', firstName: 'Bea', lastName: 'Santos', role: 'CUSTOMER', status: 'ACTIVE', createdAt: isoAtOffset(-35), requiresPasswordChange: true },
+    { id: '11111111-0000-4000-8000-000000000010', email: 'renz.aguilar@example.test', firstName: 'Renz', lastName: 'Aguilar', role: 'CUSTOMER', status: 'ACTIVE', createdAt: isoAtOffset(-25), requiresPasswordChange: true },
+    { id: '11111111-0000-4000-8000-000000000011', email: 'nicole.ramos@example.test', firstName: 'Nicole', lastName: 'Ramos', role: 'CUSTOMER', status: 'ACTIVE', createdAt: isoAtOffset(-18), requiresPasswordChange: true },
+    { id: '11111111-0000-4000-8000-000000000012', email: 'sophie.lee@example.test', firstName: 'Sophie', lastName: 'Lee', role: 'CUSTOMER', status: 'ACTIVE', createdAt: isoAtOffset(-8), requiresPasswordChange: true },
   ];
   const customers: MockCustomer[] = accounts
     .filter((account) => account.role === 'CUSTOMER')
@@ -216,12 +280,12 @@ function makeDemoData(): MockData {
     { id: '44444444-0000-4000-8000-000000000003', name: 'Skin & Spa', isActive: true },
   ];
   const services: MockService[] = [
-    { id: '55555555-0000-4000-8000-000000000001', categoryId: categories[0].id, name: 'Classic Haircut', description: 'Consultation, cut and finish.', price: 800, durationMinutes: 60, isActive: true },
-    { id: '55555555-0000-4000-8000-000000000002', categoryId: categories[0].id, name: 'Full Hair Color', description: 'Personalized color with a nourishing finish.', price: 2400, durationMinutes: 150, isActive: true },
-    { id: '55555555-0000-4000-8000-000000000003', categoryId: categories[1].id, name: 'Royal Gel Manicure', description: 'Shape, cuticle care and long-wear gel.', price: 1200, durationMinutes: 75, isActive: true },
-    { id: '55555555-0000-4000-8000-000000000004', categoryId: categories[1].id, name: 'Signature Pedicure', description: 'Spa soak, exfoliation and polish.', price: 1500, durationMinutes: 90, isActive: true },
-    { id: '55555555-0000-4000-8000-000000000005', categoryId: categories[2].id, name: 'Glow Facial Treatment', description: 'Gentle cleanse and hydrating facial.', price: 1800, durationMinutes: 90, isActive: true },
-    { id: '55555555-0000-4000-8000-000000000006', categoryId: categories[2].id, name: 'Aromatherapy Body Spa', description: 'Relaxing full-body aromatherapy treatment.', price: 2500, durationMinutes: 120, isActive: true },
+    { id: '55555555-0000-4000-8000-000000000001', categoryId: categories[0].id, name: 'Classic Haircut', description: 'Consultation, cut and finish.', price: 800, durationMinutes: 60, isActive: true, imageUrl: null },
+    { id: '55555555-0000-4000-8000-000000000002', categoryId: categories[0].id, name: 'Full Hair Color', description: 'Personalized color with a nourishing finish.', price: 2400, durationMinutes: 150, isActive: true, imageUrl: null },
+    { id: '55555555-0000-4000-8000-000000000003', categoryId: categories[1].id, name: 'Royal Gel Manicure', description: 'Shape, cuticle care and long-wear gel.', price: 1200, durationMinutes: 75, isActive: true, imageUrl: null },
+    { id: '55555555-0000-4000-8000-000000000004', categoryId: categories[1].id, name: 'Signature Pedicure', description: 'Spa soak, exfoliation and polish.', price: 1500, durationMinutes: 90, isActive: true, imageUrl: null },
+    { id: '55555555-0000-4000-8000-000000000005', categoryId: categories[2].id, name: 'Glow Facial Treatment', description: 'Gentle cleanse and hydrating facial.', price: 1800, durationMinutes: 90, isActive: true, imageUrl: null },
+    { id: '55555555-0000-4000-8000-000000000006', categoryId: categories[2].id, name: 'Aromatherapy Body Spa', description: 'Relaxing full-body aromatherapy treatment.', price: 2500, durationMinutes: 120, isActive: true, imageUrl: null },
   ];
   const appointmentRecords = [
     { offset: 0, time: '09:00', customer: 0, staff: 0, service: 0, status: 'CONFIRMED' as const },
@@ -423,7 +487,9 @@ function mockRequest(input: RequestInfo | URL, init?: RequestInit): Response {
 
   if (path === '/auth/login' && method === 'POST') {
     const account = readData().accounts.find((item) => item.email.toLowerCase() === String(body.email ?? '').toLowerCase());
-    if (!account || account.role !== 'ADMIN' || account.status !== 'ACTIVE' || body.password !== 'RoyaltyDemo2026!') {
+    const suppliedPassword = String(body.password ?? '');
+    const passwordHash = hashString(suppliedPassword);
+    if (!account || account.role !== 'ADMIN' || account.status !== 'ACTIVE' || account.passwordHash !== passwordHash) {
       return errorResponse('Invalid development demo credentials.', 401);
     }
     return jsonResponse({ data: { accessToken: MOCK_TOKEN, refreshToken: 'royalty-dev-mock-refresh', account: { id: account.id, email: account.email, role: account.role } } });
@@ -442,21 +508,54 @@ function mockRequest(input: RequestInfo | URL, init?: RequestInit): Response {
   }
   if (path === '/accounts' && method === 'POST') {
     const email = String(body.email ?? '').trim().toLowerCase();
+    const password = String(body.password ?? '').trim();
+    const firstName = String(body.firstName ?? '').trim();
+    const lastName = String(body.lastName ?? '').trim();
     if (!email || data.accounts.some((account) => account.email.toLowerCase() === email)) return errorResponse('Enter a unique email address.', 409);
-    const [firstName, ...lastName] = String(body.fullName ?? '').trim().split(/\s+/).filter(Boolean);
-    if (!firstName || !['MANAGER', 'STAFF'].includes(body.role)) return errorResponse('Enter a name and choose a staff or manager role.', 400);
+    if (!firstName || !lastName || !['MANAGER', 'STAFF'].includes(body.role)) return errorResponse('Enter a first name, last name, and choose a staff or manager role.', 400);
+    if (!isValidPassword(password)) return errorResponse('Use a strong temporary password with at least 8 characters, including upper/lowercase, a number, and a special character.', 400);
     const account: MockAccount = {
       id: newId(),
       email,
       firstName,
-      lastName: lastName.join(' ') || firstName,
+      lastName,
       role: body.role,
       status: 'ACTIVE',
       createdAt: new Date().toISOString(),
+      passwordHash: hashString(password),
+      requiresPasswordChange: true,
+      passwordChangedAt: null,
     };
     data.accounts.unshift(account);
+    const scheduleData = Array.isArray(body.schedule) ? body.schedule : [];
+    const staffId = body.role === 'STAFF' ? `33333333-0000-4000-8000-${String(data.accounts.length).padStart(12, '0')}` : null;
+    if (staffId) {
+      const member: MockStaff = {
+        id: staffId,
+        accountId: account.id,
+        firstName,
+        lastName,
+        phone: '',
+        primaryRole: 'Stylist',
+        employmentType: 'FULL_TIME',
+        workStatus: 'ON_DUTY',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      data.staff.push(member);
+      for (const entry of scheduleData) {
+        data.schedules.push({
+          id: newId(),
+          staffId,
+          dayOfWeek: Number(entry.dayOfWeek),
+          startTime: String(entry.startTime),
+          endTime: String(entry.endTime),
+          isActive: true,
+        });
+      }
+    }
     writeData(data);
-    return jsonResponse({ data: account }, 201);
+    return jsonResponse({ data: { ...account, staffId, schedule: scheduleData } }, 201);
   }
   const accountStatusMatch = path.match(/^\/accounts\/([^/]+)\/status$/);
   if (accountStatusMatch && method === 'PATCH') {
@@ -504,7 +603,6 @@ function mockRequest(input: RequestInfo | URL, init?: RequestInit): Response {
   if (staffMatch && method === 'PATCH') {
     const member = data.staff.find((item) => item.id === staffMatch[1]);
     if (!member) return errorResponse('Staff profile not found.', 404);
-    if (body.firstName !== undefined) member.firstName = String(body.firstName).trim();
     if (body.lastName !== undefined) member.lastName = String(body.lastName).trim();
     if (body.phone !== undefined) member.phone = String(body.phone).trim();
     if (body.primaryRole !== undefined) member.primaryRole = String(body.primaryRole);
@@ -567,6 +665,33 @@ function mockRequest(input: RequestInfo | URL, init?: RequestInit): Response {
   }
 
   if (path === '/schedules/staff' && method === 'GET') return jsonResponse({ data: { staffSchedules: data.schedules } });
+  const staffScheduleMatch = path.match(/^\/schedules\/staff\/([^/]+)$/);
+  if (staffScheduleMatch && method === 'PATCH') {
+    const staffId = staffScheduleMatch[1];
+    if (!data.staff.some((member) => member.id === staffId)) return errorResponse('Staff profile not found.', 404);
+    const scheduleData = Array.isArray(body.schedule) ? body.schedule : [];
+    const staffSchedule = data.schedules.filter((s) => s.staffId === staffId);
+    const updated: any[] = [];
+    for (const entry of scheduleData) {
+      const dayOfWeek = Number(entry.dayOfWeek);
+      const startTime = String(entry.startTime);
+      const endTime = String(entry.endTime);
+      const existing = staffSchedule.find((s) => s.dayOfWeek === dayOfWeek);
+      if (existing) {
+        existing.startTime = startTime;
+        existing.endTime = endTime;
+        existing.isActive = true;
+        updated.push(existing);
+      } else {
+        const newEntry = { id: newId(), staffId, dayOfWeek, startTime, endTime, isActive: true };
+        data.schedules.push(newEntry);
+        updated.push(newEntry);
+      }
+    }
+    data.schedules = data.schedules.filter((s) => s.staffId !== staffId || scheduleData.some((e: any) => Number(e.dayOfWeek) === s.dayOfWeek));
+    writeData(data);
+    return jsonResponse({ data: { staffSchedules: updated } });
+  }
   if (path === '/schedules/requests' && method === 'GET') return jsonResponse({ data: { scheduleRequests: data.scheduleRequests } });
 
   if (path === '/appointments' && method === 'GET') {
@@ -685,13 +810,14 @@ function mockRequest(input: RequestInfo | URL, init?: RequestInit): Response {
     const category = data.categories.find((item) => item.id === categoryId);
     const price = Number(body.price);
     const durationMinutes = Number(body.durationMinutes);
+    const imageUrl = typeof body.imageUrl === 'string' && body.imageUrl ? body.imageUrl : null;
     if (!category || !category.isActive) return errorResponse('Choose an active service category.', 400);
     if (!name || name.length > 200 || !Number.isFinite(price) || price <= 0 || !Number.isInteger(durationMinutes) || durationMinutes < 1 || durationMinutes > 300) {
       return errorResponse('Enter a name, positive price, and duration between 1 and 300 minutes.', 400);
     }
     if (data.services.some((item) => item.categoryId === categoryId && item.name.toLowerCase() === name.toLowerCase())) return errorResponse('A service with this name already exists in this category.', 409);
     const now = new Date().toISOString();
-    const service: MockService = { id: newId(), categoryId, name, description: String(body.description ?? ''), price, durationMinutes, isActive: true };
+    const service: MockService = { id: newId(), categoryId, name, description: String(body.description ?? ''), price, durationMinutes, isActive: true, imageUrl };
     data.services.push(service);
     writeData(data);
     return jsonResponse({ data: { service: { ...service, categoryName: category.name, createdAt: now, updatedAt: now } } }, 201);
@@ -713,6 +839,7 @@ function mockRequest(input: RequestInfo | URL, init?: RequestInit): Response {
     service.categoryId = categoryId;
     service.name = name;
     if (body.description !== undefined) service.description = String(body.description);
+    if (body.imageUrl !== undefined) service.imageUrl = body.imageUrl ? String(body.imageUrl) : null;
     service.price = price;
     service.durationMinutes = durationMinutes;
     if (body.isActive !== undefined) service.isActive = Boolean(body.isActive);

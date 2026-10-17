@@ -1,5 +1,5 @@
 import { BrowserRouter, NavLink, Outlet, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { apiFetch, clearAccessTokens, getAccessToken, mockApiEnabled, resetMockData, storeAccessTokens } from './api';
 
 type Review = {
@@ -58,6 +58,37 @@ const navItems = [
   { label: 'Staff Management', to: '/staff' },
 ];
 
+const weekDayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+function normalizeWeeklySchedule(days: any[] = []): Array<{ dayOfWeek: number; enabled: boolean; startTime: string; endTime: string }> {
+  const normalized = Array.from({ length: 7 }, (_, index) => ({
+    dayOfWeek: index + 1,
+    enabled: false,
+    startTime: '09:00',
+    endTime: '17:00',
+  }));
+
+  for (const entry of days) {
+    const dayOfWeek = Number(entry?.dayOfWeek ?? 0);
+    if (dayOfWeek >= 1 && dayOfWeek <= 7) {
+      normalized[dayOfWeek - 1] = {
+        dayOfWeek,
+        enabled: entry?.isActive ?? entry?.enabled ?? true,
+        startTime: String(entry?.startTime ?? '09:00'),
+        endTime: String(entry?.endTime ?? '17:00'),
+      };
+    }
+  }
+
+  return normalized;
+}
+
+function summarizeSchedule(days: Array<{ dayOfWeek: number; enabled: boolean; startTime: string; endTime: string }>) {
+  const active = days.filter((day) => day.enabled);
+  if (!active.length) return 'No recurring schedule';
+  return active.map((day) => `${weekDayLabels[day.dayOfWeek - 1]} ${day.startTime}-${day.endTime}`).join(' · ');
+}
+
 function App() {
   return (
     <BrowserRouter>
@@ -67,8 +98,7 @@ function App() {
           <Route path="services" element={<ServiceManagementPage />} />
           <Route path="accounts" element={<AccountManagementPage />} />
           <Route path="staff" element={<StaffManagementPage />} />
-          <Route path="staff/:staffId/edit" element={<StaffEditPage />} />
-          <Route path="appointments" element={<AppointmentPage />} />
+            <Route path="appointments" element={<AppointmentPage />} />
           <Route path="payments" element={<PaymentPage />} />
         </Route>
       </Routes>
@@ -261,6 +291,12 @@ function Shell() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(Boolean(getAccessToken()));
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [location.pathname]);
+
   const pageTitle = useMemo(() => {
     if (location.pathname === '/accounts') return 'Authentication & Account Management';
     if (location.pathname === '/staff') return 'Staff Directory & Performance';
@@ -271,10 +307,20 @@ function Shell() {
     return 'Business Dashboard';
   }, [location.pathname]);
 
+  if (!isAuthenticated) {
+    return <LoginPage onLogin={() => { setIsAuthenticated(true); window.location.reload(); }} />;
+  }
+
   return (
     <div className="page-bg">
       <div className="viewer-shell">
-        <aside className="sidebar">
+        <button type="button" className="mobile-nav-toggle" aria-label="Toggle navigation" aria-expanded={mobileNavOpen} onClick={() => setMobileNavOpen((open) => !open)}>
+          <span />
+          <span />
+          <span />
+        </button>
+
+        <aside className={`sidebar${mobileNavOpen ? ' mobile-open' : ''}`}>
           <div className="brand-wrap sidebar-brand">
             <div className="brand-mark">R</div>
             <div>
@@ -284,7 +330,7 @@ function Shell() {
           </div>
           <nav className="nav" aria-label="Main navigation">
             {navItems.map(({ label, to }) => (
-              <NavLink key={label} to={to} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
+              <NavLink key={label} to={to} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`} onClick={() => setMobileNavOpen(false)}>
                 <span className="nav-icon" aria-hidden="true">{label === 'Business Dashboard' ? '▣' : label === 'Account Management' ? '◫' : label === 'Appointments & Calendar' ? '▤' : label === 'Payments & Verification' ? '≡' : '◎'}</span>
                 {label}
               </NavLink>
@@ -294,19 +340,15 @@ function Shell() {
             type="button"
             className="profile-card sidebar-profile"
             onClick={() => {
-              if (isAuthenticated) {
-                clearAccessTokens();
-                setIsAuthenticated(false);
-                window.location.reload();
-              } else {
-                setShowLoginModal(true);
-              }
+              clearAccessTokens();
+              setIsAuthenticated(false);
+              window.location.reload();
             }}
           >
-            <div className="avatar">{isAuthenticated ? 'SA' : 'SI'}</div>
+            <div className="avatar">SA</div>
             <div>
-              <strong>{isAuthenticated ? (mockApiEnabled ? 'Demo Administrator' : 'Signed in') : 'Sign in to Royalty'}</strong>
-              <span>{isAuthenticated ? 'Sign out' : mockApiEnabled ? 'Demo mode' : 'Connect to live data'}</span>
+              <strong>{mockApiEnabled ? 'Demo Administrator' : 'Signed in'}</strong>
+              <span>Sign out</span>
             </div>
           </button>
         </aside>
@@ -355,7 +397,6 @@ function Shell() {
       </div>
 
       {showCreateModal && <AccountCreationModal onClose={() => setShowCreateModal(false)} />}
-      {showLoginModal && <LoginModal onClose={() => setShowLoginModal(false)} onLogin={() => { setShowLoginModal(false); setIsAuthenticated(true); window.location.reload(); }} />}
     </div>
   );
 }
@@ -531,6 +572,7 @@ type ServiceRecord = {
   price: number;
   durationMinutes: number;
   isActive: boolean;
+  imageUrl?: string | null;
 };
 
 type CategoryRecord = { id: string; name: string; isActive: boolean };
@@ -676,10 +718,15 @@ function ServiceEditorModal({ service, categories, onClose, onSave }: {
   service: ServiceRecord | null;
   categories: CategoryRecord[];
   onClose: () => void;
-  onSave: (values: { categoryId: string; name: string; description: string; price: number; durationMinutes: number }, service: ServiceRecord | null) => Promise<void>;
+  onSave: (values: { categoryId: string; name: string; description: string; price: number; durationMinutes: number; imageUrl?: string | null }, service: ServiceRecord | null) => Promise<void>;
 }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [imagePreview, setImagePreview] = useState(service?.imageUrl ?? '');
+  const [fileHint, setFileHint] = useState('');
+  const [dragActive, setDragActive] = useState(false);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
+
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
@@ -692,16 +739,96 @@ function ServiceEditorModal({ service, categories, onClose, onSave }: {
         description: String(form.get('description')).trim(),
         price: Number(form.get('price')),
         durationMinutes: Number(form.get('durationMinutes')),
+        imageUrl: imagePreview || null,
       }, service);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unable to save the service.');
       setBusy(false);
     }
   }
+
+  const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png'];
+  const ALLOWED_IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png'];
+
+  function isValidImageFile(file: File): boolean {
+    if (ALLOWED_IMAGE_TYPES.includes(file.type)) return true;
+    const name = file.name.toLowerCase();
+    return ALLOWED_IMAGE_EXTENSIONS.some((ext) => name.endsWith(ext));
+  }
+
+  function setImageFromFile(file: File | null) {
+    if (!file) return;
+    if (!isValidImageFile(file)) {
+      setFileHint('Unsupported file type. Please upload a JPEG or PNG image (.jpg, .jpeg, .png).');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setFileHint('Image is too large. Please use a file under 5MB.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const imageUrl = String(reader.result ?? '');
+      setImagePreview(imageUrl);
+      setFileHint('');
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function handleImageFile(event: React.ChangeEvent<HTMLInputElement>) {
+    setImageFromFile(event.target.files?.[0] ?? null);
+  }
+
+  function handleDrop(event: React.DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setDragActive(false);
+    const file = event.dataTransfer.files?.[0] ?? null;
+    setImageFromFile(file);
+  }
+
+  function removeImage() {
+    setImagePreview('');
+    setFileHint('');
+    if (imageInputRef.current) imageInputRef.current.value = '';
+  }
+
   return (
     <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="service-editor-title" onClick={onClose}>
       <form className="modal-card service-modal" onSubmit={submit} onClick={(event) => event.stopPropagation()}>
         <div className="modal-header"><h3 id="service-editor-title">{service ? 'Edit Service' : 'Add Service'}</h3><button type="button" className="close-button" aria-label="Close" onClick={onClose}>×</button></div>
+
+        <div className="service-upload-field">
+          <span className="field-label">SERVICE PHOTO</span>
+          <div
+            className={`service-upload-dropzone${imagePreview ? ' filled' : ''}${dragActive ? ' drag-active' : ''}`}
+            onClick={() => imageInputRef.current?.click()}
+            onDragOver={(event) => { event.preventDefault(); setDragActive(true); }}
+            onDragLeave={(event) => { event.preventDefault(); setDragActive(false); }}
+            onDrop={handleDrop}
+            role="button"
+            tabIndex={0}
+            aria-label="Upload service photo"
+            onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); imageInputRef.current?.click(); } }}
+          >
+            <input ref={imageInputRef} className="service-upload-input" type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" onChange={handleImageFile} />
+            {imagePreview ? (
+              <img src={imagePreview} alt="Service preview" className="service-image-preview" />
+            ) : (
+              <div className="service-upload-placeholder">
+                <span className="upload-icon" aria-hidden="true">⇪</span>
+                <span>Drag and drop a service photo here or click to browse</span>
+              </div>
+            )}
+            {fileHint && <p className="file-hint-warning" role="alert">{fileHint}</p>}
+          </div>
+          {imagePreview && (
+            <div className="service-upload-actions">
+              <button type="button" className="secondary-action" onClick={() => imageInputRef.current?.click()}>Replace Photo</button>
+              <button type="button" className="link-button danger-link" onClick={removeImage}>Remove Photo</button>
+            </div>
+          )}
+        </div>
+
         <label className="field-label">SERVICE NAME<input className="modal-input" name="name" defaultValue={service?.name ?? ''} required maxLength={200} /></label>
         <label className="field-label">CATEGORY<select className="modal-input" name="categoryId" defaultValue={service?.categoryId ?? categories[0]?.id ?? ''} required>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
         <label className="field-label">DESCRIPTION<textarea className="modal-input" name="description" defaultValue={service?.description ?? ''} maxLength={500} rows={3} /></label>
@@ -797,13 +924,18 @@ function ConfirmModal({ title, message, confirmLabel, danger, onClose, onConfirm
   confirmLabel: string;
   danger?: boolean;
   onClose: () => void;
-  onConfirm: () => Promise<void>;
+  onConfirm: () => void | Promise<void>;
   onError: (error: string) => void;
 }) {
   const [busy, setBusy] = useState(false);
   async function confirm() {
     setBusy(true);
-    try { await onConfirm(); } catch (cause) {
+    try {
+      const result = onConfirm();
+      if (result instanceof Promise) {
+        await result;
+      }
+    } catch (cause) {
       onError(cause instanceof Error ? cause.message : 'The operation failed.');
     } finally { setBusy(false); }
   }
@@ -835,9 +967,10 @@ function AccountManagementPage() {
   const [rows, setRows] = useAccountData();
   const [search, setSearch] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
-  const visibleRows = rows.filter((row) => `${row.user} ${row.email} ${row.role}`.toLowerCase().includes(search.toLowerCase()));
+  const [pendingAction, setPendingAction] = useState<{ row: TableRow; nextStatus: 'ACTIVE' | 'DEACTIVATED' } | null>(null);
+  const visibleRows = rows.filter((row) => row.role !== 'Customer' && `${row.user} ${row.email} ${row.role}`.toLowerCase().includes(search.toLowerCase()));
 
-  async function updateAccountStatus(row: TableRow) {
+  async function updateAccountStatus(row: TableRow, nextStatus: 'ACTIVE' | 'DEACTIVATED') {
     if (!row.accountId) return;
     const token = getAccessToken();
     if (!token) {
@@ -845,7 +978,6 @@ function AccountManagementPage() {
       return;
     }
 
-    const nextStatus = row.status === 'Active' ? 'DEACTIVATED' : 'ACTIVE';
     try {
       const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
       const response = await apiFetch(`${baseUrl}/accounts/${row.accountId}/status`, {
@@ -861,6 +993,8 @@ function AccountManagementPage() {
       setStatusMessage(`Account access set to ${nextStatus === 'ACTIVE' ? 'active' : 'deactivated'}.`);
     } catch (cause) {
       setStatusMessage(cause instanceof Error ? cause.message : 'Unable to update account access.');
+    } finally {
+      setPendingAction(null);
     }
   }
 
@@ -920,7 +1054,7 @@ function AccountManagementPage() {
                     </span>
                   </td>
                   <td>{row.lastLogin}</td>
-                  <td><button type="button" className="link-button" disabled={!row.accountId} onClick={() => updateAccountStatus(row)}>{row.status === 'Active' ? 'Deactivate' : 'Activate'}</button></td>
+                  <td><button type="button" className="link-button" disabled={!row.accountId} onClick={() => setPendingAction({ row, nextStatus: row.status === 'Active' ? 'DEACTIVATED' : 'ACTIVE' })}>{row.status === 'Active' ? 'Deactivate' : 'Activate'}</button></td>
                 </tr>
               ))}
               {visibleRows.length === 0 && <tr><td colSpan={5}>{rows.length ? 'No accounts match this search.' : 'No account records are available for this session.'}</td></tr>}
@@ -931,13 +1065,27 @@ function AccountManagementPage() {
 
         <aside className="panel side-panel">
           <div className="panel-header compact">
-            <h3>System Audit Logs</h3>
+            <h3>Staff Access Overview</h3>
           </div>
           <ul className="log-list">
-            <li><span className="log-dot green" /><div>Account events<small>The backend records audit events but does not expose an audit-log read endpoint.</small></div></li>
+            <li><span className="log-dot green" /><div>Staff accounts only<small>Customer records remain available in appointments, payments, and service workflows.</small></div></li>
           </ul>
         </aside>
       </div>
+
+      {pendingAction && (
+        <ConfirmModal
+          title={pendingAction.nextStatus === 'ACTIVE' ? 'Activate staff account?' : 'Deactivate staff account?'}
+          message={pendingAction.nextStatus === 'ACTIVE'
+            ? `Activate ${pendingAction.row.user} (${pendingAction.row.email}) and restore access to the staff portal?`
+            : `Deactivate ${pendingAction.row.user} (${pendingAction.row.email}) and revoke access until reactivated?`}
+          confirmLabel={pendingAction.nextStatus === 'ACTIVE' ? 'Activate account' : 'Deactivate account'}
+          danger={pendingAction.nextStatus === 'DEACTIVATED'}
+          onClose={() => setPendingAction(null)}
+          onConfirm={() => void updateAccountStatus(pendingAction.row, pendingAction.nextStatus)}
+          onError={(error) => setStatusMessage(error)}
+        />
+      )}
     </>
   );
 }
@@ -946,7 +1094,7 @@ function StaffManagementPage() {
   const [rows, setRows] = useStaffData();
   const [scheduleRequestCount, setScheduleRequestCount] = useState(0);
   const [search, setSearch] = useState('');
-  const navigate = useNavigate();
+  const [editingStaff, setEditingStaff] = useState<StaffRow | null>(null);
   const visibleRows = rows.filter((row) => `${row.user} ${row.email} ${row.role}`.toLowerCase().includes(search.toLowerCase()));
 
   useEffect(() => {
@@ -1022,13 +1170,21 @@ function StaffManagementPage() {
                     {row.status}
                   </span>
                 </td>
-                <td><button type="button" className="link-button" disabled={!row.id} onClick={() => row.id && navigate(`/staff/${row.id}/edit`)}>Edit Staff Account</button></td>
+                <td><button type="button" className="link-button" disabled={!row.id} onClick={() => row.id && setEditingStaff(row)}>Edit Staff Account</button></td>
               </tr>
             ))}
             {visibleRows.length === 0 && <tr><td colSpan={6}>No staff records match this view.</td></tr>}
           </tbody>
         </table>
       </section>
+
+      {editingStaff && (
+        <StaffEditModal
+          staff={editingStaff}
+          onClose={() => setEditingStaff(null)}
+          onSaved={() => { setEditingStaff(null); window.location.reload(); }}
+        />
+      )}
     </>
   );
 }
@@ -1043,11 +1199,7 @@ type TimeOffRecord = {
   endTime: string | null;
 };
 
-function StaffEditPage() {
-  const { staffId = '' } = useParams();
-  const [staffRows] = useStaffData();
-  const staff = staffRows.find((row) => row.id === staffId);
-  const navigate = useNavigate();
+function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose: () => void; onSaved: () => void }) {
   const [timeOff, setTimeOff] = useState<TimeOffRecord[]>([]);
   const [showTimeOff, setShowTimeOff] = useState(false);
   const [editingTimeOff, setEditingTimeOff] = useState<TimeOffRecord | null>(null);
@@ -1056,16 +1208,18 @@ function StaffEditPage() {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [loadingTimeOff, setLoadingTimeOff] = useState(mockApiEnabled);
+  const [schedule, setSchedule] = useState(normalizeWeeklySchedule());
+  const [scheduleError, setScheduleError] = useState('');
+  const [savingSchedule, setSavingSchedule] = useState(false);
 
   useEffect(() => {
-    if (!staffId) return;
     if (!mockApiEnabled) {
       setTimeOffUnavailable(true);
       setLoadingTimeOff(false);
       return;
     }
     const controller = new AbortController();
-    apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/staff/${staffId}/time-off`, { signal: controller.signal })
+    apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/staff/${staff.id}/time-off`, { signal: controller.signal })
       .then(async (response) => {
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.message ?? 'Unable to load time-off records.');
@@ -1074,25 +1228,34 @@ function StaffEditPage() {
       .catch((cause) => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Unable to load time-off records.'); })
       .finally(() => { if (!controller.signal.aborted) setLoadingTimeOff(false); });
     return () => controller.abort();
-  }, [staffId]);
+  }, [staff.id]);
+
+  useEffect(() => {
+    const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+    apiFetch(`${baseUrl}/schedules/staff`, { headers: { Authorization: `Bearer ${getAccessToken()}` } })
+      .then(async (response) => {
+        const payload = await response.json();
+        const staffSchedules = (payload?.data?.staffSchedules ?? []).filter((s: any) => s.staffId === staff.id);
+        if (staffSchedules.length > 0) {
+          setSchedule(normalizeWeeklySchedule(staffSchedules));
+        }
+      })
+      .catch(() => undefined);
+  }, [staff.id]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!staff) return;
     const token = getAccessToken();
     if (!token) { setError('Sign in with an administrator account to edit staff.'); return; }
     setSubmitting(true);
     setError('');
     const form = new FormData(event.currentTarget);
-    const fullName = String(form.get('fullName') ?? '').trim().split(/\s+/);
-    const firstName = fullName.shift() ?? '';
-    const lastName = fullName.join(' ') || firstName;
+    const lastName = String(form.get('lastName') ?? '').trim();
     try {
-      const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/staff/${staffId}`, {
+      const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/staff/${staff.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
-          firstName,
           lastName,
           phone: String(form.get('phone') ?? ''),
           primaryRole: String(form.get('primaryRole') ?? '').trim(),
@@ -1102,17 +1265,49 @@ function StaffEditPage() {
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.message ?? 'Unable to save staff changes.');
-      navigate('/staff', { state: { message: 'Staff account changes saved.' } });
+      onSaved();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unable to save staff changes.');
       setSubmitting(false);
     }
   }
 
+  async function saveSchedule() {
+    const token = getAccessToken();
+    if (!token) { setError('Sign in with an administrator account to save schedule.'); return; }
+    for (const day of schedule) {
+      if (day.enabled && (!day.startTime || !day.endTime || day.startTime >= day.endTime)) {
+        setScheduleError(`${weekDayLabels[day.dayOfWeek - 1]}: Set valid start and end times.`);
+        return;
+      }
+    }
+    setScheduleError('');
+    setSavingSchedule(true);
+    try {
+      const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+      const response = await apiFetch(`${baseUrl}/schedules/staff/${staff.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ schedule: schedule.filter((d) => d.enabled).map((d) => ({ dayOfWeek: d.dayOfWeek, startTime: d.startTime, endTime: d.endTime, isActive: true })) }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.message ?? 'Unable to save schedule.');
+      setNotice('Schedule updated.');
+    } catch (cause) {
+      setScheduleError(cause instanceof Error ? cause.message : 'Unable to save schedule.');
+    } finally {
+      setSavingSchedule(false);
+    }
+  }
+
+  function updateScheduleDay(dayOfWeek: number, field: 'enabled' | 'startTime' | 'endTime', value: boolean | string) {
+    setSchedule((current) => current.map((day) => day.dayOfWeek === dayOfWeek ? { ...day, [field]: value } : day));
+  }
+
   async function saveTimeOff(values: Omit<TimeOffRecord, 'id' | 'staffId'>, existing: TimeOffRecord | null) {
     const token = getAccessToken();
     if (!token) throw new Error('Sign in with an administrator account to manage time off.');
-    const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/staff/${staffId}/time-off${existing ? `/${existing.id}` : ''}`, {
+    const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/staff/${staff.id}/time-off${existing ? `/${existing.id}` : ''}`, {
       method: existing ? 'PATCH' : 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify(values),
@@ -1131,7 +1326,7 @@ function StaffEditPage() {
   async function removeTimeOff(entry: TimeOffRecord) {
     const token = getAccessToken();
     if (!token) { setError('Sign in with an administrator account to manage time off.'); return; }
-    const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/staff/${staffId}/time-off/${entry.id}`, {
+    const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/staff/${staff.id}/time-off/${entry.id}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -1141,40 +1336,78 @@ function StaffEditPage() {
     setNotice('Time off removed.');
   }
 
-  if (!staff) return <section className="panel"><p>{staffRows.length ? 'Staff member not found.' : 'Loading staff details…'}</p><button type="button" className="secondary-action" onClick={() => navigate('/staff')}>Back to Staff</button></section>;
-
   return (
-    <section className="staff-edit-page">
-      <div className="staff-edit-heading"><button type="button" className="secondary-action" onClick={() => navigate('/staff')}>← Back to Staff</button><div><h3>Edit Staff Account</h3><p>Update this professional's profile and planned availability.</p></div></div>
-      <form className="panel staff-account-form" onSubmit={handleSubmit}>
-        <h4>Staff Information</h4>
-        <p className="form-hint">{staff.email}</p>
-        <label className="field-label">FULL NAME<input className="modal-input" name="fullName" defaultValue={staff.user} required maxLength={200} /></label>
-        <label className="field-label">PHONE<input className="modal-input" name="phone" type="tel" defaultValue={staff.phone ?? ''} maxLength={30} /></label>
-        <label className="field-label">PRIMARY ROLE<input className="modal-input" name="primaryRole" defaultValue={staff.role} required maxLength={100} /></label>
-        <div className="form-grid">
-          <label className="field-label">EMPLOYMENT TYPE<select className="modal-input" name="employmentType" defaultValue={staff.employment === 'Part Time' ? 'PART_TIME' : 'FULL_TIME'}><option value="FULL_TIME">Full Time</option><option value="PART_TIME">Part Time</option></select></label>
-          <label className="field-label">WORK STATUS<select className="modal-input" name="workStatus" defaultValue={staff.status === 'Active' ? 'ON_DUTY' : staff.status === 'On Vacation' ? 'UNAVAILABLE' : 'DAY_OFF'}><option value="ON_DUTY">On Duty</option><option value="DAY_OFF">Day Off</option><option value="UNAVAILABLE">Unavailable</option></select></label>
+    <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="staff-edit-title" onClick={onClose}>
+      <section className="modal-card staff-edit-modal" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-header">
+          <h3 id="staff-edit-title">Edit Staff Account</h3>
+          <button type="button" className="close-button" aria-label="Close" onClick={onClose}>×</button>
         </div>
-        {error && <p className="form-error" role="alert">{error}</p>}
-        <div className="modal-actions"><button type="button" className="secondary-action" onClick={() => navigate('/staff')}>Cancel</button><button type="submit" className="primary-action" disabled={submitting}>{submitting ? 'Saving…' : 'Save Changes'}</button></div>
-      </form>
-      <section className="panel time-off-panel">
-        <div className="panel-header"><div><h4>Vacation &amp; Day Off</h4><p>Set date-based availability for this staff account.</p></div><button type="button" className="primary-button" disabled={timeOffUnavailable} onClick={() => { setEditingTimeOff(null); setShowTimeOff(true); }}>+ Add Vacation / Day Off</button></div>
-        {timeOffUnavailable && <p className="form-hint">Date-specific time off is not supported by the configured backend. The development demo stores these entries locally.</p>}
-        {loadingTimeOff && <p className="empty-list">Loading time-off entries…</p>}
-        {!loadingTimeOff && timeOff.length === 0 && <p className="empty-list">No vacation or day-off entries recorded.</p>}
-        {timeOff.length > 0 && <div className="time-off-list">{timeOff.map((entry) => (
-          <div className="time-off-row" key={entry.id}>
-            <div><strong>{entry.type === 'VACATION' ? 'Vacation' : 'Day Off'}</strong><span>{entry.startDate === entry.endDate ? entry.startDate : `${entry.startDate} – ${entry.endDate}`}{entry.startTime && entry.endTime ? ` · ${entry.startTime}–${entry.endTime}` : ' · All day'}</span></div>
-            <button type="button" className="link-button" disabled={timeOffUnavailable} onClick={() => { setEditingTimeOff(entry); setShowTimeOff(true); }}>Edit</button>
-            <button type="button" className="link-button danger-link" disabled={timeOffUnavailable} onClick={() => void removeTimeOff(entry)}>Remove</button>
+        <div className="staff-edit-content">
+          <form className="staff-account-form" onSubmit={handleSubmit}>
+            <h4>Staff Account Information</h4>
+            <p className="form-hint">{staff.email}</p>
+            <div className="form-grid">
+              <label className="field-label">FIRST NAME<input className="modal-input" name="firstName" value={staff.firstName ?? ''} readOnly disabled aria-label="First name (read only)" /></label>
+              <label className="field-label">LAST NAME<input className="modal-input" name="lastName" defaultValue={staff.lastName ?? ''} required maxLength={100} /></label>
+            </div>
+            <label className="field-label">PHONE<input className="modal-input" name="phone" type="tel" defaultValue={staff.phone ?? ''} maxLength={30} /></label>
+            <label className="field-label">PRIMARY ROLE<input className="modal-input" name="primaryRole" defaultValue={staff.role} required maxLength={100} /></label>
+            <div className="form-grid">
+              <label className="field-label">EMPLOYMENT TYPE<select className="modal-input" name="employmentType" defaultValue={staff.employment === 'Part Time' ? 'PART_TIME' : 'FULL_TIME'}><option value="FULL_TIME">Full Time</option><option value="PART_TIME">Part Time</option></select></label>
+              <label className="field-label">WORK STATUS<select className="modal-input" name="workStatus" defaultValue={staff.status === 'Active' ? 'ON_DUTY' : staff.status === 'On Vacation' ? 'UNAVAILABLE' : 'DAY_OFF'}><option value="ON_DUTY">On Duty</option><option value="DAY_OFF">Day Off</option><option value="UNAVAILABLE">Unavailable</option></select></label>
+            </div>
+            {error && <p className="form-error" role="alert">{error}</p>}
+            <div className="modal-actions">
+              <button type="button" className="secondary-action" onClick={onClose}>Cancel</button>
+              <button type="submit" className="primary-action" disabled={submitting}>{submitting ? 'Saving…' : 'Save Changes'}</button>
+            </div>
+          </form>
+
+          <div className="panel scheduling-rules-panel">
+            <div className="panel-header"><h4>Scheduling Rules</h4></div>
+            <div className="staff-schedule-section">
+              <span className="field-label">WEEKLY SCHEDULE</span>
+              <div className="schedule-grid">
+                {schedule.map((day) => (
+                  <div key={day.dayOfWeek} className={`schedule-day${day.enabled ? ' enabled' : ''}`}>
+                    <label className="schedule-day-header">
+                      <input type="checkbox" checked={day.enabled} onChange={(e) => updateScheduleDay(day.dayOfWeek, 'enabled', e.target.checked)} />
+                      <span>{weekDayLabels[day.dayOfWeek - 1]}</span>
+                    </label>
+                    {day.enabled && (
+                      <div className="schedule-day-times">
+                        <input type="time" className="modal-input" value={day.startTime} onChange={(e) => updateScheduleDay(day.dayOfWeek, 'startTime', e.target.value)} aria-label={`${weekDayLabels[day.dayOfWeek - 1]} start time`} />
+                        <span>–</span>
+                        <input type="time" className="modal-input" value={day.endTime} onChange={(e) => updateScheduleDay(day.dayOfWeek, 'endTime', e.target.value)} aria-label={`${weekDayLabels[day.dayOfWeek - 1]} end time`} />
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {scheduleError && <p className="form-error" role="alert">{scheduleError}</p>}
+              <button type="button" className="secondary-action" onClick={saveSchedule} disabled={savingSchedule}>{savingSchedule ? 'Saving…' : 'Save Schedule'}</button>
+            </div>
           </div>
-        ))}</div>}
-        {notice && <p className="table-message" role="status">{notice}</p>}
-        {showTimeOff && <TimeOffModal entry={editingTimeOff} onClose={() => { setShowTimeOff(false); setEditingTimeOff(null); }} onSave={saveTimeOff} />}
+
+          <div className="panel time-off-panel">
+            <div className="panel-header"><div><h4>Vacation &amp; Day Off</h4><p>Set date-based availability for this staff account.</p></div><button type="button" className="primary-button" disabled={timeOffUnavailable} onClick={() => { setEditingTimeOff(null); setShowTimeOff(true); }}>+ Add Vacation / Day Off</button></div>
+            {timeOffUnavailable && <p className="form-hint">Date-specific time off is not supported by the configured backend. The development demo stores these entries locally.</p>}
+            {loadingTimeOff && <p className="empty-list">Loading time-off entries…</p>}
+            {!loadingTimeOff && timeOff.length === 0 && <p className="empty-list">No vacation or day-off entries recorded.</p>}
+            {timeOff.length > 0 && <div className="time-off-list">{timeOff.map((entry) => (
+              <div className="time-off-row" key={entry.id}>
+                <div><strong>{entry.type === 'VACATION' ? 'Vacation' : 'Day Off'}</strong><span>{entry.startDate === entry.endDate ? entry.startDate : `${entry.startDate} – ${entry.endDate}`}{entry.startTime && entry.endTime ? ` · ${entry.startTime}–${entry.endTime}` : ' · All day'}</span></div>
+                <button type="button" className="link-button" disabled={timeOffUnavailable} onClick={() => { setEditingTimeOff(entry); setShowTimeOff(true); }}>Edit</button>
+                <button type="button" className="link-button danger-link" disabled={timeOffUnavailable} onClick={() => void removeTimeOff(entry)}>Remove</button>
+              </div>
+            ))}</div>}
+            {notice && <p className="table-message" role="status">{notice}</p>}
+            {showTimeOff && <TimeOffModal entry={editingTimeOff} onClose={() => { setShowTimeOff(false); setEditingTimeOff(null); }} onSave={saveTimeOff} />}
+          </div>
+        </div>
       </section>
-    </section>
+    </div>
   );
 }
 
@@ -1241,17 +1474,39 @@ function AppointmentPage() {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   });
   const [message, setMessage] = useState('');
+  const [sidebarFilter, setSidebarFilter] = useState<'all' | 'CONFIRMED' | 'CANCELLED' | 'COMPLETED'>('all');
   const token = getAccessToken();
+  const navigate = useNavigate();
   const monthStart = new Date(month.getFullYear(), month.getMonth(), 1);
   const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
   const calendarCells = Array.from({ length: Math.ceil((monthStart.getDay() + daysInMonth) / 7) * 7 }, (_, index) => {
     const day = index - monthStart.getDay() + 1;
     return day > 0 && day <= daysInMonth ? day : null;
   });
-  const selectedAppointments = appointments.filter((item) => item.appointmentDate === selectedDate);
-  const activeAppointments = appointments.filter((item) => item.status === 'RESERVED' || item.status === 'CONFIRMED');
-  const cancelledAppointments = appointments.filter((item) => item.status === 'CANCELLED');
-  const completedAppointments = appointments.filter((item) => item.status === 'COMPLETED');
+  const selectedAppointments = appointments
+    .filter((item) => item.appointmentDate === selectedDate)
+    .sort((a, b) => a.startTime.localeCompare(b.startTime));
+  const allAppointments = [...appointments].sort((a, b) => {
+    const dateCompare = a.appointmentDate.localeCompare(b.appointmentDate);
+    return dateCompare !== 0 ? dateCompare : a.startTime.localeCompare(b.startTime);
+  });
+  const sidebarAppointments = allAppointments.filter((appt) => {
+    if (sidebarFilter === 'all') return true;
+    return appt.status === sidebarFilter;
+  });
+  const filterCounts = {
+    all: allAppointments.length,
+    CONFIRMED: allAppointments.filter((a) => a.status === 'CONFIRMED').length,
+    CANCELLED: allAppointments.filter((a) => a.status === 'CANCELLED').length,
+    COMPLETED: allAppointments.filter((a) => a.status === 'COMPLETED').length,
+  };
+
+  function handleSidebarClick(appointment: AppointmentRow) {
+    setSelectedDate(appointment.appointmentDate);
+    const date = new Date(`${appointment.appointmentDate}T12:00:00`);
+    setMonth(new Date(date.getFullYear(), date.getMonth(), 1));
+    setSelectedAppointment(appointment);
+  }
 
   async function changeAppointmentStatus(appointment: AppointmentRow, status: string) {
     if (!appointment.id || !token) {
@@ -1283,33 +1538,32 @@ function AppointmentPage() {
     setSelectedDate(`${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}-01`);
   }
 
-  function renderAppointmentList(title: string, items: AppointmentRow[]) {
-    return (
-      <section className="appointment-group">
-        <h4>{title}</h4>
-        {items.length ? items.map((item) => (
-          <button type="button" key={item.code} className="appointment-list-item" onClick={() => {
-            const date = new Date(`${item.appointmentDate}T12:00:00`);
-            setMonth(new Date(date.getFullYear(), date.getMonth(), 1));
-            setSelectedDate(item.appointmentDate);
-            setSelectedAppointment(item);
-          }}>
-            <span className="appointment-time">{new Date(`2000-01-01T${item.startTime}`).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
-            <strong>{item.serviceNames}</strong>
-            <small>{item.code}</small>
-          </button>
-        )) : <p className="empty-list">No {title.toLowerCase()} appointments.</p>}
-      </section>
-    );
+  function handleComplete(appointment: AppointmentRow) {
+    navigate('/payments', { state: { completeAppointmentId: appointment.id, appointmentCode: appointment.code } });
   }
 
   return (
     <div className="appointment-layout">
       <aside className="appointment-sidebar">
-        <h3>Appointments</h3>
-        {renderAppointmentList('Upcoming', activeAppointments)}
-        {renderAppointmentList('Cancelled', cancelledAppointments)}
-        {renderAppointmentList('Completed', completedAppointments)}
+        <div className="sidebar-filters">
+          <button className={sidebarFilter === 'all' ? 'active' : ''} onClick={() => setSidebarFilter('all')}>All ({filterCounts.all})</button>
+          <button className={sidebarFilter === 'CONFIRMED' ? 'active' : ''} onClick={() => setSidebarFilter('CONFIRMED')}>Confirmed ({filterCounts.CONFIRMED})</button>
+          <button className={sidebarFilter === 'CANCELLED' ? 'active' : ''} onClick={() => setSidebarFilter('CANCELLED')}>Cancelled ({filterCounts.CANCELLED})</button>
+          <button className={sidebarFilter === 'COMPLETED' ? 'active' : ''} onClick={() => setSidebarFilter('COMPLETED')}>Completed ({filterCounts.COMPLETED})</button>
+        </div>
+        <div className="sidebar-appointment-list">
+          {sidebarAppointments.map((appt) => (
+            <button key={appt.code} type="button" className="sidebar-appointment-item" onClick={() => handleSidebarClick(appt)}>
+              <div>
+                <strong>{appt.customerName || 'Customer'}</strong>
+                <small>{appt.appointmentDate} · {appt.startTime}</small>
+                <small>{appt.staffName || 'Staff'}</small>
+              </div>
+              <span className={`status-badge ${appt.status === 'COMPLETED' || appt.status === 'CONFIRMED' ? 'success' : appt.status === 'CANCELLED' || appt.status === 'NO_SHOW' ? 'muted' : 'warning'}`}>{appt.status.replace('_', ' ')}</span>
+            </button>
+          ))}
+          {sidebarAppointments.length === 0 && <p className="empty-list">No appointments match this filter.</p>}
+        </div>
       </aside>
       <section className="panel calendar-panel">
         <div className="calendar-header-row">
@@ -1336,7 +1590,10 @@ function AppointmentPage() {
           <div className="panel-header compact"><h3>{new Date(`${selectedDate}T12:00:00`).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}</h3><span>{selectedAppointments.length} appointments</span></div>
           {selectedAppointments.map((appointment) => (
             <button type="button" key={appointment.code} className="selected-appointment" onClick={() => setSelectedAppointment(appointment)}>
-              <span><strong>{appointment.serviceNames}</strong><small>{appointment.startTime}–{appointment.endTime} · {appointment.code}</small></span>
+              <span>
+                <strong>{appointment.customerName || 'Customer'} · {appointment.staffName || 'Staff'}</strong>
+                <small>{appointment.serviceNames} · {appointment.startTime}–{appointment.endTime} · {appointment.code}</small>
+              </span>
               <span className={`status-badge ${appointment.status === 'COMPLETED' ? 'success' : appointment.status === 'CANCELLED' || appointment.status === 'NO_SHOW' ? 'muted' : 'warning'}`}>{appointment.status.replace('_', ' ')}</span>
             </button>
           ))}
@@ -1360,20 +1617,23 @@ function AppointmentPage() {
             </dl>
             {!token && <p className="form-hint">Sign in with an administrator account to update appointments.</p>}
             <div className="modal-actions appointment-detail-actions">
+              {selectedAppointment.status === 'CONFIRMED' && (
+                <>
+                  <button type="button" className="reject-action" disabled={!token || !selectedAppointment.id} onClick={() => setConfirmation({ appointment: selectedAppointment, status: 'CANCELLED' })}>Cancel</button>
+                  <button type="button" className="primary-action" disabled={!token || !selectedAppointment.id} onClick={() => handleComplete(selectedAppointment)}>Complete</button>
+                </>
+              )}
               <button type="button" className="secondary-action" onClick={() => setSelectedAppointment(null)}>Close</button>
-              {selectedAppointment.status === 'RESERVED' && <button type="button" className="primary-action" disabled={!token || !selectedAppointment.id} onClick={() => setConfirmation({ appointment: selectedAppointment, status: 'CONFIRMED' })}>Confirm booking</button>}
-              {selectedAppointment.status === 'CONFIRMED' && <button type="button" className="primary-action" disabled={!token || !selectedAppointment.id} onClick={() => setConfirmation({ appointment: selectedAppointment, status: 'COMPLETED' })}>Mark completed</button>}
-              {['RESERVED', 'CONFIRMED'].includes(selectedAppointment.status) && <button type="button" className="reject-action" disabled={!token || !selectedAppointment.id} onClick={() => setConfirmation({ appointment: selectedAppointment, status: 'CANCELLED' })}>Cancel booking</button>}
             </div>
           </section>
         </div>
       )}
       {confirmation && (
         <ConfirmModal
-          title={confirmation.status === 'CANCELLED' ? 'Cancel appointment?' : confirmation.status === 'COMPLETED' ? 'Complete appointment?' : 'Confirm appointment?'}
-          message={confirmation.status === 'CANCELLED' ? `Cancel ${confirmation.appointment.code}? This will update the appointment across the calendar and payment views.` : confirmation.status === 'COMPLETED' ? `Mark ${confirmation.appointment.code} as completed?` : `Confirm the booking for ${confirmation.appointment.code}?`}
-          confirmLabel={confirmation.status === 'CANCELLED' ? 'Cancel appointment' : confirmation.status === 'COMPLETED' ? 'Mark completed' : 'Confirm booking'}
-          danger={confirmation.status === 'CANCELLED'}
+          title="Cancel appointment?"
+          message={`Cancel ${confirmation.appointment.code}? This will update the appointment across the calendar and payment views.`}
+          confirmLabel="Cancel appointment"
+          danger={true}
           onClose={() => setConfirmation(null)}
           onConfirm={() => changeAppointmentStatus(confirmation.appointment, confirmation.status)}
           onError={setMessage}
@@ -1395,6 +1655,18 @@ function PaymentPage() {
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const token = getAccessToken();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    const state = location.state as { completeAppointmentId?: string; appointmentCode?: string } | null;
+    if (state?.completeAppointmentId && payments.length > 0) {
+      const payment = payments.find((p) => p.appointmentId === state.completeAppointmentId);
+      if (payment) {
+        setSelectedPayment(payment);
+      }
+    }
+  }, [location.state, payments]);
 
   async function loadPayments(signal?: AbortSignal) {
     const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
@@ -1574,10 +1846,179 @@ function PaymentPage() {
   );
 }
 
+function PaymentVerificationPage() {
+  const { paymentId = '' } = useParams();
+  const navigate = useNavigate();
+  const token = getAccessToken();
+  const [payment, setPayment] = useState<any | null>(null);
+  const [verificationCode, setVerificationCode] = useState('');
+  const [codeError, setCodeError] = useState('');
+  const [status, setStatus] = useState<'VERIFIED' | 'REJECTED' | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState('');
+
+  useEffect(() => {
+    if (!paymentId) return;
+    async function loadPayment() {
+      const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+      const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+      const response = await apiFetch(`${baseUrl}/payments?page=1&limit=100`, { headers });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.message ?? 'Unable to load payment details.');
+      const match = (payload?.data?.payments ?? []).find((item: any) => String(item.id) === paymentId);
+      if (!match) throw new Error('Payment record not found.');
+      setPayment(match);
+    }
+
+    loadPayment().catch((cause) => {
+      setNotice(cause instanceof Error ? cause.message : 'Unable to load payment details.');
+    });
+  }, [paymentId, token]);
+
+  async function updatePaymentStatus(nextStatus: 'VERIFIED' | 'REJECTED') {
+    if (!payment) return;
+    if (!token) {
+      setNotice('Sign in with an administrator account to verify payments.');
+      return;
+    }
+    setBusy(true);
+    setNotice('');
+    try {
+      const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+      const response = await apiFetch(`${baseUrl}/payments/${payment.id}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.message ?? 'Unable to update payment status.');
+      setNotice(nextStatus === 'VERIFIED' ? 'Payment verified.' : 'Payment rejected.');
+      setStatus(null);
+      setTimeout(() => navigate('/payments', { state: { message: nextStatus === 'VERIFIED' ? 'Payment verified.' : 'Payment rejected.' } }), 150);
+    } catch (cause) {
+      setNotice(cause instanceof Error ? cause.message : 'Unable to update payment status.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function validatePaymentCode() {
+    if (!payment) return;
+    if (!/^\d{5}$/.test(verificationCode.trim())) {
+      setCodeError('Enter the five-digit code provided with this appointment.');
+      return;
+    }
+    if (verificationCode.trim() !== String(payment.verificationCode ?? '')) {
+      setCodeError('That code does not match this appointment. Check the booking reference and try again.');
+      return;
+    }
+    setCodeError('');
+    setStatus('VERIFIED');
+  }
+
+  if (!payment) {
+    return (
+      <section className="panel payment-verify-page">
+        <div className="panel-header compact"><h3>Payment verification</h3></div>
+        {notice ? <p className="form-error" role="alert">{notice}</p> : <p className="empty-list">Loading payment details…</p>}
+      </section>
+    );
+  }
+
+  return (
+    <section className="panel payment-verify-page">
+      <div className="panel-header compact">
+        <div><h3>Verify payment</h3><p>Review the booking details and validate the reference code before recording the result.</p></div>
+        <button type="button" className="secondary-action" onClick={() => navigate('/payments')}>Back to payments</button>
+      </div>
+      <div className="payment-verify-grid">
+        <dl className="payment-details">
+          <div><dt>Reference</dt><dd>{payment.appointmentCode}</dd></div>
+          <div><dt>Customer</dt><dd>{payment.customerName}</dd></div>
+          <div><dt>Service</dt><dd>{payment.serviceName}</dd></div>
+          <div><dt>Amount</dt><dd>₱{Number(payment.amount).toLocaleString()}</dd></div>
+          <div><dt>Method</dt><dd>{payment.paymentMethod}</dd></div>
+          <div><dt>Status</dt><dd>{payment.status === 'VERIFIED' ? 'Verified' : payment.status === 'REJECTED' ? 'Rejected' : 'Pending verification'}</dd></div>
+        </dl>
+        <div className="payment-verify-form">
+          <label className="field-label payment-code-field">PAYMENT CODE<input className="modal-input" inputMode="numeric" autoComplete="off" maxLength={5} value={verificationCode} onChange={(event) => { setVerificationCode(event.target.value.replace(/\D/g, '').slice(0, 5)); setCodeError(''); }} aria-describedby={codeError ? 'payment-code-error' : undefined} /></label>
+          {codeError && <p id="payment-code-error" className="form-error" role="alert">{codeError}</p>}
+          {notice && <p className="table-message" role="status">{notice}</p>}
+          <div className="modal-actions">
+            <button type="button" className="reject-action" disabled={!token || busy} onClick={() => updatePaymentStatus('REJECTED')}>Reject</button>
+            <button type="button" className="primary-action" disabled={!token || busy} onClick={validatePaymentCode}>Validate code</button>
+          </div>
+          {status === 'VERIFIED' && (
+            <div className="verify-confirmation-box">
+              <p>The code matches this booking. Record this payment as verified?</p>
+              <button type="button" className="primary-action" disabled={busy} onClick={() => updatePaymentStatus('VERIFIED')}>Confirm payment</button>
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function AccountCreationModal({ onClose }: { onClose: () => void }) {
   const [selectedRole, setSelectedRole] = useState<'Manager' | 'Staff'>('Manager');
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{ success: boolean; title: string; message: string } | null>(null);
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [schedule, setSchedule] = useState(normalizeWeeklySchedule());
+  const [scheduleError, setScheduleError] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  function validatePasswordStrength(value: string): boolean {
+    return /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/.test(value);
+  }
+
+  function generatePassword() {
+    const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+    const lower = 'abcdefghijkmnpqrstuvwxyz';
+    const digits = '23456789';
+    const special = '!@#$%^&*';
+    const all = upper + lower + digits + special;
+    const chars = [
+      upper[Math.floor(Math.random() * upper.length)],
+      lower[Math.floor(Math.random() * lower.length)],
+      digits[Math.floor(Math.random() * digits.length)],
+      special[Math.floor(Math.random() * special.length)],
+    ];
+    for (let i = 0; i < 8; i++) {
+      chars.push(all[Math.floor(Math.random() * all.length)]);
+    }
+    const shuffled = chars.sort(() => Math.random() - 0.5).join('');
+    setPassword(shuffled);
+    setConfirmPassword(shuffled);
+  }
+
+  function copyPassword() {
+    navigator.clipboard.writeText(password).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  function validateSchedule(): boolean {
+    for (const day of schedule) {
+      if (day.enabled) {
+        if (!day.startTime || !day.endTime || day.startTime >= day.endTime) {
+          setScheduleError(`${weekDayLabels[day.dayOfWeek - 1]}: Set valid start and end times (start must be before end).`);
+          return false;
+        }
+      }
+    }
+    setScheduleError('');
+    return true;
+  }
+
+  function updateScheduleDay(dayOfWeek: number, field: 'enabled' | 'startTime' | 'endTime', value: boolean | string) {
+    setSchedule((current) => current.map((day) => day.dayOfWeek === dayOfWeek ? { ...day, [field]: value } : day));
+  }
 
   async function createAccount(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1590,6 +2031,15 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
       setResult({ success: false, title: 'Account not created', message: 'Sign in with the demo administrator before creating accounts.' });
       return;
     }
+    if (!validatePasswordStrength(password)) {
+      setResult({ success: false, title: 'Account not created', message: 'Use a strong temporary password with at least 8 characters, including upper/lowercase, a number, and a special character.' });
+      return;
+    }
+    if (password !== confirmPassword) {
+      setResult({ success: false, title: 'Account not created', message: 'The temporary password and confirmation do not match.' });
+      return;
+    }
+    if (!validateSchedule()) return;
     setSubmitting(true);
     const form = new FormData(event.currentTarget);
     try {
@@ -1597,14 +2047,31 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({
-        fullName: form.get('fullName'),
+        firstName: String(form.get('firstName')).trim(),
+        lastName: String(form.get('lastName')).trim(),
         email: form.get('email'),
         role: selectedRole.toUpperCase(),
+        password,
+        schedule: schedule.filter((day) => day.enabled).map((day) => ({
+          dayOfWeek: day.dayOfWeek,
+          startTime: day.startTime,
+          endTime: day.endTime,
+          isActive: true,
+        })),
       }),
     });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.message ?? 'Unable to create demo account.');
-      setResult({ success: true, title: 'Account created', message: `${String(form.get('fullName'))} now has ${selectedRole.toLowerCase()} access.` });
+      const staffId = payload.data?.staffId;
+      if (staffId && payload.data?.schedule && payload.data.schedule.length > 0) {
+        await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/schedules/staff`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ staffId, schedule: payload.data.schedule }),
+        });
+      }
+      const firstName = String(form.get('firstName')).trim();
+      setResult({ success: true, title: 'Account created', message: `${firstName} now has ${selectedRole.toLowerCase()} access. Temporary password: ${password}` });
     } catch (cause) {
       setResult({ success: false, title: 'Account not created', message: cause instanceof Error ? cause.message : 'Unable to create demo account.' });
     } finally {
@@ -1621,18 +2088,35 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="modal-overlay" onClick={onClose} role="dialog" aria-modal="true">
-      <form className="modal-card" onSubmit={createAccount} onClick={(event) => event.stopPropagation()}>
+      <form className="modal-card account-creation-modal" onSubmit={createAccount} onClick={(event) => event.stopPropagation()}>
         <div className="modal-header">
           <h3>Create Staff / Manager Account</h3>
           <button type="button" className="close-button" aria-label="Close account modal" onClick={onClose}>×</button>
         </div>
         <div className="modal-subtitle">Assign appropriate access rights in the hierarchy</div>
 
-        <label className="field-label" htmlFor="account-full-name">FULL NAME</label>
-        <input id="account-full-name" name="fullName" className="modal-input" required />
+        <div className="form-grid">
+          <label className="field-label" htmlFor="account-first-name">FIRST NAME<input id="account-first-name" name="firstName" className="modal-input" required maxLength={100} /></label>
+          <label className="field-label" htmlFor="account-last-name">LAST NAME<input id="account-last-name" name="lastName" className="modal-input" required maxLength={100} /></label>
+        </div>
 
         <label className="field-label" htmlFor="account-email">EMAIL ADDRESS</label>
         <input id="account-email" name="email" className="modal-input" type="email" required />
+
+        <label className="field-label" htmlFor="account-temp-password">TEMPORARY PASSWORD</label>
+        <div className="password-input-group">
+          <input id="account-temp-password" className="modal-input" type={showPassword ? 'text' : 'password'} value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} required />
+          <button type="button" className="password-toggle" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? 'H' : 'S'}</button>
+          <button type="button" className="password-toggle" onClick={copyPassword} aria-label="Copy password">{copied ? 'C' : 'Y'}</button>
+          <button type="button" className="password-toggle" onClick={generatePassword} aria-label="Generate secure password">G</button>
+        </div>
+        <p className="form-hint">Use at least 8 characters with upper/lowercase, a number, and a special character.</p>
+
+        <label className="field-label" htmlFor="account-temp-password-confirm">CONFIRM PASSWORD</label>
+        <div className="password-input-group">
+          <input id="account-temp-password-confirm" className="modal-input" type={showConfirmPassword ? 'text' : 'password'} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} minLength={8} required />
+          <button type="button" className="password-toggle" onClick={() => setShowConfirmPassword(!showConfirmPassword)} aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}>{showConfirmPassword ? 'H' : 'S'}</button>
+        </div>
 
         <label className="field-label">ASSIGN ROLE (HIERARCHY)</label>
         <div className="role-grid">
@@ -1646,6 +2130,28 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
           </button>
         </div>
 
+        <div className="staff-schedule-section">
+          <span className="field-label">STAFF SCHEDULE (WEEKLY)</span>
+          <div className="schedule-grid">
+            {schedule.map((day) => (
+              <div key={day.dayOfWeek} className={`schedule-day${day.enabled ? ' enabled' : ''}`}>
+                <label className="schedule-day-header">
+                  <input type="checkbox" checked={day.enabled} onChange={(e) => updateScheduleDay(day.dayOfWeek, 'enabled', e.target.checked)} />
+                  <span>{weekDayLabels[day.dayOfWeek - 1]}</span>
+                </label>
+                {day.enabled && (
+                  <div className="schedule-day-times">
+                    <input type="time" className="modal-input" value={day.startTime} onChange={(e) => updateScheduleDay(day.dayOfWeek, 'startTime', e.target.value)} aria-label={`${weekDayLabels[day.dayOfWeek - 1]} start time`} />
+                    <span>–</span>
+                    <input type="time" className="modal-input" value={day.endTime} onChange={(e) => updateScheduleDay(day.dayOfWeek, 'endTime', e.target.value)} aria-label={`${weekDayLabels[day.dayOfWeek - 1]} end time`} />
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+          {scheduleError && <p className="form-error" role="alert">{scheduleError}</p>}
+        </div>
+
         {!mockApiEnabled && <p className="form-hint">This configured backend does not support administrator-created accounts.</p>}
 
         <div className="modal-actions">
@@ -1653,6 +2159,96 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
           <button type="submit" className="primary-action" disabled={!mockApiEnabled || submitting}>{submitting ? 'Creating…' : 'Save Account'}</button>
         </div>
       </form>
+    </div>
+  );
+}
+
+
+function LoginPage({ onLogin }: { onLogin: () => void }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (submitting) return;
+    setSubmitting(true);
+    setError('');
+
+    try {
+      const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+      const response = await apiFetch(`${baseUrl}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), password }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.message ?? 'Unable to sign in. Check your credentials and API connection.');
+      storeAccessTokens(payload.data.accessToken, payload.data.refreshToken);
+      onLogin();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Unable to sign in.');
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="login-page">
+      <div className="login-card">
+        <div className="login-brand">
+          <div className="login-brand-mark">R</div>
+          <div>
+            <h1 className="login-brand-title">ROYALTY SALON</h1>
+            <p className="login-brand-subtitle">ADMIN PANEL</p>
+          </div>
+        </div>
+        <div className="login-welcome">
+          <h2>Welcome back</h2>
+          <p>Sign in to manage your salon's appointments, services, staff, and payments.</p>
+        </div>
+        <form onSubmit={handleSubmit} className="login-form">
+          <label className="login-field-label" htmlFor="login-email">EMAIL ADDRESS</label>
+          <input
+            id="login-email"
+            className="login-input"
+            type="email"
+            value={email}
+            onChange={(e) => { setEmail(e.target.value); setError(''); }}
+            autoComplete="username"
+            required
+          />
+          <label className="login-field-label" htmlFor="login-password">PASSWORD</label>
+          <div className="login-password-group">
+            <input
+              id="login-password"
+              className="login-input"
+              type={showPassword ? 'text' : 'password'}
+              value={password}
+              onChange={(e) => { setPassword(e.target.value); setError(''); }}
+              autoComplete="current-password"
+              required
+            />
+            <button
+              type="button"
+              className="login-password-toggle"
+              onClick={() => setShowPassword(!showPassword)}
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+            >
+              {showPassword ? 'HIDE' : 'SHOW'}
+            </button>
+          </div>
+          {error && <p className="login-error" role="alert">{error}</p>}
+          {mockApiEnabled && <p className="login-hint">Demo: admin@seed.royalty.local · RoyaltyDemo2026!</p>}
+          <button type="submit" className="login-submit" disabled={submitting}>
+            {submitting ? 'Signing in…' : 'Sign In'}
+          </button>
+        </form>
+        <div className="login-footer">
+          <p>Royalty Hair &amp; Nails Studio</p>
+        </div>
+      </div>
     </div>
   );
 }
