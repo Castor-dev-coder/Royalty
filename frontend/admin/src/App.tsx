@@ -1508,6 +1508,7 @@ function AppointmentPage() {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   });
   const [message, setMessage] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'other' | (typeof SIDEBAR_STATUS_ORDER)[number]>('all');
   const token = getAccessToken();
   const navigate = useNavigate();
   const monthStart = new Date(month.getFullYear(), month.getMonth(), 1);
@@ -1534,6 +1535,22 @@ function AppointmentPage() {
   const sidebarSections = SIDEBAR_STATUS_ORDER
     .map((status) => ({ status, items: allAppointments.filter((appt) => appt.status === status) }))
     .filter((section) => section.items.length > 0);
+  const unlistedAppointments = allAppointments.filter((appt) => !(SIDEBAR_STATUS_ORDER as readonly string[]).includes(appt.status));
+  const sidebarFilterButtons = [
+    { key: 'all' as const, label: 'All', count: allAppointments.length },
+    ...(unlistedAppointments.length > 0 ? [{ key: 'other' as const, label: 'Other', count: unlistedAppointments.length }] : []),
+    ...SIDEBAR_STATUS_ORDER.map((status) => ({
+      key: status as (typeof SIDEBAR_STATUS_ORDER)[number] | 'other',
+      label: appointmentStatusText(status),
+      count: allAppointments.filter((appt) => appt.status === status).length,
+    })),
+  ];
+  const visibleSections: { status: (typeof SIDEBAR_STATUS_ORDER)[number] | null; items: AppointmentRow[] }[] =
+    statusFilter === 'all'
+      ? [...sidebarSections, ...(unlistedAppointments.length > 0 ? [{ status: null as null, items: unlistedAppointments }] : [])]
+      : statusFilter === 'other'
+        ? [{ status: null as null, items: unlistedAppointments }]
+        : sidebarSections.filter((section) => section.status === statusFilter);
 
   function handleSidebarClick(appointment: AppointmentRow) {
     setSelectedDate(appointment.appointmentDate);
@@ -1579,12 +1596,30 @@ function AppointmentPage() {
   return (
     <div className="appointment-layout">
       <aside className="appointment-sidebar">
-        {sidebarSections.length === 0 && <p className="empty-list">No appointments scheduled yet.</p>}
-        {sidebarSections.map((section) => (
-          <section key={section.status} className="sidebar-status-section">
+        <div className="sidebar-filters" role="group" aria-label="Filter appointments by status">
+          {sidebarFilterButtons.map((button) => (
+            <button
+              key={button.key}
+              type="button"
+              className={statusFilter === button.key ? 'active' : ''}
+              aria-pressed={statusFilter === button.key}
+              onClick={() => setStatusFilter(button.key)}
+            >
+              {button.label} ({button.count})
+            </button>
+          ))}
+        </div>
+        {visibleSections.length === 0 && <p className="empty-list">{statusFilter === 'all' ? 'No appointments scheduled yet.' : 'No appointments match this filter.'}</p>}
+        {visibleSections.map((section) => (
+          <section key={section.status ?? 'other'} className="sidebar-status-section">
             <div className="sidebar-status-header">
-              <span className={`status-badge ${appointmentStatusBadge(section.status)}`}>{appointmentStatusText(section.status)}</span>
-              <span className="sidebar-status-count">{section.items.length} {section.items.length === 1 ? 'appointment' : 'appointments'}</span>
+              <span className={`status-badge ${section.status ? appointmentStatusBadge(section.status) : 'status-noshow'}`}>
+                {section.status ? appointmentStatusText(section.status) : 'Other'}
+              </span>
+              <span className="sidebar-status-count">
+                {section.items.length} {section.status ? appointmentStatusText(section.status).toLowerCase() : 'other'}
+                {' '}{section.items.length === 1 ? 'appointment' : 'appointments'}
+              </span>
             </div>
             <div className="sidebar-appointment-list">
               {section.items.map((appt) => (

@@ -158,6 +158,11 @@ tbody td { padding: 14px 12px; border-bottom: 1px solid rgba(189, 193, 198, 0.28
 .appointment-sidebar { background: rgba(255,255,255,0.68); border: 1px solid var(--card-border); border-radius: 10px; padding: 14px; max-height: 600px; overflow-y: auto; }
 /* Appointment sidebar */
 .appointment-sidebar { background: rgba(255,255,255,0.68); border: 1px solid var(--card-border); border-radius: 10px; padding: 14px; max-height: 600px; overflow-y: auto; }
+.sidebar-filters { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
+.sidebar-filters button { padding: 4px 9px; border-radius: 999px; border: 1px solid rgba(182, 187, 193, 0.55); background: rgba(255, 255, 255, 0.6); color: #505b64; font-size: 0.68rem; font-weight: 650; cursor: pointer; white-space: nowrap; }
+.sidebar-filters button:hover { border-color: var(--gold); color: #3d3217; }
+.sidebar-filters button.active { background: var(--gold); color: #3d3217; border-color: var(--gold); }
+.sidebar-filters button:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(180, 141, 72, 0.35); }
 .sidebar-status-section { margin-bottom: 12px; }
 .sidebar-status-header { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 2px 2px 6px; }
 .sidebar-status-count { color: var(--muted); font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; }
