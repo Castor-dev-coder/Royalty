@@ -60,6 +60,33 @@ const navItems = [
 
 const weekDayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
+const APPOINTMENT_STATUS_TEXT: Record<string, string> = {
+  RESERVED: 'Reserved',
+  CONFIRMED: 'Confirmed',
+  COMPLETED: 'Completed',
+  CANCELLED: 'Cancelled',
+  NO_SHOW: 'No show',
+};
+
+function appointmentStatusText(status: string): string {
+  return APPOINTMENT_STATUS_TEXT[status] ?? String(status).replace('_', ' ').toLowerCase();
+}
+
+function appointmentStatusBadge(status: string): string {
+  if (status === 'COMPLETED') return 'success';
+  if (status === 'CONFIRMED') return 'warning';
+  if (status === 'RESERVED') return 'neutral';
+  return 'muted';
+}
+
+function isPastNonterminal(appointment: { appointmentDate: string; status: string }, todayKey: string): boolean {
+  return appointment.appointmentDate < todayKey && (appointment.status === 'CONFIRMED' || appointment.status === 'RESERVED');
+}
+
+function localDateKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
 function normalizeWeeklySchedule(days: any[] = []): Array<{ dayOfWeek: number; enabled: boolean; startTime: string; endTime: string }> {
   const normalized = Array.from({ length: 7 }, (_, index) => ({
     dayOfWeek: index + 1,
@@ -1483,6 +1510,14 @@ function AppointmentPage() {
     const day = index - monthStart.getDay() + 1;
     return day > 0 && day <= daysInMonth ? day : null;
   });
+  const todayKey = localDateKey(new Date());
+  const daysInMonthPrefix = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}`;
+  const monthAppointments = appointments.filter((item) => item.appointmentDate.startsWith(daysInMonthPrefix));
+  const monthStatusSequence = ['CONFIRMED', 'COMPLETED', 'CANCELLED', 'RESERVED', 'NO_SHOW'] as const;
+  const monthStatusCounts = new Map(monthStatusSequence.map((status) => [status, monthAppointments.filter((item) => item.status === status).length]));
+  const monthBreakdown = monthStatusSequence
+    .filter((status) => (monthStatusCounts.get(status) ?? 0) > 0)
+    .map((status) => `${monthStatusCounts.get(status)} ${appointmentStatusText(status).toLowerCase()}`);
   const selectedAppointments = appointments
     .filter((item) => item.appointmentDate === selectedDate)
     .sort((a, b) => a.startTime.localeCompare(b.startTime));
@@ -1526,7 +1561,7 @@ function AppointmentPage() {
       setAppointments((current) => current.map((item) => item.id === appointment.id ? updated : item));
       setSelectedAppointment((current) => current?.id === appointment.id ? updated : current);
       setConfirmation(null);
-      setMessage(`Appointment ${appointment.code} updated to ${status.toLowerCase().replace('_', ' ')}.`);
+      setMessage(`Appointment ${appointment.code} updated to ${appointmentStatusText(status).toLowerCase()}.`);
     } catch (cause) {
       throw cause instanceof Error ? cause : new Error('Unable to update appointment status.');
     }
@@ -1559,7 +1594,10 @@ function AppointmentPage() {
                 <small>{appt.appointmentDate} · {appt.startTime}</small>
                 <small>{appt.staffName || 'Staff'}</small>
               </div>
-              <span className={`status-badge ${appt.status === 'COMPLETED' || appt.status === 'CONFIRMED' ? 'success' : appt.status === 'CANCELLED' || appt.status === 'NO_SHOW' ? 'muted' : 'warning'}`}>{appt.status.replace('_', ' ')}</span>
+              <span>
+                <span className={`status-badge ${appointmentStatusBadge(appt.status)}`}>{appointmentStatusText(appt.status)}</span>
+                {isPastNonterminal(appt, todayKey) && <span className="past-review-tag">Past — needs review</span>}
+              </span>
             </button>
           ))}
           {sidebarAppointments.length === 0 && <p className="empty-list">No appointments match this filter.</p>}
@@ -1571,30 +1609,46 @@ function AppointmentPage() {
           <strong>{month.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</strong>
           <button type="button" className="tiny-button" aria-label="Next month" onClick={() => moveCalendarMonth(1)}>›</button>
         </div>
+        <p className="calendar-month-summary" aria-live="polite">
+          <strong>{monthAppointments.length === 0
+            ? 'No appointments this month'
+            : `${monthAppointments.length} ${monthAppointments.length === 1 ? 'appointment' : 'appointments'} this month`}</strong>
+          {monthBreakdown.length > 0 && <span className="calendar-summary-breakdown">{monthBreakdown.join(' · ')}</span>}
+        </p>
         <div className="calendar-grid">
           {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => <div key={day} className="weekday-label">{day}</div>)}
           {calendarCells.map((day, index) => {
             if (!day) return <div key={`empty-${index}`} className="day-cell empty-day" />;
             const date = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
             const dayAppointments = appointments.filter((item) => item.appointmentDate === date);
+            const cancelledCount = dayAppointments.filter((item) => item.status === 'CANCELLED').length;
             return (
-              <button type="button" key={date} className={`day-cell${selectedDate === date ? ' active' : ''}`} onClick={() => setSelectedDate(date)}>
-                <span>{day}</span>
-                {dayAppointments.length > 0 && <small>{dayAppointments.length} {dayAppointments.length === 1 ? 'appointment' : 'appointments'}</small>}
-                {dayAppointments.some((item) => item.status === 'CANCELLED') && <small className="calendar-cancelled">{dayAppointments.filter((item) => item.status === 'CANCELLED').length} cancelled</small>}
+              <button
+                type="button"
+                key={date}
+                className={`day-cell${selectedDate === date ? ' active' : ''}${date === todayKey ? ' today' : ''}`}
+                aria-pressed={selectedDate === date}
+                aria-current={date === todayKey ? 'date' : undefined}
+                aria-label={`${date}${date === todayKey ? ', today' : ''}${dayAppointments.length ? `, ${dayAppointments.length} ${dayAppointments.length === 1 ? 'appointment' : 'appointments'}` : ', no appointments'}`}
+                onClick={() => setSelectedDate(date)}
+              >
+                <span>{day}{date === todayKey && <span className="today-dot" aria-hidden="true" />}</span>
+                {dayAppointments.length > 0 && <small>{dayAppointments.length} {dayAppointments.length === 1 ? 'booking' : 'bookings'}</small>}
+                {cancelledCount > 0 && <small className="calendar-cancelled">{cancelledCount} cancelled</small>}
               </button>
             );
           })}
         </div>
         <section className="selected-day-panel">
-          <div className="panel-header compact"><h3>{new Date(`${selectedDate}T12:00:00`).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}</h3><span>{selectedAppointments.length} appointments</span></div>
+          <div className="panel-header compact"><h3>{new Date(`${selectedDate}T12:00:00`).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</h3><span>{selectedAppointments.length} {selectedAppointments.length === 1 ? 'appointment' : 'appointments'}</span></div>
           {selectedAppointments.map((appointment) => (
             <button type="button" key={appointment.code} className="selected-appointment" onClick={() => setSelectedAppointment(appointment)}>
               <span>
                 <strong>{appointment.customerName || 'Customer'} · {appointment.staffName || 'Staff'}</strong>
                 <small>{appointment.serviceNames} · {appointment.startTime}–{appointment.endTime} · {appointment.code}</small>
+                <small className="past-review-tag-wrap">{isPastNonterminal(appointment, todayKey) && <span className="past-review-tag">Past — needs review</span>}</small>
               </span>
-              <span className={`status-badge ${appointment.status === 'COMPLETED' ? 'success' : appointment.status === 'CANCELLED' || appointment.status === 'NO_SHOW' ? 'muted' : 'warning'}`}>{appointment.status.replace('_', ' ')}</span>
+              <span className={`status-badge ${appointmentStatusBadge(appointment.status)}`}>{appointmentStatusText(appointment.status)}</span>
             </button>
           ))}
           {selectedAppointments.length === 0 && <p className="empty-list">No appointments scheduled for this date.</p>}
@@ -1613,7 +1667,7 @@ function AppointmentPage() {
               <div><dt>Staff</dt><dd>{selectedAppointment.staffName || 'Staff not assigned'}</dd></div>
               <div><dt>Date &amp; time</dt><dd>{new Date(`${selectedAppointment.appointmentDate}T12:00:00`).toLocaleDateString()} · {selectedAppointment.startTime}–{selectedAppointment.endTime}</dd></div>
               {selectedAppointment.totalAmount !== undefined && <div><dt>Total</dt><dd>₱{Number(selectedAppointment.totalAmount).toLocaleString()}</dd></div>}
-              <div><dt>Status</dt><dd>{selectedAppointment.status.replace('_', ' ')}</dd></div>
+              <div><dt>Status</dt><dd><span className={`status-badge ${appointmentStatusBadge(selectedAppointment.status)}`}>{appointmentStatusText(selectedAppointment.status)}</span>{isPastNonterminal(selectedAppointment, todayKey) && <span className="past-review-tag">Past — needs review</span>}</dd></div>
             </dl>
             {!token && <p className="form-hint">Sign in with an administrator account to update appointments.</p>}
             <div className="modal-actions appointment-detail-actions">
@@ -1782,7 +1836,7 @@ function PaymentPage() {
                       <td><div className="payment-customer"><strong>{payment.customerName}</strong><small>{payment.appointmentCode} · {payment.customerEmail}</small></div></td>
                       <td>{payment.serviceName}</td>
                       <td><strong>₱{Number(payment.amount).toLocaleString()}</strong><small className="payment-method">{payment.paymentMethod}</small></td>
-                      <td><span className={`status-badge ${payment.bookingStatus === 'CONFIRMED' || payment.bookingStatus === 'COMPLETED' ? 'success' : payment.bookingStatus === 'CANCELLED' || payment.bookingStatus === 'NO_SHOW' ? 'muted' : 'warning'}`}>{String(payment.bookingStatus ?? 'RESERVED').replace('_', ' ')}</span></td>
+                      <td><span className={`status-badge ${appointmentStatusBadge(String(payment.bookingStatus ?? 'RESERVED'))}`}>{appointmentStatusText(String(payment.bookingStatus ?? 'RESERVED'))}</span></td>
                       <td><span className={`status-badge ${payment.status === 'VERIFIED' ? 'success' : payment.status === 'REJECTED' ? 'muted' : 'warning'}`}>{payment.status === 'VERIFIED' ? 'Verified' : payment.status === 'REJECTED' ? 'Rejected' : 'Pending'}</span></td>
                       <td>{payment.status === 'UNVERIFIED'
                         ? <button type="button" className="payment-action" disabled={!token || !mockApiEnabled} onClick={() => { setSelectedPayment(payment); setVerificationCode(''); setCodeError(''); }}>Verify</button>
@@ -2087,10 +2141,10 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose} role="dialog" aria-modal="true">
+    <div className="modal-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="account-creation-title">
       <form className="modal-card account-creation-modal" onSubmit={createAccount} onClick={(event) => event.stopPropagation()}>
         <div className="modal-header">
-          <h3>Create Staff / Manager Account</h3>
+          <h3 id="account-creation-title">Create Staff / Manager Account</h3>
           <button type="button" className="close-button" aria-label="Close account modal" onClick={onClose}>×</button>
         </div>
         <div className="modal-subtitle">Assign appropriate access rights in the hierarchy</div>
