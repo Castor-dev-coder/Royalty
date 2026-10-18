@@ -595,24 +595,58 @@ textarea.modal-input { line-height: 1.55; }
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-wrap: wrap;
 }
-.password-input-group .modal-input { flex: 1; }
+.password-input-group .modal-input { flex: 1 1 190px; }
 .password-toggle {
+  width: 44px;
   min-width: 44px;
-  height: 44px;
   align-self: stretch;
   border-radius: 7px;
   border: 1px solid rgba(182, 187, 193, 0.55);
   background: rgba(255, 255, 255, 0.7);
-  color: var(--text);
-  font-size: 0.8rem;
-  font-weight: 700;
+  color: var(--muted);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  padding: 0;
 }
-.password-toggle:hover { background: rgba(255, 255, 255, 0.9); }
+.password-toggle svg {
+  width: 18px;
+  height: 18px;
+}
+.password-toggle:hover { background: rgba(255, 255, 255, 0.9); color: var(--text); }
+.password-toggle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(180, 141, 72, 0.35);
+}
+.generate-password-button {
+  flex: 1 0 auto;
+  height: 44px;
+  padding: 0 14px;
+  border-radius: 7px;
+  border: 1px solid rgba(180, 141, 72, 0.45);
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--gold-strong);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+.generate-password-button svg { width: 15px; height: 15px; }
+.generate-password-button:hover { background: rgba(216, 179, 96, 0.12); }
+.generate-password-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(180, 141, 72, 0.35);
+}
+@media (max-width: 620px) {
+  .generate-password-button { flex: 1 1 100%; }
+}
 
 /* Staff schedule grid */
 .staff-schedule-section { margin: 14px 0; }
