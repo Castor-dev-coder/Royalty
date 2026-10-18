@@ -721,34 +721,43 @@ textarea.modal-input { line-height: 1.55; }
 .schedule-day {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 8px;
+  gap: 6px;
+  padding: 8px 7px;
   border-radius: 8px;
   border: 1px solid rgba(189, 193, 198, 0.4);
   background: rgba(255, 255, 255, 0.4);
+  min-width: 0;
 }
 .schedule-day.enabled { border-color: var(--gold); background: rgba(216, 179, 96, 0.08); }
 .schedule-day-header {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   font-size: 0.72rem;
   font-weight: 600;
   color: var(--text);
 }
-.schedule-day-header input[type="checkbox"] { margin: 0; }
+.schedule-day-header input[type="checkbox"] { margin: 0; accent-color: var(--gold-strong); }
 .schedule-day-times {
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 4px;
-}
-.schedule-day-times .modal-input {
   min-width: 0;
-  height: 32px;
-  padding: 0 6px;
-  font-size: 0.78rem;
+}
+.schedule-day-times > span { display: none; }
+.schedule-day-times .modal-input {
+  width: 100%;
+  min-width: 0;
+  min-height: 30px;
+  padding: 0 3px;
+  font-size: 0.74rem;
   border-radius: 5px;
   text-align: center;
+}
+.schedule-day-times .modal-input::-webkit-calendar-picker-indicator { margin: 0; padding: 0; }
+
+@media (max-width: 980px) {
+  .schedule-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
 /* Staff edit modal */
@@ -757,8 +766,10 @@ textarea.modal-input { line-height: 1.55; }
 /* Status notice used by status tables and modal flows */
 .table-message { margin: 10px 0 0; padding: 9px 12px; border: 1px solid rgba(92, 180, 126, 0.35); border-radius: 8px; background: rgba(92, 180, 126, 0.1); color: #24684c; font-size: 0.82rem; line-height: 1.45; overflow-wrap: anywhere; }
 .staff-edit-content { display: grid; gap: 14px; }
-.scheduling-rules-panel { padding: 14px; }
+.scheduling-rules-panel { padding: 16px; }
 .scheduling-rules-panel h4 { margin: 0 0 10px; }
+.scheduling-rules-panel .staff-schedule-section { margin: 4px 0 0; }
+.scheduling-rules-panel .secondary-action { margin-top: 12px; }
 
 /* Account creation modal */
 .account-creation-modal { width: min(900px, 100%); }

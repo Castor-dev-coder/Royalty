@@ -352,10 +352,10 @@ function makeDemoData(): MockData {
       createdAt: appointment.createdAt,
     }));
   const schedules: MockSchedule[] = staff.flatMap((member, index) =>
-    [index % 7, (index + 1) % 7, (index + 2) % 7, (index + 3) % 7, (index + 4) % 7].map((dayOfWeek, dayIndex) => ({
+    [0, 1, 2, 3, 4].map((dayIndex) => ({
       id: `${member.id.slice(0, 8)}-0000-4000-8000-${String(index * 5 + dayIndex + 1).padStart(12, '0')}`,
       staffId: member.id,
-      dayOfWeek,
+      dayOfWeek: ((index + dayIndex) % 6) + 1,
       startTime: index === 1 ? '10:00' : '09:00',
       endTime: index === 1 ? '19:00' : '18:00',
       isActive: member.workStatus !== 'UNAVAILABLE',
