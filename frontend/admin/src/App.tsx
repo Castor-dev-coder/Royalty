@@ -2196,59 +2196,110 @@ function LoginPage({ onLogin }: { onLogin: () => void }) {
 
   return (
     <div className="login-page">
-      <div className="login-card">
-        <div className="login-brand">
-          <div className="login-brand-mark">R</div>
-          <div>
-            <h1 className="login-brand-title">ROYALTY SALON</h1>
-            <p className="login-brand-subtitle">ADMIN PANEL</p>
+      <aside className="login-brand-panel">
+        <div className="login-brand-head">
+          <span className="login-monogram" aria-hidden="true">R</span>
+          <div className="login-wordmark-block">
+            <p className="login-wordmark">ROYALTY</p>
+            <p className="login-brand-studio">Hair &amp; Nails Studio</p>
           </div>
         </div>
-        <div className="login-welcome">
-          <h2>Welcome back</h2>
-          <p>Sign in to manage your salon's appointments, services, staff, and payments.</p>
+        <div className="login-brand-rule" aria-hidden="true" />
+        <div className="login-brand-copy">
+          <p className="login-brand-overline">Admin &amp; Staff Access</p>
+          <p className="login-brand-note">
+            Secure sign-in for the Royalty team platform — appointments,
+            services, staff, and payments, managed with care.
+          </p>
         </div>
-        <form onSubmit={handleSubmit} className="login-form">
-          <label className="login-field-label" htmlFor="login-email">EMAIL ADDRESS</label>
-          <input
-            id="login-email"
-            className="login-input"
-            type="email"
-            value={email}
-            onChange={(e) => { setEmail(e.target.value); setError(''); }}
-            autoComplete="username"
-            required
-          />
-          <label className="login-field-label" htmlFor="login-password">PASSWORD</label>
-          <div className="login-password-group">
-            <input
-              id="login-password"
-              className="login-input"
-              type={showPassword ? 'text' : 'password'}
-              value={password}
-              onChange={(e) => { setPassword(e.target.value); setError(''); }}
-              autoComplete="current-password"
-              required
-            />
-            <button
-              type="button"
-              className="login-password-toggle"
-              onClick={() => setShowPassword(!showPassword)}
-              aria-label={showPassword ? 'Hide password' : 'Show password'}
-            >
-              {showPassword ? 'HIDE' : 'SHOW'}
+        <p className="login-brand-foot">Management System</p>
+      </aside>
+
+      <main className="login-form-panel">
+        <div className="login-pane">
+          <header className="login-pane-header">
+            <p className="login-overline">Studio Access</p>
+            <h1 className="login-title">Welcome back.</h1>
+            <p className="login-lede">Sign in to the Royalty team platform to manage appointments, services, staff, and payments.</p>
+          </header>
+          <form onSubmit={handleSubmit} className="login-form">
+            <div className="login-field">
+              <label className="login-field-label" htmlFor="login-email">Email Address</label>
+              <input
+                id="login-email"
+                className="login-input"
+                type="email"
+                value={email}
+                onChange={(e) => { setEmail(e.target.value); setError(''); }}
+                autoComplete="username"
+                placeholder="you@royalty.studio"
+                required
+              />
+            </div>
+            <div className="login-field">
+              <label className="login-field-label" htmlFor="login-password">Password</label>
+              <div className="login-password-group">
+                <input
+                  id="login-password"
+                  className="login-input"
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => { setPassword(e.target.value); setError(''); }}
+                  autoComplete="current-password"
+                  placeholder="Enter your password"
+                  required
+                />
+                <button
+                  type="button"
+                  className="login-password-toggle"
+                  onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  aria-pressed={showPassword}
+                >
+                  {showPassword ? (
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  ) : (
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2"/></svg>
+                  )}
+                </button>
+              </div>
+            </div>
+            {error && (
+              <p className="login-error" role="alert">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.5"/><path d="M12 8v4M12 16h.01" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/></svg>
+                {error}
+                <span className="sr-only">Sign-in error.</span>
+              </p>
+            )}
+            <button type="submit" className="login-submit" disabled={submitting}
+              aria-busy={submitting}>
+              <span className="submit-text">{submitting ? 'Signing in…' : 'Sign In'}</span>
+              <span className="submit-spinner" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeDasharray="31.4 31.4"/></svg>
+              </span>
             </button>
-          </div>
-          {error && <p className="login-error" role="alert">{error}</p>}
-          {mockApiEnabled && <p className="login-hint">Demo: admin@seed.royalty.local · RoyaltyDemo2026!</p>}
-          <button type="submit" className="login-submit" disabled={submitting}>
-            {submitting ? 'Signing in…' : 'Sign In'}
-          </button>
-        </form>
-        <div className="login-footer">
-          <p>Royalty Hair &amp; Nails Studio</p>
+            {mockApiEnabled && (
+              <aside className="login-demo" aria-label="Development demo account">
+                <p className="login-demo-title">Development demo account</p>
+                <dl className="login-demo-list">
+                  <div className="login-demo-row">
+                    <dt>Email</dt>
+                    <dd>admin@seed.royalty.local</dd>
+                  </div>
+                  <div className="login-demo-row">
+                    <dt>Password</dt>
+                    <dd>RoyaltyDemo2026!</dd>
+                  </div>
+                </dl>
+                <p className="login-demo-note">Fictional browser data for local Vite development only.</p>
+              </aside>
+            )}
+          </form>
+          <footer className="login-footer">
+            <p>Royalty Hair &amp; Nails Studio</p>
+          </footer>
         </div>
-      </div>
+      </main>
     </div>
   );
 }
