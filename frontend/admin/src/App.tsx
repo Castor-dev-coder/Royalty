@@ -68,15 +68,22 @@ const APPOINTMENT_STATUS_TEXT: Record<string, string> = {
   NO_SHOW: 'No show',
 };
 
+const SIDEBAR_STATUS_ORDER = ['CONFIRMED', 'RESERVED', 'NO_SHOW', 'COMPLETED', 'CANCELLED'] as const;
+
+const APPOINTMENT_STATUS_BADGE: Record<string, string> = {
+  CONFIRMED: 'status-confirmed',
+  RESERVED: 'status-reserved',
+  NO_SHOW: 'status-noshow',
+  COMPLETED: 'status-completed',
+  CANCELLED: 'status-cancelled',
+};
+
 function appointmentStatusText(status: string): string {
   return APPOINTMENT_STATUS_TEXT[status] ?? String(status).replace('_', ' ').toLowerCase();
 }
 
 function appointmentStatusBadge(status: string): string {
-  if (status === 'COMPLETED') return 'success';
-  if (status === 'CONFIRMED') return 'warning';
-  if (status === 'RESERVED') return 'neutral';
-  return 'muted';
+  return APPOINTMENT_STATUS_BADGE[status] ?? 'status-noshow';
 }
 
 function isPastNonterminal(appointment: { appointmentDate: string; status: string }, todayKey: string): boolean {
@@ -1501,7 +1508,6 @@ function AppointmentPage() {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   });
   const [message, setMessage] = useState('');
-  const [sidebarFilter, setSidebarFilter] = useState<'all' | 'CONFIRMED' | 'CANCELLED' | 'COMPLETED'>('all');
   const token = getAccessToken();
   const navigate = useNavigate();
   const monthStart = new Date(month.getFullYear(), month.getMonth(), 1);
@@ -1525,16 +1531,9 @@ function AppointmentPage() {
     const dateCompare = a.appointmentDate.localeCompare(b.appointmentDate);
     return dateCompare !== 0 ? dateCompare : a.startTime.localeCompare(b.startTime);
   });
-  const sidebarAppointments = allAppointments.filter((appt) => {
-    if (sidebarFilter === 'all') return true;
-    return appt.status === sidebarFilter;
-  });
-  const filterCounts = {
-    all: allAppointments.length,
-    CONFIRMED: allAppointments.filter((a) => a.status === 'CONFIRMED').length,
-    CANCELLED: allAppointments.filter((a) => a.status === 'CANCELLED').length,
-    COMPLETED: allAppointments.filter((a) => a.status === 'COMPLETED').length,
-  };
+  const sidebarSections = SIDEBAR_STATUS_ORDER
+    .map((status) => ({ status, items: allAppointments.filter((appt) => appt.status === status) }))
+    .filter((section) => section.items.length > 0);
 
   function handleSidebarClick(appointment: AppointmentRow) {
     setSelectedDate(appointment.appointmentDate);
@@ -1580,28 +1579,30 @@ function AppointmentPage() {
   return (
     <div className="appointment-layout">
       <aside className="appointment-sidebar">
-        <div className="sidebar-filters">
-          <button className={sidebarFilter === 'all' ? 'active' : ''} onClick={() => setSidebarFilter('all')}>All ({filterCounts.all})</button>
-          <button className={sidebarFilter === 'CONFIRMED' ? 'active' : ''} onClick={() => setSidebarFilter('CONFIRMED')}>Confirmed ({filterCounts.CONFIRMED})</button>
-          <button className={sidebarFilter === 'CANCELLED' ? 'active' : ''} onClick={() => setSidebarFilter('CANCELLED')}>Cancelled ({filterCounts.CANCELLED})</button>
-          <button className={sidebarFilter === 'COMPLETED' ? 'active' : ''} onClick={() => setSidebarFilter('COMPLETED')}>Completed ({filterCounts.COMPLETED})</button>
-        </div>
-        <div className="sidebar-appointment-list">
-          {sidebarAppointments.map((appt) => (
-            <button key={appt.code} type="button" className="sidebar-appointment-item" onClick={() => handleSidebarClick(appt)}>
-              <div>
-                <strong>{appt.customerName || 'Customer'}</strong>
-                <small>{appt.appointmentDate} · {appt.startTime}</small>
-                <small>{appt.staffName || 'Staff'}</small>
-              </div>
-              <span>
-                <span className={`status-badge ${appointmentStatusBadge(appt.status)}`}>{appointmentStatusText(appt.status)}</span>
-                {isPastNonterminal(appt, todayKey) && <span className="past-review-tag">Past — needs review</span>}
-              </span>
-            </button>
-          ))}
-          {sidebarAppointments.length === 0 && <p className="empty-list">No appointments match this filter.</p>}
-        </div>
+        {sidebarSections.length === 0 && <p className="empty-list">No appointments scheduled yet.</p>}
+        {sidebarSections.map((section) => (
+          <section key={section.status} className="sidebar-status-section">
+            <div className="sidebar-status-header">
+              <span className={`status-badge ${appointmentStatusBadge(section.status)}`}>{appointmentStatusText(section.status)}</span>
+              <span className="sidebar-status-count">{section.items.length} {section.items.length === 1 ? 'appointment' : 'appointments'}</span>
+            </div>
+            <div className="sidebar-appointment-list">
+              {section.items.map((appt) => (
+                <button key={appt.code} type="button" className="sidebar-appointment-item" onClick={() => handleSidebarClick(appt)}>
+                  <div>
+                    <strong>{appt.customerName || 'Customer'}</strong>
+                    <small>{appt.appointmentDate} · {appt.startTime}</small>
+                    <small>{appt.staffName || 'Staff'}</small>
+                  </div>
+                  <span>
+                    <span className={`status-badge ${appointmentStatusBadge(appt.status)}`}>{appointmentStatusText(appt.status)}</span>
+                    {isPastNonterminal(appt, todayKey) && <span className="past-review-tag">Past — needs review</span>}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </section>
+        ))}
       </aside>
       <section className="panel calendar-panel">
         <div className="calendar-header-row">

@@ -137,6 +137,12 @@ tbody td { padding: 14px 12px; border-bottom: 1px solid rgba(189, 193, 198, 0.28
 .status-badge.warning, .chip-button.warning { background: rgba(214, 180, 103, 0.18); color: #92672a; }
 .status-badge.muted, .chip-button.danger { background: rgba(209, 119, 119, 0.12); color: #8d4343; }
 .status-badge.neutral, .chip-button.neutral { background: rgba(139, 131, 119, 0.14); color: #5d5a52; }
+/* Brighter, distinct lifecycle status colors (appointments) */
+.status-badge.status-confirmed { background: rgba(216, 179, 96, 0.28); color: #7a5c1d; }
+.status-badge.status-reserved { background: rgba(69, 126, 177, 0.18); color: #2a5b85; }
+.status-badge.status-noshow { background: rgba(127, 136, 147, 0.2); color: #4b545e; }
+.status-badge.status-completed { background: rgba(66, 173, 112, 0.22); color: #147a45; }
+.status-badge.status-cancelled { background: rgba(227, 106, 92, 0.2); color: #a83e33; }
 .link-button { background: transparent; border: 1px solid rgba(120,130,140,0.45); color: #24313d; padding: 0.45rem 0.7rem; }
 .side-panel { min-height: 330px; }
 .log-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 18px; }
@@ -152,9 +158,10 @@ tbody td { padding: 14px 12px; border-bottom: 1px solid rgba(189, 193, 198, 0.28
 .appointment-sidebar { background: rgba(255,255,255,0.68); border: 1px solid var(--card-border); border-radius: 10px; padding: 14px; max-height: 600px; overflow-y: auto; }
 /* Appointment sidebar */
 .appointment-sidebar { background: rgba(255,255,255,0.68); border: 1px solid var(--card-border); border-radius: 10px; padding: 14px; max-height: 600px; overflow-y: auto; }
-.sidebar-filters { display: flex; gap: 4px; margin-bottom: 10px; flex-wrap: wrap; }
-.sidebar-filters button { padding: 4px 8px; border-radius: 999px; border: 1px solid rgba(182,187,193,0.55); background: transparent; color: #505b64; font-size: 0.68rem; font-weight: 650; cursor: pointer; }
-.sidebar-filters button.active { background: var(--gold); color: #3d3217; border-color: var(--gold); }
+.sidebar-status-section { margin-bottom: 12px; }
+.sidebar-status-header { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 2px 2px 6px; }
+.sidebar-status-count { color: var(--muted); font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; }
+.sidebar-status-section .sidebar-appointment-item { padding-left: 10px; }
 .sidebar-appointment-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px; border-radius: 7px; margin-bottom: 4px; background: #fff; border: 1px solid #e7eaee; cursor: pointer; text-align: left; width: 100%; }
 .sidebar-appointment-item:hover { border-color: #d5b566; }
 .sidebar-appointment-item strong { display: block; font-size: 0.76rem; }
@@ -194,6 +201,24 @@ tbody td { padding: 14px 12px; border-bottom: 1px solid rgba(189, 193, 198, 0.28
 .day-cell.today > span:first-child { color: #8a6a25; }
 .day-cell small { margin-top: auto; font-size: 0.62rem; color: #4a627e; }
 .day-cell .calendar-cancelled { color: #a24949; }
+
+/* Desktop-only calendar typography — never applies at mobile widths */
+@media (min-width: 769px) {
+  .calendar-header-row strong { font-size: 1.25rem; }
+  .calendar-month-summary { font-size: 0.78rem; }
+  .weekday-label { font-size: 0.78rem; }
+  .day-cell { min-height: 88px; }
+  .day-cell span { font-size: 0.9rem; }
+  .day-cell small { font-size: 0.68rem; }
+  .selected-day-panel .panel-header h3 { font-size: 1.2rem; }
+  .selected-day-panel .panel-header span { font-size: 0.72rem; }
+  .selected-appointment strong { font-size: 0.9rem; }
+  .selected-appointment small { font-size: 0.74rem; }
+  .sidebar-status-header .status-badge { font-size: 0.74rem; }
+  .sidebar-status-count { font-size: 0.7rem; }
+  .sidebar-appointment-item strong { font-size: 0.82rem; }
+  .sidebar-appointment-item small { font-size: 0.7rem; }
+}
 .past-review-tag { display: inline-block; margin-left: 6px; padding: 2px 7px; border-radius: 999px; border: 1px dashed rgba(148, 109, 40, 0.55); background: rgba(214, 180, 103, 0.14); color: #8a6a25; font-size: 0.6rem; font-weight: 700; letter-spacing: 0.02em; white-space: nowrap; }
 .selected-day-panel { margin-top: 16px; padding-top: 12px; border-top: 1px solid rgba(189,193,198,0.5); max-height: 400px; overflow-y: auto; }
 .selected-appointment { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid rgba(189,193,198,0.35); }
