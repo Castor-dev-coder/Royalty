@@ -2,7 +2,7 @@ import { useState } from 'react'
 import AuthModal from './AuthModal.jsx'
 import BrandMark from './BrandMark.jsx'
 
-function Signin({ onClose, onSwitch }) {
+function Signin({ onClose, onSwitch, onLogin = () => {} }) {
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [message, setMessage] = useState('')
@@ -14,7 +14,13 @@ function Signin({ onClose, onSwitch }) {
       setMessage('Passwords do not match.')
       return
     }
-    setMessage('This preview form is ready to connect to salon authentication.')
+    const user = {
+      name: String(formData.get('name')).trim(),
+      email: String(formData.get('email')).trim(),
+    }
+    localStorage.setItem('royalty-user', JSON.stringify(user))
+    onLogin(user)
+    onClose()
   }
 
   return (

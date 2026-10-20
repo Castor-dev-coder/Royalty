@@ -10,6 +10,9 @@ import SearchBar from '../components/SearchBar.jsx'
 import Signin from '../components/Signin.jsx'
 
 function Reviews() {
+  const [user, setUser] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('royalty-user')) } catch { return null }
+  })
   const [authView, setAuthView] = useState(null)
   const [query, setQuery] = useState('')
   const [activeCategory, setActiveCategory] = useState('All Reviews')
@@ -18,6 +21,10 @@ function Reviews() {
   const closeAuth = useCallback(() => setAuthView(null), [])
   const switchAuth = useCallback(() => {
     setAuthView((view) => (view === 'login' ? 'signin' : 'login'))
+  }, [])
+  const handleLogout = useCallback(() => {
+    localStorage.removeItem('royalty-user')
+    setUser(null)
   }, [])
 
   const filteredReviews = useMemo(() => {
@@ -36,7 +43,7 @@ function Reviews() {
 
   return (
     <>
-      <Navbar onLoginClick={openLogin} />
+      <Navbar onLoginClick={openLogin} onLogout={handleLogout} user={user} />
       <main className="min-h-[calc(100vh-76px)] bg-black">
         <h1 className="sr-only">Reviews</h1>
         <section
@@ -98,12 +105,12 @@ function Reviews() {
           </div>
         </section>
       </main>
-      <Footer onLoginClick={openLogin} />
+      <Footer user={user} onLoginClick={openLogin} />
       {authView === 'login' && (
-        <Login onClose={closeAuth} onSwitch={switchAuth} />
+        <Login onClose={closeAuth} onSwitch={switchAuth} onLogin={setUser} />
       )}
       {authView === 'signin' && (
-        <Signin onClose={closeAuth} onSwitch={switchAuth} />
+        <Signin onClose={closeAuth} onSwitch={switchAuth} onLogin={setUser} />
       )}
     </>
   )

@@ -4,7 +4,7 @@ const stats = [
   { value: '8+', label: 'YEARS OF EXCELLENCE' },
 ]
 
-function OurStory({ image }) {
+function OurStory() {
   return (
     <section
       className="mx-auto grid w-[min(100%-48px,1180px)] grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)] items-center gap-[clamp(40px,7vw,90px)] py-28 max-[900px]:gap-9 max-[680px]:w-[min(100%-36px,1180px)] max-[680px]:grid-cols-1 max-[680px]:gap-8 max-[680px]:py-[78px]"

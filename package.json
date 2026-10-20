@@ -1,0 +1,11 @@
+{
+  "name": "royalty-salon",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "npm --prefix frontend/user run dev",
+    "build": "npm --prefix frontend/user run build",
+    "lint": "npm --prefix frontend/user run lint",
+    "preview": "npm --prefix frontend/user run preview"
+  }
+}

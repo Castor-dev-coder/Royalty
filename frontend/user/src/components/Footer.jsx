@@ -1,11 +1,15 @@
 import BrandMark from './BrandMark.jsx'
+import { Link } from 'react-router-dom'
 
-const quickLinks = [
-  { label: 'Home', href: '#home' },
-  { label: 'Services', href: '#services' },
-  { label: 'Appointments', action: true },
-  { label: 'Reviews', href: '#reviews' },
-  { label: 'About', href: '#about' },
+const signedOutLinks = [
+  { label: 'Home', to: '/' }, { label: 'Services', to: '/services' },
+  { label: 'Reviews', to: '/reviews' },
+  { label: 'About', to: '/about' },
+]
+const signedInLinks = [
+  { label: 'Services', to: '/services' },
+  { label: 'Appointments', to: '/appointments' },
+  { label: 'Reviews', to: '/reviews' },
 ]
 
 const contactDetails = [
@@ -54,7 +58,8 @@ function ContactIcon({ type }) {
   )
 }
 
-function Footer({ onLoginClick }) {
+function Footer({ onLoginClick, user }) {
+  const quickLinks = user ? signedInLinks : signedOutLinks
   return (
     <footer className="border-t border-[rgba(212,180,92,0.18)] bg-[#080808] pt-[55px]">
       <div className="mx-auto grid w-[min(100%-48px,1180px)] grid-cols-[1.35fr_0.7fr_1fr] gap-[clamp(40px,8vw,120px)] pb-11 max-[680px]:grid-cols-2 max-[680px]:gap-x-6 max-[680px]:gap-y-[38px] max-[600px]:w-[min(100%-36px,1180px)]">
@@ -100,15 +105,15 @@ function Footer({ onLoginClick }) {
           <ul className="m-0 flex list-none flex-col gap-[13px] p-0">
             {quickLinks.map((link) => (
               <li key={link.label}>
-                {link.action ? (
-                  <button className="type-footer-text cursor-pointer border-0 bg-transparent p-0 text-[#b8b3aa] transition-colors duration-[180ms] hover:text-[var(--gold)]" type="button" onClick={onLoginClick}>
-                    {link.label}
-                  </button>
-                ) : (
-                  <a className="type-footer-text cursor-pointer text-[#b8b3aa] no-underline transition-colors duration-[180ms] hover:text-[var(--gold)]" href={link.href}>
-                    {link.label}
-                  </a>
-                )}
+                <Link
+                  className="type-footer-text cursor-pointer text-[#b8b3aa] no-underline transition-colors duration-[180ms] hover:text-[var(--gold)]"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                  }}
+                  to={link.to}
+                >
+                  {link.label}
+                </Link>
               </li>
             ))}
           </ul>

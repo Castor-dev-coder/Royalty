@@ -136,6 +136,9 @@ function GalleryRow({ row }) {
 }
 
 function Homepage() {
+  const [user, setUser] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('royalty-user')) } catch { return null }
+  })
   const [authView, setAuthView] = useState(null)
   const openLogin = useCallback(() => setAuthView('login'), [])
   const closeAuth = useCallback(() => setAuthView(null), [])
@@ -143,10 +146,14 @@ function Homepage() {
   const switchAuth = useCallback(() => {
     setAuthView((view) => (view === 'login' ? 'signin' : 'login'))
   }, [])
+  const handleLogout = useCallback(() => {
+    localStorage.removeItem('royalty-user')
+    setUser(null)
+  }, [])
 
   return (
     <>
-      <Navbar onLoginClick={openLogin} />
+      <Navbar onLoginClick={openLogin} onLogout={handleLogout} user={user} />
       <main>
         <section
           className="relative flex min-h-[min(690px,calc(100svh-76px))] items-center overflow-hidden bg-[#090909] max-[900px]:min-h-[610px] max-[680px]:min-h-[630px] max-[680px]:items-end"
@@ -248,12 +255,12 @@ function Homepage() {
 
         <OurStory image={images.story} />
       </main>
-      <Footer onLoginClick={openLogin} />
+      <Footer user={user} onLoginClick={openLogin} />
       {authView === 'login' && (
-        <Login onClose={closeAuth} onSwitch={switchAuth} />
+        <Login onClose={closeAuth} onSwitch={switchAuth} onLogin={setUser} />
       )}
       {authView === 'signin' && (
-        <Signin onClose={closeAuth} onSwitch={switchAuth} />
+        <Signin onClose={closeAuth} onSwitch={switchAuth} onLogin={setUser} />
       )}
     </>
   )
