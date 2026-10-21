@@ -30,6 +30,14 @@ const myReviews = [
   },
 ]
 
+function getSavedReviews() {
+  try {
+    return JSON.parse(localStorage.getItem('royalty-reviews') || '[]')
+  } catch {
+    return []
+  }
+}
+
 function Stars({ value }) {
   return (
     <div className="flex items-center gap-0.5 text-(--gold)" aria-label={`${value} out of 5 stars`}>
@@ -64,9 +72,9 @@ function MyReviews() {
     }
   })
   const [filter, setFilter] = useState('all')
-  const [reviews, setReviews] = useState(myReviews)
+  const [reviews, setReviews] = useState(() => [...myReviews, ...getSavedReviews()])
   const [editingId, setEditingId] = useState(null)
-  const [draft, setDraft] = useState('')
+  const [draft, setDraft] = useState({ title: '', text: '' })
 
   const logout = useCallback(() => {
     localStorage.removeItem('royalty-user')
@@ -80,24 +88,33 @@ function MyReviews() {
 
   function startEdit(review) {
     setEditingId(review.id)
-    setDraft(review.text)
+    setDraft({ title: review.service, text: review.text })
   }
 
   function saveEdit(id) {
-    setReviews((current) =>
-      current.map((r) => (r.id === id ? { ...r, text: draft.trim() || r.text } : r)),
-    )
+    setReviews((current) => current.map((review) => (
+      review.id === id
+        ? { ...review, service: draft.title.trim() || review.service, text: draft.text.trim() || review.text }
+        : review
+    )))
+    const savedReviews = getSavedReviews().map((review) => (
+      review.id === id
+        ? { ...review, service: draft.title.trim() || review.service, text: draft.text.trim() || review.text }
+        : review
+    ))
+    localStorage.setItem('royalty-reviews', JSON.stringify(savedReviews))
     setEditingId(null)
-    setDraft('')
+    setDraft({ title: '', text: '' })
   }
 
   function cancelEdit() {
     setEditingId(null)
-    setDraft('')
+    setDraft({ title: '', text: '' })
   }
 
   function deleteReview(id) {
     setReviews((current) => current.filter((r) => r.id !== id))
+    localStorage.setItem('royalty-reviews', JSON.stringify(getSavedReviews().filter((review) => review.id !== id)))
   }
 
   if (!user) return <Navigate to="/services" replace />
@@ -129,13 +146,6 @@ function MyReviews() {
                   Your experiences
                 </h2>
               </div>
-              <button
-                type="button"
-                onClick={() => navigate('/services')}
-                className="rounded-sm border border-(--gold) bg-(--gold) px-6 py-3 text-[11px] font-bold tracking-[0.18em] text-[#111] uppercase transition-colors hover:bg-(--gold-bright) hover:border-(--gold-bright)"
-              >
-                Write a review
-              </button>
             </div>
 
             <div className="mt-8 flex flex-wrap items-center justify-between gap-4 border-y border-[rgba(212,180,92,0.18)] py-4">
@@ -204,6 +214,19 @@ function MyReviews() {
                   {editingId === review.id ? (
                     <div className="mt-5">
                       <label
+                        htmlFor={`edit-title-${review.id}`}
+                        className="sr-only"
+                      >
+                        Edit review title for {review.service}
+                      </label>
+                      <input
+                        id={`edit-title-${review.id}`}
+                        type="text"
+                        value={draft.title}
+                        onChange={(e) => setDraft((current) => ({ ...current, title: e.target.value }))}
+                        className="mb-3 w-full border-0 bg-transparent p-0 font-(--serif) text-2xl font-light italic text-[#f4f1eb] outline-none"
+                      />
+                      <label
                         htmlFor={`edit-${review.id}`}
                         className="sr-only"
                       >
@@ -212,8 +235,8 @@ function MyReviews() {
                       <textarea
                         id={`edit-${review.id}`}
                         rows={4}
-                        value={draft}
-                        onChange={(e) => setDraft(e.target.value)}
+                        value={draft.text}
+                        onChange={(e) => setDraft((current) => ({ ...current, text: e.target.value }))}
                         className="w-full resize-y rounded-md border border-[rgba(212,180,92,0.35)] bg-[#0d0d0c] px-4 py-3 text-sm leading-relaxed text-[#f4f1eb] outline-none transition-colors focus:border-(--gold)"
                       />
                       <div className="mt-3 flex items-center gap-3">
