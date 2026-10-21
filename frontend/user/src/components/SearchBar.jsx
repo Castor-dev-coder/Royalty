@@ -1,9 +1,9 @@
 function SearchBar({ value, onChange, placeholder = 'Search reviews...' }) {
   return (
-    <label className="mx-auto flex h-[42px] w-full items-center gap-[10px] rounded-full border border-[var(--line)] bg-[rgba(17,17,17,0.8)] px-[14px] text-[var(--muted)] transition-colors duration-200 focus-within:border-[var(--gold-bright)] focus-within:shadow-[0_0_0_2px_rgba(212,180,92,0.18)]">
-      <span className="flex size-4 shrink-0" aria-hidden="true">
+    <label className="search-bar mx-auto flex min-h-13.5 w-full items-center gap-3 rounded-2xl border px-4 text-(--muted) transition-[border-color,box-shadow,background-color] duration-200 focus-within:border-(--gold-bright) focus-within:shadow-[0_0_0_4px_rgba(212,180,92,0.14)]">
+      <span className="grid size-8 shrink-0 place-items-center rounded-full bg-[rgba(212,180,92,0.12)] text-(--gold)" aria-hidden="true">
         <svg
-          className="w-full fill-none stroke-current [stroke-linecap:round] [stroke-width:1.6]"
+          className="size-4 fill-none stroke-current [stroke-linecap:round] stroke-[1.8]"
           viewBox="0 0 24 24"
         >
           <circle cx="10.8" cy="10.8" r="6.3" />
@@ -12,7 +12,7 @@ function SearchBar({ value, onChange, placeholder = 'Search reviews...' }) {
       </span>
       <span className="sr-only">Search reviews</span>
       <input
-        className="w-full border-0 bg-transparent text-[14px] text-[var(--text)] outline-none placeholder:text-[#858077]"
+        className="search-bar-input min-w-0 w-full border-0 bg-transparent text-base text-(--text) outline-none placeholder:text-(--muted)"
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
         type="search"

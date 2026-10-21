@@ -1,3 +1,5 @@
+import SafeImage from './SafeImage.jsx'
+
 import { useEffect } from 'react'
 import { createPortal } from 'react-dom'
 
@@ -34,7 +36,7 @@ function ImageLightbox({ src, alt = '', onClose }) {
           <path d="M6 6l12 12M18 6 6 18" />
         </svg>
       </button>
-      <img
+      <SafeImage
         alt={alt}
         className="max-h-[90vh] max-w-[min(92vw,1100px)] cursor-default rounded-[6px] object-contain"
         onClick={(event) => event.stopPropagation()}

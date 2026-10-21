@@ -1,6 +1,33 @@
 import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import BrandMark from './BrandMark.jsx'
+import { useTheme } from '../context/useTheme.jsx'
+
+function ThemeToggle() {
+  const { theme, toggleTheme } = useTheme()
+  const isDark = theme === 'dark'
+  return (
+    <button
+      aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+      aria-pressed={isDark}
+      className="grid size-9 cursor-pointer place-items-center rounded-full text-[#f4f1eb] transition-colors hover:text-(--gold)"
+      onClick={toggleTheme}
+      title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+      type="button"
+    >
+      {isDark ? (
+        <svg aria-hidden="true" className="size-5 fill-none stroke-current [stroke-linecap:round] [stroke-linejoin:round] stroke-[1.6]" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+        </svg>
+      ) : (
+        <svg aria-hidden="true" className="size-5 fill-current" viewBox="0 0 24 24">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+        </svg>
+      )}
+    </button>
+  )
+}
 
 const signedOutLinks = [
   { label: 'HOME', to: '/' },
@@ -16,7 +43,7 @@ const signedInLinks = [
 ]
 
 const linkClass =
-  'type-nav-link relative inline-block py-[0.6rem] pb-[0.7rem] text-[#f4f1eb] no-underline transition-[color,font-weight] duration-[180ms] after:absolute after:right-0 after:bottom-0 after:left-0 after:h-px after:origin-left after:scale-x-0 after:bg-[var(--gold)] after:transition-transform after:duration-[180ms] hover:text-[var(--gold)] hover:after:scale-x-100 aria-[current=page]:text-[var(--gold)] aria-[current=page]:after:scale-x-100 max-[680px]:block max-[680px]:py-3'
+  'type-nav-link relative inline-block py-[0.6rem] pb-[0.7rem] text-[#f4f1eb] no-underline transition-[color,font-weight] duration-180 after:absolute after:right-0 after:bottom-0 after:left-0 after:h-px after:origin-left after:scale-x-0 after:bg-(--gold) after:transition-transform after:duration-180 hover:text-(--gold) hover:after:scale-x-100 aria-[current=page]:text-(--gold) aria-[current=page]:after:scale-x-100 max-[680px]:block max-[680px]:py-3'
 
 function Navbar({ onLoginClick, user, onLogout }) {
   const { pathname } = useLocation()
@@ -40,23 +67,23 @@ function Navbar({ onLoginClick, user, onLogout }) {
   }
 
   return (
-    <header className="sticky top-0 z-40 w-full border-b border-[rgba(212,180,92,0.12)] bg-[rgba(10,10,10,0.84)] backdrop-blur-[16px]">
+    <header className="sticky top-0 z-40 w-full border-b border-[rgba(212,180,92,0.12)] bg-[rgba(10,10,10,0.84)] backdrop-blur-lg">
       <nav
         aria-label="Main navigation"
-        className="mx-auto flex min-h-[76px] w-[min(100%-48px,1180px)] items-center justify-between gap-8 max-[600px]:w-[min(100%-36px,1180px)] max-[680px]:min-h-[68px]"
+        className="mx-auto flex min-h-19 w-[min(100%-48px,1180px)] items-center justify-between gap-8 max-[600px]:w-[min(100%-36px,1180px)] max-[680px]:min-h-17"
       >
         <Link
-          className="flex shrink-0 items-center gap-2 text-[var(--text)] no-underline"
+          className="flex shrink-0 items-center gap-2 text-(--text) no-underline"
           to="/"
           onClick={handleRouteClick}
           aria-label="Royalty Hair and Nails Studio home"
         >
           <BrandMark className="size-10 max-[680px]:size-9" />
           <span className="flex flex-col leading-[1.15]">
-            <strong className="type-brand-name text-[var(--gold)]">
+            <strong className="type-brand-name text-(--gold)">
               Royalty
             </strong>
-            <small className="type-brand-caption mt-[3px] text-[#c7c1b4]">
+            <small className="type-brand-caption mt-0.75 text-[#c7c1b4]">
               HAIR &amp; NAILS STUDIO
             </small>
           </span>
@@ -65,18 +92,18 @@ function Navbar({ onLoginClick, user, onLogout }) {
         <button
           aria-expanded={menuOpen}
           aria-label={menuOpen ? 'Close navigation menu' : 'Open navigation menu'}
-          className="hidden size-[42px] cursor-pointer flex-col items-center justify-center gap-[5px] rounded-[2px] border border-[var(--line)] bg-transparent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--gold-bright)] max-[680px]:flex"
+          className="hidden size-10.5 cursor-pointer flex-col items-center justify-center gap-1.25 rounded-xs border border-(--line) bg-transparent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--gold-bright) max-[680px]:flex"
           onClick={() => setMenuOpen((open) => !open)}
           type="button"
         >
           <span
-            className={`h-px w-[18px] bg-[var(--gold)] transition-[transform,opacity] duration-[180ms] ${menuOpen ? 'translate-y-[6px] rotate-45' : ''}`}
+            className={`h-px w-4.5 bg-(--gold) transition-[transform,opacity] duration-180 ${menuOpen ? 'translate-y-1.5 rotate-45' : ''}`}
           />
           <span
-            className={`h-px w-[18px] bg-[var(--gold)] transition-[transform,opacity] duration-[180ms] ${menuOpen ? 'opacity-0' : ''}`}
+            className={`h-px w-4.5 bg-(--gold) transition-[transform,opacity] duration-180 ${menuOpen ? 'opacity-0' : ''}`}
           />
           <span
-            className={`h-px w-[18px] bg-[var(--gold)] transition-[transform,opacity] duration-[180ms] ${menuOpen ? '-translate-y-[6px] -rotate-45' : ''}`}
+            className={`h-px w-4.5 bg-(--gold) transition-[transform,opacity] duration-180 ${menuOpen ? '-translate-y-1.5 -rotate-45' : ''}`}
           />
         </button>
 
@@ -112,41 +139,46 @@ function Navbar({ onLoginClick, user, onLogout }) {
             <div className="flex items-center gap-4 max-[680px]:w-full max-[680px]:justify-end">
               <button
                 aria-label="Notifications"
-                className="grid size-9 place-items-center rounded-full text-[#f4f1eb] transition-colors hover:text-[var(--gold)]"
+                className="grid size-9 place-items-center rounded-full text-[#f4f1eb] transition-colors hover:text-(--gold)"
                 type="button"
               >
-                <svg aria-hidden="true" className="size-7 fill-none stroke-current [stroke-linecap:round] [stroke-linejoin:round] [stroke-width:1.7]" viewBox="0 0 24 24">
+                <svg aria-hidden="true" className="size-7 fill-none stroke-current [stroke-linecap:round] [stroke-linejoin:round] stroke-[1.7]" viewBox="0 0 24 24">
                   <path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Z" />
                   <path d="M9.5 21h5" />
                 </svg>
               </button>
+              <ThemeToggle />
               <div className="group relative">
               <button
-                className="type-nav-action inline-flex min-h-[52px] min-w-[100px] cursor-pointer items-center justify-center gap-4 rounded-[3px] border border-[var(--gold)] bg-transparent px-3 py-2 text-[#f4f1eb] transition-[background-color,color] duration-[180ms] hover:bg-[rgba(212,180,92,.12)]"
+                className="type-nav-action inline-flex min-h-13 min-w-25 cursor-pointer items-center justify-center gap-4 rounded-[3px] border border-(--gold) bg-transparent px-3 py-2 text-[#f4f1eb] transition-[background-color,color] duration-180 hover:bg-[rgba(212,180,92,.12)]"
                 type="button"
                 aria-label={`Signed in as ${user.name}`}
               >
-                <svg aria-hidden="true" className="size-7 fill-none stroke-current [stroke-linecap:round] [stroke-linejoin:round] [stroke-width:1.25]" viewBox="0 0 24 24">
+                <svg aria-hidden="true" className="size-7 fill-none stroke-current [stroke-linecap:round] [stroke-linejoin:round] stroke-[1.25]" viewBox="0 0 24 24">
                   <circle cx="12" cy="7" r="3.5" />
                   <path d="M5 20c.5-3.5 2.8-5.5 7-5.5s6.5 2 7 5.5" />
                 </svg>
-                <svg aria-hidden="true" className="size-5 fill-none stroke-current [stroke-linecap:round] [stroke-linejoin:round] [stroke-width:1.5]" viewBox="0 0 24 24">
+                <svg aria-hidden="true" className="size-5 fill-none stroke-current [stroke-linecap:round] [stroke-linejoin:round] stroke-[1.5]" viewBox="0 0 24 24">
                   <path d="m5 9 7 7 7-7" />
                 </svg>
               </button>
-              <div className="invisible absolute top-full right-0 z-50 mt-2 min-w-[150px] rounded border border-[var(--line)] bg-[#15130f] p-2 opacity-0 shadow-xl transition-[opacity,visibility] group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100 max-[680px]:right-0">
+              <div className="invisible absolute top-full right-0 z-50 mt-2 min-w-37.5 rounded border border-(--line) bg-[#15130f] p-2 opacity-0 shadow-xl transition-[opacity,visibility] group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100 max-[680px]:right-0">
                 <p className="m-2 truncate text-[10px] text-[#aaa49a]">{user.email}</p>
                 <button type="button" onClick={() => navigate('/profile')} className="w-full rounded px-2 py-2 text-left text-xs text-[#eeeae2] hover:bg-[rgba(212,180,92,.12)]">Profile</button>
-                <button type="button" onClick={onLogout} className="w-full rounded px-2 py-2 text-left text-xs text-[var(--gold)] hover:bg-[rgba(212,180,92,.12)]">Sign out</button>
+                <button type="button" onClick={() => navigate('/my-reviews')} className="w-full rounded px-2 py-2 text-left text-xs text-[#eeeae2] hover:bg-[rgba(212,180,92,.12)]">My reviews</button>
+                <button type="button" onClick={onLogout} className="w-full rounded px-2 py-2 text-left text-xs text-(--gold) hover:bg-[rgba(212,180,92,.12)]">Sign out</button>
               </div>
               </div>
             </div>
           ) : (
-            <button
-              className="type-nav-action inline-flex min-h-[25px] cursor-pointer items-center justify-center rounded-[3px] border border-[var(--gold)] bg-[var(--gold)] px-[.8rem] py-[0.8rem] text-[#111] transition-[background-color,color,transform] duration-[180ms] hover:-translate-y-0.5 hover:bg-[var(--gold-bright)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--gold-bright)] max-[680px]:w-full"
-              onClick={() => { setMenuOpen(false); onLoginClick() }}
-              type="button"
-            >LOGIN</button>
+            <div className="flex items-center gap-3 max-[680px]:w-full max-[680px]:justify-end">
+              <ThemeToggle />
+              <button
+                className="type-nav-action inline-flex min-h-6.25 cursor-pointer items-center justify-center rounded-[3px] border border-(--gold) bg-(--gold) px-[.8rem] py-[0.8rem] text-[#111] transition-[background-color,color,transform] duration-180 hover:-translate-y-0.5 hover:bg-(--gold-bright) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--gold-bright) max-[680px]:w-full"
+                onClick={() => { setMenuOpen(false); onLoginClick() }}
+                type="button"
+              >LOGIN</button>
+            </div>
           )}
         </div>
       </nav>

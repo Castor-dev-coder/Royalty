@@ -1,9 +1,11 @@
+import SafeImage from './SafeImage.jsx'
+
 import { useState } from 'react'
 import ImageLightbox from './ImageLightBox.jsx'
 
 function StarIcon({ filled = true }) {
   return (
-    <svg className="size-[15px]" viewBox="0 0 24 24" aria-hidden="true">
+    <svg className="size-3.75" viewBox="0 0 24 24" aria-hidden="true">
       <path
         d="M12 1.7 14.9 8.2 22 8.9 16.7 13.8 18.4 21 12 17.2 5.6 21 7.3 13.8 2 8.9 9.1 8.2 12 1.7Z"
         fill={filled ? '#d4b45c' : '#403a34'}
@@ -19,12 +21,12 @@ function RatingStars({ value }) {
   const hasHalfStar = value - fullStars >= 0.5
 
   return (
-    <div className="flex items-center gap-[2px]" aria-label={`${value} out of 5 stars`}>
+    <div className="flex items-center gap-0.5" aria-label={`${value} out of 5 stars`}>
       {Array.from({ length: 5 }, (_, index) => {
         if (index < fullStars) return <StarIcon key={`star-${index}`} filled />
         if (index === fullStars && hasHalfStar) {
           return (
-            <svg className="size-[15px]" viewBox="0 0 24 24" aria-hidden="true" key={`half-${index}`}>
+            <svg className="size-3.75" viewBox="0 0 24 24" aria-hidden="true" key={`half-${index}`}>
               <defs>
                 <linearGradient id={`half-star-${index}`}>
                   <stop offset="50%" stopColor="#d4b45c" />
@@ -50,17 +52,17 @@ function ReviewCard({ name, avatar, date, rating, category, text, images }) {
   const [zoomedImage, setZoomedImage] = useState(null)
 
   return (
-    <article className="overflow-hidden rounded-[16px] border border-[var(--line)] bg-[var(--review-panel)] shadow-[0_0_0_1px_rgba(212,180,92,0.06)]">
-      <div className="grid grid-cols-3 gap-[8px] border-b border-[rgba(212,180,92,0.2)] p-[10px]">
+    <article className="overflow-hidden rounded-2xl border border-(--line) bg-(--review-panel) shadow-[0_0_0_1px_rgba(212,180,92,0.06)]">
+      <div className="grid grid-cols-3 gap-2 border-b border-[rgba(212,180,92,0.2)] p-2.5">
         {images.map((image, index) => (
           <button
             aria-label={`Enlarge ${name} review image ${index + 1}`}
-            className="block cursor-zoom-in overflow-hidden rounded-[8px] p-0"
+            className="block cursor-zoom-in overflow-hidden rounded-lg p-0"
             key={`${name}-${index}`}
             onClick={() => setZoomedImage({ src: image, alt: `${name} review image ${index + 1}` })}
             type="button"
           >
-            <img
+            <SafeImage
               alt={`${name} review image ${index + 1}`}
               className="aspec-{4/3} w-full object-cover transition-transform duration-300 hover:scale-[1.06]"
               src={image}
@@ -72,27 +74,27 @@ function ReviewCard({ name, avatar, date, rating, category, text, images }) {
       <div className="p-[18px_18px_16px]">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">
-            <img
+            <SafeImage
               alt={`${name} avatar`}
-              className="size-[44px] rounded-full object-cover ring-2 ring-[rgba(212,180,92,0.32)]"
+              className="size-11 rounded-full object-cover ring-2 ring-line"
               src={avatar}
             />
             <div>
-              <div className="text-[18px] font-semibold text-[var(--text)]">{name}</div>
-              <div className="mt-1 text-[12px] uppercase tracking-[0.06em] text-[var(--muted)]">{date}</div>
+              <div className="text-lg font-semibold text-(--text)">{name}</div>
+              <div className="mt-1 text-xs uppercase tracking-[0.06em] text-(--muted)">{date}</div>
             </div>
           </div>
-          <div className="flex items-center gap-2 pt-[2px]">
+          <div className="flex items-center gap-2 pt-0.5">
             <RatingStars value={rating} />
-            <span className="text-[14px] font-semibold text-[var(--gold)]">{Number(rating).toFixed(1)}</span>
+            <span className="text-sm font-semibold text-(--gold)">{Number(rating).toFixed(1)}</span>
           </div>
         </div>
 
-        <div className="mt-[18px] inline-flex rounded-full border border-[var(--gold)] bg-[rgba(212,180,92,0.08)] px-[10px] py-[6px] text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--gold)]">
+        <div className="mt-4.5 inline-flex rounded-full border border-(--gold) bg-[rgba(212,180,92,0.08)] px-2.5 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-(--gold)">
           {category}
         </div>
 
-        <p className="mt-[16px] text-[14px] leading-[1.8] text-[#d5d0c8]">{text}</p>
+        <p className="mt-4 text-sm leading-[1.8] text-[#d5d0c8]">{text}</p>
       </div>
 
       {zoomedImage && (

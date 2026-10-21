@@ -7,10 +7,12 @@ import About from './pages/About.jsx'
 import Appointments from './pages/Appointments.jsx'
 import Profile from './pages/Profile.jsx'
 import ChangePassword from './pages/ChangePassword.jsx'
+import MyReviews from './pages/MyReviews.jsx'
+import { ThemeProvider } from './context/ThemeContext.jsx'
 
 function App() {
   return (
-    <>
+    <ThemeProvider>
       <ScrollToTop />
       <Routes>
         <Route path="/" element={<Homepage />} />
@@ -18,10 +20,11 @@ function App() {
         <Route path="/appointments" element={<Appointments />} />
         <Route path="/profile" element={<Profile />} />
         <Route path="/change-password" element={<ChangePassword />} />
+        <Route path="/my-reviews" element={<MyReviews />} />
         <Route path="/reviews" element={<Reviews />} />
         <Route path="/about" element={<About />} />
       </Routes>
-    </>
+    </ThemeProvider>
   )
 }
 

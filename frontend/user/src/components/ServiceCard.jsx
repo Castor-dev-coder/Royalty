@@ -1,8 +1,10 @@
+import SafeImage from './SafeImage.jsx'
+
 function ServiceCard({ image, title, price, description, duration, onBook }) {
   return (
     <article className="group overflow-hidden rounded-[6px] border border-[rgba(212,180,92,0.52)] bg-[var(--card)] transition-[transform,box-shadow] duration-[220ms] hover:-translate-y-[5px] hover:shadow-[0_14px_35px_rgba(212,180,92,0.12)] max-[680px]:grid max-[680px]:grid-cols-[minmax(105px,0.8fr)_minmax(0,1.2fr)]">
       <div className="relative aspect-[4/3]! h-auto! min-h-0! w-full shrink-0 overflow-hidden bg-[linear-gradient(135deg,#29241a,#151515_55%,#2b2518)] max-[680px]:aspect-auto! max-[680px]:h-full! max-[680px]:min-h-[210px]!">
-  <img
+  <SafeImage
     className="absolute inset-0 block size-full object-cover transition-transform duration-[350ms] group-hover:scale-[1.04]"
     src={image}
     alt={`${title} service`}
