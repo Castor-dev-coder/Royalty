@@ -95,7 +95,7 @@ export function StaffShell() {
 
         <aside className={`sidebar${mobileNavOpen ? ' mobile-open' : ''}`}>
           <div className="brand-wrap sidebar-brand">
-            <div className="brand-mark">R</div>
+            <div className="brand-mark" aria-hidden="true"><img src="/images/Logo.jpg" alt="" /></div>
             <div>
               <h1>ROYALTY SALON</h1>
               <p>STAFF PANEL</p>

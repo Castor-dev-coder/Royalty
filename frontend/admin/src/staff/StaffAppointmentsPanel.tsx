@@ -3,7 +3,8 @@ import { useDialogBehavior } from '../components/useDialogBehavior';
 import {
   EmptyState,
   ErrorState,
-  LoadingState,
+  SkeletonRegion,
+  TableSkeleton,
   Panel,
   StatusBadge,
   appointmentStatusText,
@@ -96,7 +97,13 @@ export function StaffAppointmentsPanel() {
     }
   }
 
-  if (loading) return <LoadingState>Loading your appointments…</LoadingState>;
+  if (loading) {
+    return (
+      <SkeletonRegion label="Loading your appointments">
+        <TableSkeleton rows={4} columns={4} />
+      </SkeletonRegion>
+    );
+  }
   if (loadError) return <ErrorState>{loadError}</ErrorState>;
 
   return (

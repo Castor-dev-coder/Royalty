@@ -49,7 +49,7 @@ export function StaffSignIn({ onSignedIn }: { onSignedIn: () => void }) {
       <main className="login-form-panel">
         <div className="login-pane">
           <div className="login-brand-head">
-            <span className="login-monogram" aria-hidden="true">R</span>
+            <span className="login-monogram" aria-hidden="true"><img src="/images/Logo.jpg" alt="" /></span>
             <div className="login-wordmark-block">
               <p className="login-wordmark">ROYALTY</p>
               <p className="login-brand-studio">Hair &amp; Nails Studio</p>

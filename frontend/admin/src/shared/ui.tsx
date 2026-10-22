@@ -84,6 +84,132 @@ export function LoadingState({ children }: { children: ReactNode }) {
   return <p className="empty-list">{children}</p>;
 }
 
+/* ==========================================================================
+   Loading skeletons
+
+   A skeleton is a placeholder shaped like the content that is on its way.
+   One system serves both dashboards, so every panel waits in the same way
+   and the page does not jump when the real content arrives.
+
+   The shapes are decorative: they are hidden from assistive technology,
+   and the region around them carries a single status message instead. A
+   screen reader hears "Loading the accounts", not twenty empty rows.
+   ========================================================================== */
+
+/**
+ * One placeholder shape.
+ *
+ * It carries no meaning, so it is hidden from assistive technology and
+ * from the accessibility tree.
+ */
+export function Skeleton({ width, height, radius, className = '' }: {
+  width?: string | number;
+  height?: string | number;
+  radius?: string | number;
+  className?: string;
+}) {
+  return (
+    <span
+      className={`skeleton ${className}`.trim()}
+      aria-hidden="true"
+      style={{ width, height, borderRadius: radius }}
+    />
+  );
+}
+
+/**
+ * A region that is loading.
+ *
+ * The region announces itself once, and holds the shapes that stand in
+ * for the content. It matches the shape of the content it replaces, so
+ * the page barely moves when the real figures arrive.
+ */
+export function SkeletonRegion({ label, className = '', children }: {
+  label: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className={`skeleton-region ${className}`.trim()} role="status" aria-busy="true" aria-live="polite">
+      <span className="visually-hidden">{label}</span>
+      {children}
+    </div>
+  );
+}
+
+/** The placeholder for a statistic card: a label, a figure and a note. */
+export function StatCardSkeleton() {
+  return (
+    <div className="stat-card skeleton-card" aria-hidden="true">
+      <Skeleton width="58%" height={10} />
+      <Skeleton width="42%" height={26} radius={6} />
+      <Skeleton width="36%" height={9} />
+    </div>
+  );
+}
+
+/** The placeholder for a table: rows of cells shaped like the columns. */
+export function TableSkeleton({ rows = 6, columns = 5 }: { rows?: number; columns?: number }) {
+  return (
+    <div className="skeleton-table" aria-hidden="true">
+      {Array.from({ length: rows }, (_, row) => (
+        <div className="skeleton-row" key={row}>
+          {Array.from({ length: columns }, (_, column) => (
+            <Skeleton key={column} height={12} width={column === 0 ? '70%' : '52%'} />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** The placeholder for a chart: a plot surface with the axis in place. */
+export function ChartSkeleton({ height = 220 }: { height?: number }) {
+  return (
+    <div className="skeleton-chart" aria-hidden="true" style={{ height }}>
+      <Skeleton className="skeleton-chart-axis" width="34px" height="100%" />
+      <Skeleton className="skeleton-chart-plot" width="100%" height="100%" radius={6} />
+    </div>
+  );
+}
+
+/** The placeholder for a calendar: weekday headers and a month of days. */
+export function CalendarSkeleton({ weeks = 5 }: { weeks?: number }) {
+  return (
+    <div className="skeleton-calendar" aria-hidden="true">
+      {/* The weekday headers are part of the calendar's shape, so they are
+          held in place while the month loads. */}
+      <div className="skeleton-weekdays">
+        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+          <span key={day} className="weekday-label">{day}</span>
+        ))}
+      </div>
+      <div className="skeleton-days">
+        {Array.from({ length: weeks * 7 }, (_, day) => (
+          <span key={day} className="skeleton-day">
+            <Skeleton width="1.5rem" height={12} />
+            <Skeleton width="72%" height={9} />
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** The placeholder for a list of records. */
+export function ListSkeleton({ rows = 4 }: { rows?: number }) {
+  return (
+    <div className="skeleton-list" aria-hidden="true">
+      {Array.from({ length: rows }, (_, row) => (
+        <div className="skeleton-list-row" key={row}>
+          <Skeleton width="44%" height={12} />
+          <Skeleton width="26%" height={10} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function localDateKey(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }

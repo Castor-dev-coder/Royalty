@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { mock, test } from 'node:test';
 import { db } from '../../prisma/db.js';
+import { createScheduleRequestSchema } from './schedules.schemas.js';
 import { SchedulesService } from './schedules.service.js';
 
 const staffAccountId = 'account-id';
@@ -259,4 +260,122 @@ test('schedule request creation keeps the calendar date a UTC-midnight timestamp
   }, staffAccountId);
   assert.equal(requestInput[0]?.requestedDate.toString(), '2099-01-05');
   assert.equal(result.requestedDate.toISOString(), '2099-01-05T00:00:00.000Z');
+});
+
+test('the admin schedule-request list carries the requester identity, resolved on the server', async (context) => {
+  const requestRows = [
+    {
+      id: 'request-a', staffId: 'staff-a', requestedDate: new Date('2026-10-01T00:00:00.000Z'),
+      requestedStartTime: '09:00:00', requestedEndTime: '17:00:00', requestType: 'TIME_OFF',
+      reason: 'Family day', status: 'PENDING', reviewedBy: null, reviewedAt: null,
+      createdAt: new Date('2026-10-01T00:00:00.000Z'),
+    },
+    {
+      id: 'request-b', staffId: 'staff-b', requestedDate: new Date('2026-10-02T00:00:00.000Z'),
+      requestedStartTime: null, requestedEndTime: null, requestType: 'AVAILABILITY',
+      reason: null, status: 'APPROVED', reviewedBy: 'admin-id', reviewedAt: new Date('2026-10-02T00:00:00.000Z'),
+      createdAt: new Date('2026-10-02T00:00:00.000Z'),
+    },
+  ];
+  const orderBy = mock.method(db.orm.public.ScheduleRequest, 'orderBy', () => ({ all: async () => requestRows }));
+  const staffWhere = mock.method(db.orm.public.Staff, 'where', (filter: { id: string }) => ({
+    first: async () => {
+      if (filter.id === 'staff-a') return { id: 'staff-a', accountId: 'account-a', firstName: 'Elena', lastName: 'Morales' };
+      if (filter.id === 'staff-b') return { id: 'staff-b', accountId: 'account-b', firstName: 'Marco', lastName: 'Villanueva' };
+      return null;
+    },
+  }));
+  const accountWhere = mock.method(db.orm.public.Account, 'where', (filter: { id: string }) => ({
+    first: async () => {
+      if (filter.id === 'account-a') return { id: 'account-a', email: 'elena.morales@example.test' };
+      if (filter.id === 'account-b') return { id: 'account-b', email: 'marco.villanueva@example.test' };
+      return null;
+    },
+  }));
+  context.after(() => {
+    orderBy.mock.restore();
+    staffWhere.mock.restore();
+    accountWhere.mock.restore();
+  });
+
+  const requests = await SchedulesService.getAllScheduleRequests('ADMIN');
+
+  assert.equal(requests.length, 2);
+  assert.equal(requests[0]?.requesterName, 'Elena Morales');
+  assert.equal(requests[0]?.requesterEmail, 'elena.morales@example.test');
+  assert.equal(requests[1]?.requesterName, 'Marco Villanueva');
+  assert.equal(requests[1]?.requesterEmail, 'marco.villanueva@example.test');
+});
+
+test('a schedule request whose staff profile is gone still lists, with no requester', async (context) => {
+  const orderBy = mock.method(db.orm.public.ScheduleRequest, 'orderBy', () => ({ all: async () => [{
+    id: 'request-orphan', staffId: 'staff-gone', requestedDate: new Date('2026-10-01T00:00:00.000Z'),
+    requestedStartTime: null, requestedEndTime: null, requestType: 'TIME_OFF',
+    reason: null, status: 'PENDING', reviewedBy: null, reviewedAt: null,
+    createdAt: new Date('2026-10-01T00:00:00.000Z'),
+  }] }));
+  const staffWhere = mock.method(db.orm.public.Staff, 'where', () => ({ first: async () => null }));
+  context.after(() => {
+    orderBy.mock.restore();
+    staffWhere.mock.restore();
+  });
+
+  const requests = await SchedulesService.getAllScheduleRequests('ADMIN');
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0]?.requesterName, null);
+  assert.equal(requests[0]?.requesterEmail, null);
+});
+
+test('a staff member cannot read another staff member schedule requests', async (context) => {
+  const staffWhere = mock.method(db.orm.public.Staff, 'where', () => ({ first: async () => ({ id: staffId }) }));
+  const requestWhere = mock.method(db.orm.public.ScheduleRequest, 'where', (filter: { staffId: string }) => {
+    assert.equal(filter.staffId, staffId);
+    return { orderBy: () => ({ all: async () => [] }) };
+  });
+  context.after(() => {
+    staffWhere.mock.restore();
+    requestWhere.mock.restore();
+  });
+
+  await SchedulesService.getMyScheduleRequests(staffAccountId);
+  await assert.rejects(
+    () => SchedulesService.getAllScheduleRequests('STAFF'),
+    /Only administrators can view all schedule requests/,
+  );
+});
+
+test('a forged staff ID in the request body is discarded, and the session decides the owner', async (context) => {
+  const requestInput: { staffId: string }[] = [];
+  const staffWhere = mock.method(db.orm.public.Staff, 'where', () => ({ first: async () => ({ id: staffId, accountId: staffAccountId, firstName: 'Elena', lastName: 'Morales' }) }));
+  const requestCreate = mock.method(db.orm.public.ScheduleRequest, 'create', async (input: typeof requestInput[number]) => {
+    requestInput.push(input);
+    return {
+      id: 'request-id', ...input, requestType: 'TIME_OFF', reason: null, status: 'PENDING',
+      reviewedBy: null, reviewedAt: null, createdAt: new Date('2098-01-01T00:00:00.000Z'),
+    };
+  });
+  const accountWhere = mock.method(db.orm.public.Account, 'where', () => ({ first: async () => ({ id: staffAccountId, email: 'elena.morales@example.test' }) }));
+  const auditCreate = mock.method(db.orm.public.AuditLog, 'create', async () => ({} as never));
+  context.after(() => {
+    staffWhere.mock.restore();
+    requestCreate.mock.restore();
+    accountWhere.mock.restore();
+    auditCreate.mock.restore();
+  });
+
+  // The client sends a staff ID of its own. The schema strips it, because
+  // only the session may say who the request belongs to.
+  const parsed = createScheduleRequestSchema.parse({
+    requestedDate: '2099-01-05T00:00:00.000Z',
+    requestType: 'TIME_OFF',
+    staffId: 'somebody-elses-staff-id',
+  });
+  assert.equal('staffId' in parsed, false);
+
+  const result = await SchedulesService.createScheduleRequest(parsed, staffAccountId);
+
+  // The stored owner is the authenticated account's own staff profile.
+  assert.equal(requestInput[0]?.staffId, staffId);
+  assert.equal(result.requesterName, 'Elena Morales');
+  assert.equal(result.requesterEmail, 'elena.morales@example.test');
 });

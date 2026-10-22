@@ -185,6 +185,16 @@ export interface StaffScheduleInfo {
 export interface ScheduleRequestInfo {
   id: string;
   staffId: string;
+  /**
+   * Who sent the request.
+   *
+   * The identity is resolved on the server from the staff profile the
+   * request belongs to, so an administrator can see who asked for the
+   * change without having to look the staff member up by hand. It is null
+   * when the staff profile or its account has since been removed.
+   */
+  requesterName: string | null;
+  requesterEmail: string | null;
   requestedDate: Date;
   requestedStartTime: string | null;
   requestedEndTime: string | null;
@@ -196,7 +206,54 @@ export interface ScheduleRequestInfo {
   createdAt: Date;
 }
 
+/** Who sent a schedule request, as the server resolved it. */
+export interface RequesterIdentity {
+  /** The staff member's display name. */
+  name: string;
+  /** The email on the account the staff profile belongs to. */
+  email: string;
+}
+
 export class SchedulesService {
+  // ============================================================
+  // Requester identity
+  // ============================================================
+
+  /**
+   * Resolve the staff member behind a set of schedule requests.
+   *
+   * The request stores the staff profile ID, which is the account's link
+   * to the salon. The name and email are read from that profile and its
+   * account on the server, so the administrator never has to be trusted
+   * with a staff ID chosen by the client.
+   *
+   * A request whose staff profile or account has been removed resolves to
+   * null rather than failing the whole list, so one deleted record cannot
+   * hide every other request.
+   */
+  private static async resolveRequesters(
+    staffIds: string[]
+  ): Promise<Map<string, RequesterIdentity | null>> {
+    const resolved = new Map<string, RequesterIdentity | null>();
+    const distinct = Array.from(new Set(staffIds));
+    for (const staffId of distinct) {
+      const staff = await db.orm.public.Staff.where({ id: staffId }).first();
+      if (!staff) {
+        resolved.set(staffId, null);
+        continue;
+      }
+      const account = staff.accountId
+        ? await db.orm.public.Account.where({ id: staff.accountId }).first()
+        : null;
+      const name = `${staff.firstName ?? ''} ${staff.lastName ?? ''}`.trim();
+      resolved.set(staffId, {
+        name: name || staff.firstName || 'Staff member',
+        email: account?.email ?? '',
+      });
+    }
+    return resolved;
+  }
+
   // ============================================================
   // Business Hours
   // ============================================================
@@ -645,7 +702,8 @@ export class SchedulesService {
       .orderBy((r) => r.createdAt.desc())
       .all();
 
-    return requests.map((r) => this.mapPrismaScheduleRequest(r));
+    const requesters = await this.resolveRequesters(requests.map((r) => r.staffId));
+    return requests.map((r) => this.mapPrismaScheduleRequest(r, requesters.get(r.staffId) ?? null));
   }
 
   /** Get schedule request by ID */
@@ -667,7 +725,8 @@ export class SchedulesService {
       }
     }
 
-    return this.mapPrismaScheduleRequest(request);
+    const requesters = await this.resolveRequesters([request.staffId]);
+    return this.mapPrismaScheduleRequest(request, requesters.get(request.staffId) ?? null);
   }
 
   /** Get own schedule requests (for STAFF) */
@@ -680,7 +739,8 @@ export class SchedulesService {
       .orderBy((r) => r.createdAt.desc())
       .all();
 
-    return requests.map((r) => this.mapPrismaScheduleRequest(r));
+    const requesters = await this.resolveRequesters(requests.map((r) => r.staffId));
+    return requests.map((r) => this.mapPrismaScheduleRequest(r, requesters.get(r.staffId) ?? null));
   }
 
   /** Create a schedule request (STAFF only) */
@@ -743,7 +803,8 @@ export class SchedulesService {
       },
     });
 
-    return this.mapPrismaScheduleRequest(request);
+    const requesters = await this.resolveRequesters([request.staffId]);
+    return this.mapPrismaScheduleRequest(request, requesters.get(request.staffId) ?? null);
   }
 
   /** Approve a schedule request */
@@ -796,7 +857,8 @@ export class SchedulesService {
       newData: { status: 'APPROVED', reviewedBy: requestingUserId, reviewedAt: now },
     });
 
-    return this.mapPrismaScheduleRequest(updated);
+    const requesters = await this.resolveRequesters([updated.staffId]);
+    return this.mapPrismaScheduleRequest(updated, requesters.get(updated.staffId) ?? null);
   }
 
   /** Reject a schedule request */
@@ -849,7 +911,8 @@ export class SchedulesService {
       newData: { status: 'REJECTED', reviewedBy: requestingUserId, reviewedAt: now },
     });
 
-    return this.mapPrismaScheduleRequest(updated);
+    const requesters = await this.resolveRequesters([updated.staffId]);
+    return this.mapPrismaScheduleRequest(updated, requesters.get(updated.staffId) ?? null);
   }
 
   // ============================================================
@@ -868,13 +931,13 @@ export class SchedulesService {
     reviewedBy: string | null;
     reviewedAt: Date | null;
     createdAt: Date;
-  }): ScheduleRequestInfo {
+  }, requester?: RequesterIdentity | null): ScheduleRequestInfo {
     return this.mapScheduleRequest({
       ...request,
       requestedDate: fromPrismaDate(request.requestedDate),
       requestedStartTime: request.requestedStartTime === null ? null : fromPrismaTime(request.requestedStartTime),
       requestedEndTime: request.requestedEndTime === null ? null : fromPrismaTime(request.requestedEndTime),
-    });
+    }, requester);
   }
 
   private static mapScheduleRequest(request: {
@@ -889,10 +952,12 @@ export class SchedulesService {
     reviewedBy: string | null;
     reviewedAt: Date | null;
     createdAt: Date;
-  }): ScheduleRequestInfo {
+  }, requester?: RequesterIdentity | null): ScheduleRequestInfo {
     return {
       id: request.id,
       staffId: request.staffId,
+      requesterName: requester?.name ?? null,
+      requesterEmail: requester?.email ?? null,
       requestedDate: request.requestedDate,
       requestedStartTime: request.requestedStartTime,
       requestedEndTime: request.requestedEndTime,

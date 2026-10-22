@@ -17,7 +17,24 @@ An in-repository database probe fails with the exact error:
 Database error while reading contract marker
 ```
 
-The database is paused, so no live integration assertion of any kind has been performed.
+That message is a masking error from the Prisma 8 CLI, not the root cause.
+Probing the connection directly shows what is actually wrong:
+
+| Probe | Result |
+|---|---|
+| TCP connect to `aws-0-ap-southeast-2.pooler.supabase.com:5432` | Succeeds — the network is up |
+| Raw `pg` via `DATABASE_URL` | `XX000: (ENOTFOUND) tenant/user postgres.slqgduzghtkrunjyxyep not found` |
+| Raw `pg` via `DIRECT_URL` (`db.slqgduzghtkrunjyxyep.supabase.co`) | `ENOTFOUND: getaddrinfo ... no such host` |
+| Raw `pg` via discrete `DB_HOST` / `DB_USER` | `XX000: (ENOTFOUND) tenant/user postgres.slqgduzghtkrunjyxyep not found` |
+
+**Root cause: the Supabase project `slqgduzghtkrunjyxyep` no longer exists.** The
+pooler host still resolves and accepts a TCP connection, but the tenant is
+unknown to it, and the direct project's DNS name does not resolve at all. The
+credentials in `.env` are stale — the project was deleted, paused indefinitely,
+or renamed.
+
+The database is therefore unreachable, so no live integration assertion of any
+kind has been performed.
 
 ### Affected files
 
@@ -111,6 +128,39 @@ GET /services/staff/me/services
 ### Status for section B
 
 All three are **awaiting live verification**. The unit suite covers B.1; B.2 and B.3 have no test coverage yet.
+
+---
+
+## B4. The payments screen is mock-only — there is no payments router
+
+### Finding
+
+`backend/src/modules/payments/` is an **empty directory**, and there is no
+`backend/src/routes/payments.ts`. `backend/src/server.ts` mounts exactly eight
+routers — `/auth`, `/accounts`, `/customers`, `/staff`, `/services`,
+`/schedules`, `/appointments`, `/reviews` — and `/payments` is not among them.
+
+The `Payment` **model** exists in the contract (`contract.prisma`, table
+`payments`), but there is no HTTP layer behind it.
+
+### Impact
+
+Every payment figure the admin frontend shows — the revenue card, the payment
+summary, the payment-status breakdown chart, the payment verification queue —
+is served by the browser-local mock adapter. Against a live backend these
+figures have no source.
+
+The frontend already handles this honestly: the dashboard shows `—` and
+`NOT CONNECTED` when the payments request fails, and the payments page states
+that the configured backend does not expose payment records. **No live payment
+metric can be claimed**, and the payment-status breakdown chart must be
+described as mock-derived in any report.
+
+### Required backend work
+
+A payments router and handlers, mounted under `/payments`, exposing the list,
+verification and status-update operations the frontend already calls. No
+migration is implied: the model and the table already exist.
 
 ---
 

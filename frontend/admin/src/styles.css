@@ -119,6 +119,63 @@
   /* Type */
   --font-display: Georgia, 'Times New Roman', serif;
   --font-ui: 'Jost', 'Segoe UI', system-ui, sans-serif;
+
+  /* ---------------------------------------------------------------
+     Semantic solids.
+     A filled button and a chart bar need a weight that can carry a
+     label, which the soft badge tints cannot. Each solid is the same
+     hue as the matching badge, so a bar and its badge agree.
+
+     --on-*-solid is the text colour that sits on the solid.
+     --------------------------------------------------------------- */
+  --success-solid: #1f6b4a;
+  --success-solid-hover: #18573b;
+  --on-success-solid: #ffffff;
+  --warning-solid: #7a5a16;
+  --warning-solid-hover: #63480f;
+  --on-warning-solid: #ffffff;
+  --danger-solid: #a23b2b;
+  --danger-solid-hover: #8a3123;
+  --on-danger-solid: #ffffff;
+  --info-solid: #2a5b85;
+  --info-solid-hover: #234a6d;
+  --on-info-solid: #ffffff;
+  --neutral-solid: #5c554c;
+  --neutral-solid-hover: #4a453e;
+  --on-neutral-solid: #ffffff;
+
+  /* A disabled control is inert, not a record in a state. It reads as
+     unavailable rather than as an inactive account. */
+  --disabled-bg: #e7e1d5;
+  --disabled-text: #8a8177;
+  --disabled-border: #d5cec1;
+
+  /* Chart series. Each is the solid hue of the state it represents, so
+     a bar, a badge and a summary row use the same colour for the same
+     meaning. */
+  --chart-gridline: #dcd2bd;
+  /* The placeholder tone. It is a step above the page surface, so the
+     shape reads as a shape without competing with real content. */
+  --skeleton-fill: #ece5d9;
+  --skeleton-sheen: rgba(255, 255, 255, 0.65);
+  /* The plot surface carries a warm champagne tint, so the chart reads as
+     part of the salon's identity rather than as a generic graph. */
+  --chart-surface: #fbf6ea;
+  /* The plot surface is washed with the brand's champagne, a little deeper
+     at the top, so the graph sits on the salon's own palette rather than on
+     a plain rectangle. */
+  --chart-surface-top: rgba(168, 127, 53, 0.22);
+  --chart-surface-bottom: rgba(168, 127, 53, 0.07);
+  --chart-area: rgba(168, 127, 53, 0.22);
+  --chart-area-fade: rgba(168, 127, 53, 0.02);
+  --chart-confirmed: #a87f35;
+  --chart-reserved: #2a5b85;
+  --chart-completed: #1f6b4a;
+  --chart-cancelled: #a23b2b;
+  --chart-noshow: #6b6358;
+  --chart-verified: #1f6b4a;
+  --chart-unverified: #7a5a16;
+  --chart-rejected: #a23b2b;
 }
 
 [data-theme='dark'] {
@@ -170,6 +227,50 @@
 
   --shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-overlay: 0 18px 44px rgba(0, 0, 0, 0.55);
+
+  /* ---------------------------------------------------------------
+     Semantic solids. The dark theme steps the same hues down a
+     little so a filled control still reads as a control against the
+     dark surfaces, and so light text stays legible on it.
+     --------------------------------------------------------------- */
+  --success-solid: #2f7a57;
+  --success-solid-hover: #368a63;
+  --on-success-solid: #ffffff;
+  --warning-solid: #7a5a16;
+  --warning-solid-hover: #8a6720;
+  --on-warning-solid: #ffffff;
+  --danger-solid: #a8443a;
+  --danger-solid-hover: #bb4f44;
+  --on-danger-solid: #ffffff;
+  --info-solid: #2f6690;
+  --info-solid-hover: #35729f;
+  --on-info-solid: #ffffff;
+  --neutral-solid: #6a6359;
+  --neutral-solid-hover: #787066;
+  --on-neutral-solid: #ffffff;
+
+  --disabled-bg: #2a2926;
+  --disabled-text: #7d766d;
+  --disabled-border: #403d39;
+
+  --chart-gridline: #4e483f;
+  --skeleton-fill: #3a3630;
+  --skeleton-sheen: rgba(255, 255, 255, 0.07);
+  --chart-surface: #2b2721;
+  /* In the dark theme the wash is a deep, restrained gold rather than a
+     bright block. */
+  --chart-surface-top: rgba(192, 154, 92, 0.20);
+  --chart-surface-bottom: rgba(192, 154, 92, 0.06);
+  --chart-area: rgba(192, 154, 92, 0.24);
+  --chart-area-fade: rgba(192, 154, 92, 0.02);
+  --chart-confirmed: #c09a5c;
+  --chart-reserved: #6ba3d4;
+  --chart-completed: #4fae7e;
+  --chart-cancelled: #e0796e;
+  --chart-noshow: #9a9288;
+  --chart-verified: #4fae7e;
+  --chart-unverified: #d6b77a;
+  --chart-rejected: #e0796e;
 }
 
 /* Responsive typography: modest, coherent desktop scale-up via the root token.
@@ -378,7 +479,29 @@ small { font-size: var(--text-2xs); line-height: var(--leading-snug); }
 .reject-action:hover:not(:disabled) { background: var(--danger-border); color: var(--text-inverse); }
 .reject-action:disabled { opacity: 0.55; cursor: not-allowed; }
 
-.create-account-button { min-height: 40px; height: 40px; padding: 0 14px; font-size: 0.8rem; gap: 6px; white-space: nowrap; flex-shrink: 0; }
+/* The account creation action lives in the accounts table's toolbar. It
+   takes its size from the button tokens rather than from a fixed height, so
+   it matches the other primary actions and keeps the standard touch
+   target. */
+.create-account-button {
+  min-height: 44px;
+  padding: 0 var(--space-4);
+  font-size: var(--text-sm);
+  gap: var(--space-2);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* The tools in a panel heading: the search field and the action that
+   belongs to the table. */
+.panel-header-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  min-width: 0;
+}
 
 /* Statistics and panels */
 .stats-grid { display: grid; gap: var(--space-3); margin-bottom: var(--space-4); }
@@ -398,15 +521,6 @@ small { font-size: var(--text-2xs); line-height: var(--leading-snug); }
   line-height: var(--leading-tight);}
 .panel-header span { color: var(--text-muted); font-size: var(--text-2xs); letter-spacing: 0; text-transform: uppercase; }
 .panel-header.compact { align-items: center; }
-
-/* Booking trend chart. Every bar carries its own count so the reader never
-   has to estimate a value from a height. */
-.chart-bars { display: flex; align-items: end; justify-content: space-between; gap: 12px; height: 180px; padding-top: 14px; }
-.bar-group { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: end; gap: 6px; height: 100%; }
-.bar { width: 100%; max-width: 42px; border-radius: 6px 6px 0 0; background: var(--chart-fill); min-height: 18px; }
-.bar-group span { color: var(--text-muted); font-size: var(--text-2xs); }
-.bar-value { color: var(--text-secondary); font-size: var(--text-2xs); font-weight: 700; }
-.bar-group .bar-empty { background: var(--chart-track); border: 1px solid var(--control-border); }
 
 .summary-list { list-style: none; padding: 8px 0 0; margin: 0; display: grid; gap: 12px; }
 .summary-list li { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-subtle); padding-bottom: 8px; }
@@ -563,6 +677,46 @@ select.search-input { padding-right: 1.6rem; cursor: pointer; }
 }
 .table-tools { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
 
+/* The staff directory header holds a long title and four controls. The
+   controls need the width of the whole panel, so the title takes a line of
+   its own and the search field and the three filters sit together on the
+   line beneath it, rather than the last filter being pushed onto a line of
+   its own with empty space beside it. */
+.staff-directory-header { flex-wrap: wrap; }
+.staff-directory-header h3 { flex: 1 1 100%; }
+.staff-directory-header .table-tools { width: 100%; }
+@media (min-width: 621px) {
+  .table-tools .search-input { min-width: 0; }
+  .table-tools input[type='search'] { flex: 1 1 140px; min-width: 140px; max-width: 320px; }
+  .table-tools select.search-input { flex: 0 1 auto; }
+}
+@media (min-width: 621px) and (max-width: 700px) {
+  /* There is not quite enough width for the search field and the three
+     filters on one line here. The search field takes a line of its own and
+     the three filters share the line beneath it, so no filter is left
+     alone with empty space beside it. */
+  .table-tools input[type='search'] { flex: 1 1 100%; max-width: none; }
+  .table-tools select.search-input { flex: 1 1 0; }
+}
+
+/* The salon logo.
+   The artwork is a gold emblem on a black field with a wide black margin
+   around it. The image is therefore laid out larger than its box and
+   centred, which crops that margin away and lets the emblem fill the
+   space. The box itself keeps exactly the size it had before: the brand
+   mark stays 30 by 30 and the login monogram stays 52 by 52. */
+.brand-mark, .login-monogram { position: relative; overflow: hidden; background: #000; }
+.brand-mark img, .login-monogram img {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 160%;
+  height: 160%;
+  transform: translate(-50%, -50%);
+  object-fit: cover;
+  display: block;
+}
+
 .table-scroll { width: 100%; overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; margin-top: 12px; }
 thead th { text-align: left; font-size: var(--text-2xs); letter-spacing: 0.05em; color: var(--text-muted); text-transform: uppercase; padding: 0 var(--space-3) var(--space-3); border-bottom: 1px solid var(--border-strong); white-space: nowrap;
@@ -607,7 +761,23 @@ tbody tr:hover td { background: var(--surface-hover); }
 
 /* Calendar and appointments */
 .calendar-layout, .payment-layout { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(260px, 0.8fr); gap: 14px; }
-.appointment-layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: var(--space-5); align-items: start; }
+/* The calendar is the working area of this page, so it comes first and
+   takes the wide column. The status overview sits beside it, and the
+   month's chart sits below, subordinate to both. */
+.appointment-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-areas:
+    "calendar sidebar"
+    "selected sidebar"
+    "trend    sidebar";
+  gap: var(--space-5);
+  align-items: start;
+}
+.calendar-panel { grid-area: calendar; }
+.selected-day-panel { grid-area: selected; }
+.month-trend-panel { grid-area: trend; }
+.appointment-sidebar { grid-area: sidebar; }
 .appointment-sidebar { background: var(--surface-raised); border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-5); max-height: 640px; overflow-y: auto; }
 .sidebar-filters { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-bottom: var(--space-5); }
 .sidebar-filters button { padding: var(--space-2) var(--space-3); border-radius: var(--radius-pill); border: 1px solid var(--control-border); background: var(--surface-raised); color: var(--text-secondary); font-size: var(--text-2xs); font-weight: 650; cursor: pointer; white-space: nowrap;
@@ -637,7 +807,8 @@ tbody tr:hover td { background: var(--surface-hover); }
 .calendar-summary-breakdown { margin-left: 8px; }
 .tiny-button { width: 38px; height: 38px; display: inline-flex; align-items: center; justify-content: center; font-size: 1.05rem; line-height: 1; background: var(--surface-raised); border: 1px solid var(--control-border); color: var(--text-primary); }
 .tiny-button:hover { border-color: var(--accent-soft-border); }
-.calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
+.calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; margin-top: var(--space-3); }
+.weekday-label { text-align: center; }
 .weekday-label { font-size: var(--text-2xs); color: var(--text-muted); text-align: center; letter-spacing: 0; text-transform: uppercase; padding-bottom: 4px; }
 .day-cell { position: relative; width: 100%; min-height: 78px; background: var(--surface-base); border: 1px solid var(--control-border); border-radius: var(--radius-sm); padding: 8px; display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start; color: var(--text-secondary); text-align: left; }
 .day-cell:hover { border-color: var(--accent-soft-border); }
@@ -672,7 +843,10 @@ tbody tr:hover td { background: var(--surface-hover); }
   margin-top: var(--space-1);}
 }
 .past-review-tag { display: inline-block; margin-left: 6px; padding: 2px 7px; border-radius: var(--radius-pill); border: 1px dashed var(--accent-soft-border); background: var(--accent-soft); color: var(--accent-text); font-size: var(--text-2xs); font-weight: 700; letter-spacing: 0.02em; white-space: nowrap; }
-.selected-day-panel { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); max-height: 400px; overflow-y: auto; }
+/* The selected day's bookings sit directly under the calendar, so the
+   date on the calendar and the bookings below it are read together. */
+.selected-day-panel { padding: var(--space-4) var(--space-5) var(--space-5); max-height: 420px; overflow-y: auto; }
+.month-trend-panel { padding: var(--space-4) var(--space-5) var(--space-5); }
 .selected-appointment { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border-subtle); }
 .selected-appointment strong, .selected-appointment small { display: block; }
 .selected-appointment strong { font-size: 0.82rem; color: var(--text-primary); }
@@ -787,8 +961,11 @@ tbody tr:hover td { background: var(--surface-hover); }
   padding: var(--space-5) 0 0;
 }
 .staff-account-form { grid-column: 1; grid-row: 1; }
-.scheduling-rules-panel { grid-column: 2; grid-row: 1; }
-.time-off-panel { grid-column: 1 / -1; }
+.time-off-panel { grid-column: 2; grid-row: 1; }
+/* The weekly rules take a row of their own. Seven days side by side need
+   the full width of the dialog, because a native time control is about
+   100px wide before it can show the digits and the picker icon. */
+.scheduling-rules-panel { grid-column: 1 / -1; grid-row: 2; }
 @media (max-width: 760px) {
   .staff-edit-content { grid-template-columns: minmax(0, 1fr); }
   .staff-account-form, .scheduling-rules-panel, .time-off-panel { grid-column: 1; grid-row: auto; }
@@ -1053,27 +1230,53 @@ textarea.modal-input { line-height: 1.55; }
 
 /* Staff schedule grid */
 .staff-schedule-section { margin: var(--space-3) 0 0; }
-.schedule-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
+/* The columns size themselves around a minimum wide enough for a native
+   time control. A fixed seven-column grid squeezed each day to about 46px,
+   which clipped the digits out of the field entirely. */
+.schedule-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 8px; margin-top: 8px; }
 .schedule-day { display: flex; flex-direction: column; gap: 6px; padding: 8px 7px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface-base); min-width: 0; }
 .schedule-day.enabled { border-color: var(--accent); background: var(--accent-soft); }
 .schedule-day-header { display: flex; align-items: center; gap: 5px; font-size: var(--text-2xs); font-weight: 600; color: var(--text-primary); }
 .schedule-day-header input[type='checkbox'] { margin: 0; accent-color: var(--accent); }
-.schedule-day-times { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; min-width: 0; }
-.schedule-day-times > span { display: none; }
+.schedule-day-times { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; min-width: 0; }
+/* Each field carries its own label, so the administrator can tell the
+   start from the end without relying on the order of the boxes. */
+.schedule-time-field { display: grid; gap: 2px; min-width: 0; }
+.schedule-time-label {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: var(--leading-snug);
+  text-transform: uppercase;
+}
 .schedule-day-times .modal-input {
   width: 100%;
   min-width: 0;
-  min-height: 34px;
-  padding: 0 3px;
-  font-size: var(--text-xs);
+  min-height: 40px;
+  padding: 0 2px 0 6px;
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
   border-radius: 5px;
-  text-align: center;
+  text-align: left;
 }
-.schedule-day-times .modal-input::-webkit-calendar-picker-indicator { margin: 0; padding: 0; }
+/* The picker icon stays visible and clickable. */
+.schedule-day-times .modal-input::-webkit-calendar-picker-indicator {
+  margin: 0;
+  padding: 0;
+  opacity: 0.6;
+  cursor: pointer;
+}
+.schedule-day-times .modal-input::-webkit-calendar-picker-indicator:hover { opacity: 1; }
+/* The hour and minute segments take the field's own colour, so the value
+   is readable in both themes and at every width. */
+.schedule-day-times .modal-input::-webkit-datetime-edit-hour-field,
+.schedule-day-times .modal-input::-webkit-datetime-edit-minute-field,
+.schedule-day-times .modal-input::-webkit-datetime-edit-ampm-field {
+  color: inherit;
+  -webkit-text-fill-color: currentColor;
+}
 
-@media (max-width: 980px) {
-  .schedule-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-}
 
 /* ==========================================================================
    Login screen
@@ -1537,7 +1740,6 @@ textarea.modal-input { line-height: 1.55; }
   .appointment-detail-list > div { grid-template-columns: 1fr; gap: 4px; }
   .appointment-detail-list dd { text-align: left; }
   .appointment-detail-actions > button { width: 100%; }
-  .schedule-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .service-upload-dropzone { height: 160px; }
   .staff-edit-modal, .account-creation-modal { width: 100%; }
   .generate-password-button { flex: 1 1 100%; }
@@ -1744,9 +1946,12 @@ textarea.modal-input { line-height: 1.55; }
   .responsive-table tbody td.cell-empty::before { content: none; }
 
   /* A thumb needs a target it can hit. The row actions become outlined
-     chips with a full touch height. */
+     chips with a full touch height.
+
+     The chip rules set the shape but not the colour, so a chip that
+     carries a semantic treatment keeps it: an action that is destructive
+     on a card looks the same as it does in a table row. */
   .responsive-table tbody td.cell-actions .link-button,
-  .responsive-table tbody td.cell-actions .payment-action,
   .responsive-table tbody td.cell-actions .service-actions .link-button {
     display: inline-flex;
     align-items: center;
@@ -1760,16 +1965,29 @@ textarea.modal-input { line-height: 1.55; }
     border: 1px solid var(--control-border);
     border-radius: var(--radius-sm);
     background: var(--surface-raised);
-    color: var(--info-text);
     font-size: var(--text-sm);
     font-weight: 650;
   }
   .responsive-table tbody td.cell-actions .payment-action {
-    background: var(--accent);
-    border-color: var(--accent-active);
-    color: var(--text-on-accent);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1 1 auto;
+    min-width: 5.5em;
+    min-height: 44px;
+    padding: 0 var(--space-3);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-sm);
+    font-weight: 650;
   }
-  .responsive-table tbody td.cell-actions .danger-link { color: var(--danger-text); }
+  .responsive-table tbody td.cell-actions .link-button.danger-link {
+    color: var(--danger-text);
+    border-color: var(--danger-border);
+  }
+  .responsive-table tbody td.cell-actions .link-button.approve-link {
+    color: var(--success-text);
+    border-color: var(--success-border);
+  }
   .responsive-table tbody td.cell-actions .link-button:hover:not(:disabled) {
     background: var(--surface-hover);
     text-decoration: none;
@@ -1784,4 +2002,580 @@ textarea.modal-input { line-height: 1.55; }
     gap: 2px;
   }
   .responsive-table tbody td.cell-actions { grid-template-columns: minmax(0, 1fr); }
+}
+
+
+/* ==========================================================================
+   Semantic action variants
+   ==========================================================================
+
+   The hierarchy an administrator has to read at a glance:
+
+     .primary-action, .primary-button   the one dominant action on a screen
+     .approve-action                    an approval: verify, restore, confirm
+     .secondary-action, .ghost-button   an ordinary supporting action
+     .danger-action                     a consequential action: deactivate,
+                                        archive, cancel
+     .reject-action                     the destructive confirmation inside a
+                                        dialog, where the danger button is
+                                        the thing being agreed to
+     .link-button                       a row-level action, kept quiet
+
+   A destructive action and a destructive *record* are different things.
+   "Deactivate access" is a danger action; a "Cancelled" badge is a status.
+   ========================================================================== */
+.approve-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 44px;
+  padding: 0.62rem 1.05rem;
+  border: 1px solid var(--success-solid);
+  border-radius: var(--radius-sm);
+  background: var(--success-solid);
+  color: var(--on-success-solid);
+  font-weight: 650;
+}
+.approve-action:hover:not(:disabled) { background: var(--success-solid-hover); border-color: var(--success-solid-hover); }
+
+.danger-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 44px;
+  padding: 0.62rem 1.05rem;
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-sm);
+  background: var(--danger-soft);
+  color: var(--danger-text);
+  font-weight: 650;
+}
+.danger-action:hover:not(:disabled) { background: var(--danger-border); color: var(--text-inverse); }
+
+/* A disabled control is inert. It reads as unavailable rather than as a
+   record in a state, which is why it has its own tone instead of a
+   shared opacity. */
+.primary-button:disabled,
+.primary-action:disabled,
+.secondary-action:disabled,
+.ghost-button:disabled,
+.approve-action:disabled,
+.danger-action:disabled,
+.reject-action:disabled,
+.link-button:disabled,
+.payment-action:disabled {
+  opacity: 1;
+  cursor: not-allowed;
+  background: var(--disabled-bg);
+  border-color: var(--disabled-border);
+  color: var(--disabled-text);
+  box-shadow: none;
+}
+.link-button:disabled:hover { background: var(--disabled-bg); text-decoration: none; }
+
+/* A destructive row action keeps the row's quiet treatment but carries
+   the danger colour and the danger wording, so it never reads as an
+   ordinary edit. */
+.link-button.danger-link { color: var(--danger-text); border-color: var(--danger-border); }
+.link-button.danger-link:hover:not(:disabled) { background: var(--danger-soft); border-color: var(--danger-text); text-decoration: none; }
+
+/* ==========================================================================
+   Charts
+   ==========================================================================
+
+   A bar is a reading of a record, so it is drawn flat: one colour, no
+   gradient, no glow, no fill that runs under the label. The figure sits
+   beside the bar as text, and the same figure is the bar's accessible
+   name, so nothing depends on hovering.
+   ========================================================================== */
+.category-bars { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-3); }
+.category-bar-row {
+  display: grid;
+  grid-template-columns: minmax(6.5em, 0.42fr) minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: center;
+}
+.category-bar-label { font-size: var(--text-2xs); color: var(--text-secondary); line-height: var(--leading-snug); }
+.category-bar-graphic {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  align-items: center;
+  min-width: 0;
+}
+.category-bar-graphic:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: var(--radius-sm); }
+.category-bar-track {
+  height: 10px;
+  border-radius: var(--radius-pill);
+  background: var(--chart-track);
+  overflow: hidden;
+  min-width: 0;
+}
+.category-bar-fill {
+  display: block;
+  height: 100%;
+  width: var(--bar-width);
+  background: var(--bar-color);
+  border-radius: inherit;
+}
+.category-bar-value {
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The detail bubble. It appears on hover and on focus, so a keyboard or
+   touch reader reaches the same information a mouse reader does. The
+   figure is already visible in the row, so the bubble only adds detail. */
+.category-bar-detail {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 6;
+  max-width: min(13rem, 72vw);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--surface-inverse);
+  color: var(--text-inverse);
+  box-shadow: var(--shadow-overlay);
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  line-height: var(--leading-snug);
+  white-space: normal;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+}
+.category-bar-graphic:hover .category-bar-detail,
+.category-bar-graphic:focus-visible .category-bar-detail {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* The chart panel is a column, so the chart and its caption stack
+   predictably inside it. */
+.chart-panel { display: flex; flex-direction: column; }
+
+/* The caption above a chart: the range it covers, and the total inside
+   it, so the chart is never read without its context. */
+.chart-caption {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: var(--leading-snug);
+}
+
+/* Bars ease into a new value when the data changes. A reader who asks
+   for reduced motion gets the same result without the movement. */
+@media (prefers-reduced-motion: no-preference) {
+  .category-bar-fill { transition: width 240ms ease; }
+  .category-bar-detail { transition: opacity 120ms ease; }
+}
+
+/* A breakdown block: a short heading above a set of bars. It is a section
+   inside a panel, not a panel of its own, so it does not add a second
+   surface to the page. */
+.breakdown-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: var(--space-4) 0 var(--space-3);
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: var(--leading-snug);
+}
+/* The total the bars are a share of, so a bar has a stated denominator. */
+.breakdown-total {
+  color: var(--text-secondary);
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.payment-status-breakdown { margin-top: var(--space-2); }
+.payment-status-breakdown .breakdown-title { margin-top: 0; }
+
+/* On a narrow screen the label sits above its row rather than beside it,
+   so the bar and its figure get the full width. */
+@media (max-width: 480px) {
+  .category-bar-row { grid-template-columns: minmax(0, 1fr); gap: var(--space-1); }
+  .category-bar-graphic { grid-template-columns: minmax(0, 1fr) auto; }
+}
+
+/* A restorative row action keeps the row's quiet treatment but carries the
+   approval colour, so "Restore access" does not read as another edit. */
+.link-button.approve-link { color: var(--success-text); border-color: var(--success-border); }
+.link-button.approve-link:hover:not(:disabled) { background: var(--success-soft); border-color: var(--success-text); text-decoration: none; }
+
+/* A chart says where its figures come from, so it is never read as a
+   separate live feed. */
+.chart-origin-note {
+  margin: var(--space-3) 0 0;
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  line-height: var(--leading-snug);
+}
+.payment-status-breakdown .chart-origin-note { margin-top: var(--space-2); }
+
+/* The share of the total, beside the figure. It is the same number the
+   bar's length shows, written out so the comparison does not depend on
+   reading a length. */
+.category-bar-share {
+  margin-left: var(--space-3);
+  padding-left: var(--space-3);
+  border-left: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+/* ==========================================================================
+   The line chart
+   ==========================================================================
+
+   A line chart of a value over time. The line is flat and warm, the area
+   beneath it is a restrained translucent gold, and the plot sits on a
+   softly tinted surface. Nothing pulses or drifts: the only movement is
+   the short settle when the records behind the chart change. */
+
+.line-chart { position: relative; min-width: 0; }
+.line-chart-frame { position: relative; min-width: 0; }
+.line-chart-plot { display: block; overflow: visible; }
+
+/* The wash is painted by the component's gradient; this rule keeps the
+   rounded edge and the border that separates it from the card. */
+.line-chart-surface { stroke: var(--border-subtle); stroke-width: 1; }
+.line-chart-gridline { stroke: var(--chart-gridline); stroke-width: 1; }
+.line-chart-baseline { stroke: var(--border); stroke-width: 1; }
+
+.line-chart-axis-label {
+  fill: var(--text-secondary);
+  font-size: 11px;
+  font-family: var(--font-ui);
+  font-variant-numeric: tabular-nums;
+}
+.line-chart-y-label { fill: var(--text-secondary); }
+
+.line-chart-line {
+  fill: none;
+  stroke: var(--series-color, var(--chart-fill));
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.line-chart-area {
+  fill: var(--series-color, var(--chart-area));
+  opacity: 0.16;
+  stroke: none;
+}
+.line-chart-point {
+  fill: var(--series-color, var(--chart-fill));
+  stroke: var(--chart-surface);
+  stroke-width: 1.75;
+  transition: r 120ms ease;
+}
+.line-chart-point.active {
+  stroke: var(--chart-surface);
+  stroke-width: 2.75;
+}
+/* A soft ring around the point under the pointer or the keyboard, so the
+   reader can see which point is being described. */
+.line-chart-halo {
+  fill: var(--series-color, var(--chart-fill));
+  opacity: 0.18;
+  stroke: none;
+  pointer-events: none;
+}
+/* The focus ring, drawn on the point the keyboard is on. */
+.line-chart-focus-ring {
+  fill: none;
+  stroke: var(--focus-ring);
+  stroke-width: 2;
+  pointer-events: none;
+}
+
+/* The hit targets are real buttons over the plot, so the chart answers to
+   a pointer, a keyboard and a finger alike. */
+.line-chart-hit-layer { position: absolute; }
+.line-chart-hit {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: transparent;
+  cursor: crosshair;
+  -webkit-appearance: none;
+  appearance: none;
+}
+/* The hit band runs the full height of the plot, so an outline around it
+   reads as a column rather than as a focus indicator. The band carries a
+   faint tint instead, and the focus ring is drawn around the data point
+   itself, where the reader's attention already is. */
+.line-chart-hit:focus-visible {
+  outline: none;
+  background: rgba(168, 127, 53, 0.05);
+  border-radius: 3px;
+}
+
+/* The tooltip belongs to the point it describes. It is placed by the
+   component at that point's own coordinates and is kept inside the plot,
+   so it never covers the heading above the chart or the panel's edge. */
+.line-chart-tooltip {
+  position: absolute;
+  z-index: 6;
+  min-width: 9.5rem;
+  max-width: min(14rem, 60vw);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--surface-inverse);
+  color: var(--text-inverse);
+  box-shadow: var(--shadow-overlay);
+  font-size: var(--text-2xs);
+  line-height: var(--leading-snug);
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+/* Above the point by default, below it when there is no room above, and
+   at the top of the plot when the tooltip is taller than the space. */
+.line-chart-tooltip.above { transform: translate(-50%, calc(-100% - 10px)); }
+.line-chart-tooltip.below { transform: translate(-50%, 10px); }
+.line-chart-tooltip.inside { transform: translate(-50%, 0); }
+.line-chart-tooltip > strong { display: block; font-weight: 700; }
+.line-chart-tooltip-metric {
+  display: block;
+  opacity: 0.75;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 10px;
+}
+.line-chart-tooltip ul { list-style: none; margin: var(--space-2) 0 0; padding: 0; display: grid; gap: 3px; }
+.line-chart-tooltip li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--space-2); align-items: center; }
+.line-chart-tooltip li strong { text-align: right; font-variant-numeric: tabular-nums; }
+
+.line-chart-swatch {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.line-chart-legend {
+  list-style: none;
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  color: var(--text-secondary);
+  font-size: var(--text-2xs);
+  line-height: var(--leading-snug);
+}
+.line-chart-legend li { display: flex; align-items: center; gap: var(--space-2); }
+
+@media (max-width: 1080px) {
+  .appointment-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "calendar"
+      "selected"
+      "sidebar"
+      "trend";
+  }
+  .appointment-sidebar { max-height: 460px; }
+}
+
+/* ==========================================================================
+   Loading skeletons
+
+   One system for both dashboards. A skeleton holds the shape of the
+   content that is on its way, so the page keeps its layout while the
+   request is in flight and barely moves when the real content arrives.
+
+   The shimmer is a low-contrast sweep across a flat tone, so it reads as
+   a placeholder rather than as decoration. It stops entirely for a reader
+   who has asked for reduced motion.
+   ========================================================================== */
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skeleton-region { display: block; }
+
+.skeleton {
+  display: block;
+  background: var(--skeleton-fill);
+  border-radius: var(--radius-sm);
+  /* The shape is sized by its own rule, so it never stretches. */
+  flex: 0 0 auto;
+}
+
+.skeleton-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+  justify-content: center;
+  min-height: 96px;
+}
+
+.skeleton-table { display: grid; gap: var(--space-3); }
+.skeleton-row {
+  display: grid;
+  grid-template-columns: 1.4fr repeat(auto-fit, minmax(0, 1fr));
+  gap: var(--space-4);
+  align-items: center;
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.skeleton-row:last-child { border-bottom: 0; }
+
+.skeleton-chart { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: var(--space-3); }
+.skeleton-chart-axis { height: 100%; }
+
+/* The calendar skeleton uses the same grid as the real calendar, so the
+   month holds its shape while it loads. */
+.skeleton-calendar { display: grid; gap: var(--space-2); }
+.skeleton-weekdays { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: var(--space-2); }
+.skeleton-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: var(--space-2); }
+.skeleton-day {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: 78px;
+  padding: var(--space-2);
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-base);
+}
+
+.skeleton-list { display: grid; gap: var(--space-3); }
+.skeleton-list-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-4);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.skeleton-list-row:last-child { border-bottom: 0; }
+
+/* On a narrow screen a table becomes a stack of record cards, so the
+   skeleton becomes one too. */
+@media (max-width: 768px) {
+  .skeleton-row { grid-template-columns: minmax(0, 1fr); gap: var(--space-2); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .skeleton {
+    background-image: linear-gradient(
+      100deg,
+      transparent 20%,
+      var(--skeleton-sheen) 45%,
+      transparent 70%
+    );
+    background-repeat: no-repeat;
+    background-size: 220% 100%;
+    animation: skeleton-sweep 1500ms ease-in-out infinite;
+  }
+}
+
+@keyframes skeleton-sweep {
+  from { background-position: 160% 0; }
+  to { background-position: -60% 0; }
+}
+
+/* ==========================================================================
+   Schedule requests
+
+   The administrator reviews requests other people sent, so the requester's
+   name and email lead the row. The request itself follows, then the
+   status and the actions.
+   ========================================================================== */
+
+.schedule-requests-panel { margin-top: var(--space-5); padding: var(--space-4) var(--space-5) var(--space-5); }
+
+.schedule-request-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-3); }
+.schedule-request-item {
+  display: grid;
+  grid-template-columns: minmax(9rem, 0.8fr) minmax(0, 1.6fr) auto auto;
+  gap: var(--space-4);
+  align-items: center;
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.schedule-request-item:last-child { border-bottom: 0; }
+
+.schedule-request-who strong { display: block; color: var(--text-primary); font-size: var(--text-sm); line-height: var(--leading-snug); }
+.schedule-request-who small { display: block; color: var(--text-muted); font-size: var(--text-2xs); line-height: var(--leading-snug); margin-top: 2px; }
+.schedule-request-what { display: grid; gap: 2px; min-width: 0; }
+.schedule-request-type { color: var(--text-primary); font-size: var(--text-sm); font-weight: 600; line-height: var(--leading-snug); }
+.schedule-request-what small { color: var(--text-muted); font-size: var(--text-2xs); line-height: var(--leading-snug); }
+.schedule-request-reason { color: var(--text-secondary) !important; }
+.schedule-request-submitted { opacity: 0.85; }
+.schedule-request-actions { display: flex; gap: var(--space-2); align-items: center; }
+
+/* Below the tablet breakpoint the request becomes a card, so the requester
+   and the request stack and nothing has to be read sideways. */
+@media (max-width: 768px) {
+  .schedule-request-item {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "who    status"
+      "what   what"
+      "action action";
+    gap: var(--space-2) var(--space-3);
+    padding: var(--space-4) 0;
+  }
+  .schedule-request-who { grid-area: who; }
+  .schedule-request-what { grid-area: what; }
+  .schedule-request-item > .status-badge { grid-area: status; align-self: start; justify-self: end; }
+  .schedule-request-actions { grid-area: action; }
+  .schedule-request-actions .link-button {
+    flex: 1 1 0;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--control-border);
+    border-radius: var(--radius-sm);
+    background: var(--surface-raised);
+  }
+  .schedule-request-actions .link-button.danger-link { color: var(--danger-text); border-color: var(--danger-border); }
+  .schedule-request-actions .link-button.approve-link { color: var(--success-text); border-color: var(--success-border); }
+}
+
+/* Below the tablet breakpoint the panel toolbar stacks, and the action
+   takes the full width rather than being squeezed beside the search. */
+@media (max-width: 560px) {
+  .panel-header.compact { flex-wrap: wrap; }
+  .panel-header-tools { width: 100%; justify-content: flex-start; }
+  .panel-header-tools .search-input { flex: 1 1 140px; min-width: 0; }
+  .panel-header-tools .create-account-button { width: 100%; }
 }

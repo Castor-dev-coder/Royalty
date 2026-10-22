@@ -3,7 +3,8 @@ import { useDialogBehavior } from '../components/useDialogBehavior';
 import {
   EmptyState,
   ErrorState,
-  LoadingState,
+  SkeletonRegion,
+  ListSkeleton,
   Panel,
   WEEK_DAY_LABELS,
   formatDate,
@@ -122,7 +123,13 @@ export function StaffSchedulePanel() {
     }
   }
 
-  if (loading) return <LoadingState>Loading your schedule…</LoadingState>;
+  if (loading) {
+    return (
+      <SkeletonRegion label="Loading your schedule">
+        <ListSkeleton rows={4} />
+      </SkeletonRegion>
+    );
+  }
   if (loadError) return <ErrorState>{loadError}</ErrorState>;
 
   const activeDays = (schedules ?? []).filter((schedule) => schedule.isActive)

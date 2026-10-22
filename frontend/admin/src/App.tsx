@@ -6,6 +6,8 @@ import { ThemeSwitch } from './components/ThemeSwitch';
 import { BrandShowcase } from './components/BrandShowcase';
 import { DemoCredentials } from './components/DemoCredentials';
 import { SidebarStatusPanel } from './components/SidebarStatusPanel';
+import { CalendarSkeleton, ChartSkeleton, ListSkeleton, Skeleton, SkeletonRegion, StatCardSkeleton, TableSkeleton } from './shared/ui';
+import { CategoryBars, DataOriginNote, LineChart, type LineAxisPoint, type LineSeries } from './components/charts';
 import { AccountsIcon, CalendarIcon, DashboardIcon, PaymentsIcon, StaffIcon } from './components/icons';
 import { useDialogBehavior } from './components/useDialogBehavior';
 import { clearAccountSession, currentSession, readLoginSession, storeAccountSession, type AccountRole } from './session';
@@ -15,7 +17,6 @@ import { StaffAppointmentsPanel } from './staff/StaffAppointmentsPanel';
 import { StaffSchedulePanel } from './staff/StaffSchedulePanel';
 import { StaffServicesPanel } from './staff/StaffServicesPanel';
 import { StaffProfilePanel } from './staff/StaffProfilePanel';
-import { StaffProfileDialog, type StaffProfileCandidate } from './staff/StaffProfileDialog';
 import { StaffCredentialsPanel, issueStaffPassword, type StaffCredentials } from './staff/StaffCredentialsPanel';
 
 type Review = {
@@ -112,6 +113,36 @@ const APPOINTMENT_STATUS_BADGE: Record<string, string> = {
 
 function appointmentStatusText(status: string): string {
   return APPOINTMENT_STATUS_TEXT[status] ?? String(status).replace('_', ' ').toLowerCase();
+}
+
+/**
+ * The chart colour for each appointment state.
+ *
+ * Each token is the solid version of the hue the matching status badge
+ * already uses, so a bar and a badge read as the same state wherever they
+ * appear. The badge is a soft tint of the colour; the bar is that colour
+ * at full strength.
+ */
+const APPOINTMENT_CHART_COLOR: Record<string, string> = {
+  CONFIRMED: 'confirmed',
+  RESERVED: 'reserved',
+  COMPLETED: 'completed',
+  CANCELLED: 'cancelled',
+  NO_SHOW: 'noshow',
+};
+
+/** A calendar date as "Oct 22", for naming a period on a chart. */
+/** A request date, shown as a readable calendar date. */
+function formatRequestDate(value: string): string {
+  const date = new Date(value.length === 10 ? `${value}T12:00:00` : value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function shortDate(key: string): string {
+  const [year, month, day] = key.split('-').map(Number);
+  if (!year || !month || !day) return key;
+  return new Date(year, month - 1, day).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 function appointmentStatusBadge(status: string): string {
@@ -372,10 +403,11 @@ function useStaffData() {
 
 function useAppointmentData() {
   const [data, setData] = useState<AppointmentRow[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const token = getAccessToken();
-    if (!token && !mockApiEnabled) return;
+    if (!token && !mockApiEnabled) { setLoading(false); return; }
     const controller = new AbortController();
     const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
     apiFetch(`${baseUrl}/appointments?page=1&limit=100`, {
@@ -402,17 +434,19 @@ function useAppointmentData() {
       })
       .catch(() => {
         if (!controller.signal.aborted) setData([]);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
       });
 
     return () => controller.abort();
   }, []);
 
-  return [data, setData] as const;
+  return [data, setData, loading] as const;
 }
 
 function Shell() {
   const location = useLocation();
-  const [showCreateModal, setShowCreateModal] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(Boolean(getAccessToken()));
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const mobileNavToggleRef = useRef<HTMLButtonElement | null>(null);
@@ -475,7 +509,7 @@ function Shell() {
 
         <aside className={`sidebar${mobileNavOpen ? ' mobile-open' : ''}`}>
           <div className="brand-wrap sidebar-brand">
-            <div className="brand-mark">R</div>
+            <div className="brand-mark" aria-hidden="true"><img src="/images/Logo.jpg" alt="" /></div>
             <div>
               <h1>ROYALTY SALON</h1>
               <p>ADMIN PANEL</p>
@@ -526,9 +560,6 @@ function Shell() {
               </p>
             </div>
             <div className="page-header-actions">
-              {location.pathname === '/accounts' && (
-                <button type="button" className="primary-button create-account-button" onClick={() => setShowCreateModal(true)}>Create New Account</button>
-              )}
               <ThemeSwitch />
             </div>
           </section>
@@ -553,7 +584,6 @@ function Shell() {
         </main>
       </div>
 
-      {showCreateModal && <AccountCreationModal onClose={() => setShowCreateModal(false)} />}
     </div>
   );
 }
@@ -564,6 +594,7 @@ function BusinessDashboardPage() {
   const [payments, setPayments] = useState<any[]>([]);
   const [appointmentsAvailable, setAppointmentsAvailable] = useState(false);
   const [paymentsAvailable, setPaymentsAvailable] = useState(false);
+  const [loading, setLoading] = useState(true);
   const monthLabel = new Date().toLocaleDateString('en-US', { month: 'long' }).toUpperCase();
 
   useEffect(() => {
@@ -587,7 +618,8 @@ function BusinessDashboardPage() {
           setPaymentsAvailable(true);
         }
       })
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, []);
 
@@ -601,22 +633,34 @@ function BusinessDashboardPage() {
     // A cancelled appointment is not a booking, so it is left out of the
     // count. This keeps the figure in step with today's schedule in the
     // sidebar, which lists the bookings that are still going ahead.
-    { label: "TODAY'S BOOKINGS", value: appointmentsAvailable ? appointments.filter((item) => item.appointmentDate === todayKey && item.status !== 'CANCELLED').length : '—', suffix: 'TODAY' },
-    { label: 'TOTAL BOOKINGS', value: appointmentsAvailable ? monthAppointments.length : '—', suffix: monthLabel },
+    { label: "TODAY'S BOOKINGS", value: appointmentsAvailable ? appointments.filter((item) => item.appointmentDate === todayKey && item.status !== 'CANCELLED').length : '—', suffix: 'EXCL. CANCELLED' },
+    { label: 'TOTAL APPOINTMENTS', value: appointmentsAvailable ? monthAppointments.length : '—', suffix: monthLabel },
     { label: 'COMPLETED', value: appointmentsAvailable ? monthAppointments.filter((item) => item.status === 'COMPLETED').length : '—', suffix: monthLabel },
     { label: 'CANCELLED', value: appointmentsAvailable ? monthAppointments.filter((item) => item.status === 'CANCELLED').length : '—', suffix: monthLabel },
     { label: 'REVENUE', value: paymentsAvailable ? `₱${verifiedPayments.reduce((sum, payment) => sum + Number(payment.amount ?? 0), 0).toLocaleString()}` : '—', suffix: paymentsAvailable ? 'VERIFIED' : 'NOT CONNECTED' },
     { label: 'AVG RATINGS', value: averageRating, suffix: 'RECENT REVIEWS' },
   ];
-  const bookingTrend = Array.from({ length: 7 }, (_, index) => {
+  // One point per day, read from the appointment records. The axis carries
+  // the calendar date so the tooltip can name the day it belongs to.
+  const bookingAxis: LineAxisPoint[] = Array.from({ length: 7 }, (_, index) => {
     const date = new Date();
     date.setDate(date.getDate() - (6 - index));
     const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
     return {
+      key,
       label: date.toLocaleDateString('en-US', { weekday: 'short' }),
-      value: appointments.filter((item) => item.appointmentDate === key).length,
+      fullLabel: date.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }),
     };
   });
+  const bookingSeries: LineSeries[] = [{
+    key: 'appointments',
+    label: 'Appointments',
+    color: '--chart-fill',
+    values: Object.fromEntries(bookingAxis.map((point) => [
+      point.key,
+      appointments.filter((item) => item.appointmentDate === point.key).length,
+    ])),
+  }];
   const topServices = new Map<string, number>();
   for (const appointment of monthAppointments) {
     for (const service of appointment.services ?? []) {
@@ -629,6 +673,33 @@ function BusinessDashboardPage() {
     .slice(0, 5);
   const maxServiceCount = Math.max(1, ...serviceScores.map((service) => service.count));
   const pendingPayments = payments.filter((payment) => payment.status === 'UNVERIFIED');
+  // How the recorded payment value splits by state. Each bar is the solid
+  // version of the hue its badge uses, so a bar and its badge mean the same
+  // thing. The bar is sized by the amount, and the amount is written out
+  // beside it.
+  const paymentStates = [
+    { key: 'VERIFIED', label: 'Verified', badge: 'success', color: '--chart-verified' },
+    { key: 'UNVERIFIED', label: 'Unverified', badge: 'warning', color: '--chart-unverified' },
+    { key: 'REJECTED', label: 'Rejected', badge: 'danger', color: '--chart-rejected' },
+  ] as const;
+  const paymentTotals = paymentStates.map((state) => {
+    const records = payments.filter((payment) => payment.status === state.key);
+    const amount = records.reduce((sum, payment) => sum + Number(payment.amount ?? 0), 0);
+    return { ...state, records, amount };
+  });
+  const paymentTotalAmount = paymentTotals.reduce((sum, state) => sum + state.amount, 0);
+  const paymentBars = paymentTotals
+    .filter((state) => state.records.length > 0)
+    .map((state) => ({
+      key: state.key,
+      label: state.label,
+      badge: state.badge,
+      color: state.color,
+      value: `₱${state.amount.toLocaleString()}`,
+      share: paymentTotalAmount > 0 ? `${Math.round((state.amount / paymentTotalAmount) * 100)}%` : undefined,
+      percent: paymentTotalAmount > 0 ? (state.amount / paymentTotalAmount) * 100 : 0,
+      detail: `${state.records.length} payment${state.records.length === 1 ? '' : 's'} · ₱${state.amount.toLocaleString()} of ₱${paymentTotalAmount.toLocaleString()} (${Math.round((state.amount / paymentTotalAmount) * 100)}%)`,
+    }));
   const monthRevenue = verifiedPayments
     .filter((payment) => String(payment.createdAt).slice(0, 7) === todayKey.slice(0, 7))
     .reduce((sum, payment) => sum + Number(payment.amount ?? 0), 0);
@@ -636,30 +707,44 @@ function BusinessDashboardPage() {
   return (
     <>
       <div className="stats-grid six-col">
-        {dashboardMetrics.map((metric) => (
-          <div key={metric.label} className="stat-card">
-            <span>{metric.label}</span>
-            <strong>{metric.value}</strong>
-            <small>{metric.suffix}</small>
-          </div>
-        ))}
+        {loading
+          ? Array.from({ length: 6 }, (_, index) => <StatCardSkeleton key={index} />)
+          : dashboardMetrics.map((metric) => (
+            <div key={metric.label} className="stat-card">
+              <span>{metric.label}</span>
+              <strong>{metric.value}</strong>
+              <small>{metric.suffix}</small>
+            </div>
+          ))}
       </div>
 
       <div className="two-col-panel">
         <section className="panel chart-panel">
           <div className="panel-header compact">
-            <h3>Booking Trends</h3>
+            <h3>Appointments by day</h3>
             <span>Last 7 days</span>
           </div>
-          <div className="chart-bars" aria-label="Booking trend chart">
-            {bookingTrend.map(({ label, value }) => (
-              <div key={label} className="bar-group">
-                <span className="bar-value">{value}</span>
-                <div className={`bar${value === 0 ? ' bar-empty' : ''}`} style={{ height: `${value ? Math.max(18, (value / Math.max(1, ...bookingTrend.map((item) => item.value))) * 100) : 8}%` }} title={`${value} bookings`} />
-                <span>{label}</span>
-              </div>
-            ))}
-          </div>
+          {loading ? (
+            <SkeletonRegion label="Loading appointments by day">
+              <ChartSkeleton height={292} />
+            </SkeletonRegion>
+          ) : (
+            <>
+              <p className="chart-caption">
+                <span>{shortDate(bookingAxis[0].key)} – {shortDate(bookingAxis[bookingAxis.length - 1].key)}</span>
+                <span>{Object.values(bookingSeries[0].values).reduce((sum, value) => sum + value, 0)} appointments</span>
+              </p>
+              <LineChart
+                axis={bookingAxis}
+                series={bookingSeries}
+                unit="appointments"
+                metricName="Appointments"
+                emptyMessage="No appointments were recorded in the last seven days."
+                height={292}
+              />
+              <DataOriginNote>Read from the appointment records on this page.</DataOriginNote>
+            </>
+          )}
         </section>
 
         <section className="panel summary-panel">
@@ -667,12 +752,27 @@ function BusinessDashboardPage() {
             <h3>Payment Summary</h3>
             <span>Month</span>
           </div>
-          <ul className="summary-list">
+          {loading && (
+            <SkeletonRegion label="Loading the payment summary">
+              <ListSkeleton rows={4} />
+            </SkeletonRegion>
+          )}
+          {!loading && <ul className="summary-list">
             <li><span>Total Verified</span><strong>{paymentsAvailable ? `₱${verifiedPayments.reduce((sum, payment) => sum + Number(payment.amount ?? 0), 0).toLocaleString()}` : '—'}</strong></li>
             <li><span>This Month</span><strong>{paymentsAvailable ? `₱${monthRevenue.toLocaleString()}` : '—'}</strong></li>
             <li><span>Pending Payments</span><strong>{paymentsAvailable ? pendingPayments.length : '—'}</strong></li>
             <li><span>Needs verification</span><strong>{paymentsAvailable ? `₱${pendingPayments.reduce((sum, payment) => sum + Number(payment.amount ?? 0), 0).toLocaleString()}` : '—'}</strong></li>
-          </ul>
+          </ul>}
+          {paymentsAvailable && paymentBars.length > 0 && (
+            <div className="payment-status-breakdown">
+              <h4 className="breakdown-title">
+                Recorded payment value, all statuses
+                <span className="breakdown-total">₱{paymentTotalAmount.toLocaleString()} recorded</span>
+              </h4>
+              <CategoryBars items={paymentBars} emptyMessage="" />
+              <DataOriginNote>Read from the payment records on this page.</DataOriginNote>
+            </div>
+          )}
         </section>
       </div>
 
@@ -829,7 +929,11 @@ function ServiceManagementPage() {
           {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
         </select>
       </div>
-      {loading && <p className="empty-list">Loading service catalog…</p>}
+      {loading && (
+        <SkeletonRegion label="Loading the service catalogue">
+          <TableSkeleton rows={5} columns={4} />
+        </SkeletonRegion>
+      )}
       {loadError && <p className="form-error" role="alert">{loadError}</p>}
       {!loading && !loadError && (
         <div className="service-table-scroll">
@@ -845,7 +949,7 @@ function ServiceManagementPage() {
                   <td role="cell" data-label="Status"><span className={`status-badge ${service.isActive ? 'success' : 'neutral'}`}>{service.isActive ? 'Active' : 'Inactive'}</span></td>
                   <td className="cell-actions" role="cell" data-label="Actions"><div className="service-actions">
                     <button type="button" className="link-button" onClick={() => setEditing(service)}>Edit</button>
-                    <button type="button" className="link-button" onClick={() => setAction({ type: 'suspend', service })}>{service.isActive ? 'Suspend' : 'Activate'}</button>
+                    <button type="button" className={`link-button${service.isActive ? ' danger-link' : ' approve-link'}`} onClick={() => setAction({ type: 'suspend', service })}>{service.isActive ? 'Suspend' : 'Activate'}</button>
                     <button type="button" className="link-button danger-link" disabled={!service.isActive} onClick={() => setAction({ type: 'delete', service })}>Archive</button>
                   </div></td>
                 </tr>
@@ -1228,6 +1332,7 @@ function ResultModal({ success, title, message, onClose }: { success: boolean; t
 function AccountManagementPage() {
   const [rows, setRows, loadState] = useAccountData();
   const [search, setSearch] = useState('');
+  const [showCreateModal, setShowCreateModal] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [pendingAction, setPendingAction] = useState<{ row: TableRow; nextStatus: 'ACTIVE' | 'DEACTIVATED' } | null>(null);
   const visibleRows = rows.filter((row) => row.role !== 'Customer' && `${row.user} ${row.email} ${row.role}`.toLowerCase().includes(search.toLowerCase()));
@@ -1285,9 +1390,18 @@ function AccountManagementPage() {
         <section className="panel table-panel large-table">
           <div className="panel-header compact">
             <h3>User Accounts Directory</h3>
-            <input aria-label="Search accounts" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by name, email or role..." className="search-input" />
+            {/* The action belongs to the table it acts upon, so it sits in
+                the table's own toolbar beside the search field. */}
+            <div className="panel-header-tools">
+              <input aria-label="Search accounts" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by name, email or role..." className="search-input" />
+              <button type="button" className="primary-button create-account-button" onClick={() => setShowCreateModal(true)}>Create New Account</button>
+            </div>
           </div>
-          {loadState === 'loading' && <p className="empty-list">Loading accounts…</p>}
+          {loadState === 'loading' && (
+            <SkeletonRegion label="Loading accounts">
+              <TableSkeleton rows={6} columns={5} />
+            </SkeletonRegion>
+          )}
           {loadState === 'error' && <p className="form-error" role="alert">Accounts could not be loaded. Check the backend connection and reload the page.</p>}
           {loadState === 'ready' && (
           <div className="table-scroll">
@@ -1320,7 +1434,7 @@ function AccountManagementPage() {
                       </span>
                     </td>
                     <td role="cell" data-label="Last Login / Created">{row.lastLogin}</td>
-                    <td className="cell-actions" role="cell" data-label="Actions"><button type="button" className="link-button" disabled={!row.accountId} onClick={() => setPendingAction({ row, nextStatus: row.status === 'Active' ? 'DEACTIVATED' : 'ACTIVE' })}>{row.status === 'Active' ? 'Deactivate' : 'Activate'}</button></td>
+                    <td className="cell-actions" role="cell" data-label="Actions"><button type="button" className={`link-button${row.status === 'Active' ? ' danger-link' : ' approve-link'}`} disabled={!row.accountId} onClick={() => setPendingAction({ row, nextStatus: row.status === 'Active' ? 'DEACTIVATED' : 'ACTIVE' })}>{row.status === 'Active' ? 'Deactivate' : 'Activate'}</button></td>
                   </tr>
                 ))}
                 {visibleRows.length === 0 && <tr role="row"><td colSpan={5} className="cell-empty" role="cell" data-empty>{rows.length ? 'No accounts match this search.' : 'No account records are available for this session.'}</td></tr>}
@@ -1354,18 +1468,37 @@ function AccountManagementPage() {
           onError={(error) => setStatusMessage(error)}
         />
       )}
+      {showCreateModal && <AccountCreationModal onClose={() => setShowCreateModal(false)} />}
     </>
   );
 }
 
+/** A schedule request, as the administrator sees it. */
+interface ScheduleRequestRow {
+  id: string;
+  /** The staff profile the request belongs to. */
+  staffId: string;
+  /** The staff member's display name, resolved on the server. */
+  requesterName: string | null;
+  /** The email on the account the request belongs to. */
+  requesterEmail: string | null;
+  requestedDate: string;
+  requestedStartTime: string | null;
+  requestedEndTime: string | null;
+  requestType: string;
+  reason: string | null;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  reviewedAt: string | null;
+  createdAt: string;
+}
+
 function StaffManagementPage() {
   const [rows, setRows, loadState] = useStaffData();
+  const [scheduleRequests, setScheduleRequests] = useState<ScheduleRequestRow[]>([]);
+  const [scheduleRequestsLoading, setScheduleRequestsLoading] = useState(true);
   const [scheduleRequestCount, setScheduleRequestCount] = useState(0);
   const [search, setSearch] = useState('');
   const [editingStaff, setEditingStaff] = useState<StaffRow | null>(null);
-  const [showProfileDialog, setShowProfileDialog] = useState(false);
-  const [profileCandidates, setProfileCandidates] = useState<StaffProfileCandidate[]>([]);
-  const [profileNotice, setProfileNotice] = useState('');
   const [employmentFilter, setEmploymentFilter] = useState('all');
   const [availabilityFilter, setAvailabilityFilter] = useState('all');
   const [accessFilter, setAccessFilter] = useState('all');
@@ -1376,6 +1509,8 @@ function StaffManagementPage() {
   const [credentialError, setCredentialError] = useState('');
   const [issuing, setIssuing] = useState(false);
   const [savingAccess, setSavingAccess] = useState(false);
+  const [reviewingRequestId, setReviewingRequestId] = useState<string | null>(null);
+  const [pendingReview, setPendingReview] = useState<{ request: ScheduleRequestRow; decision: 'approve' | 'reject' } | null>(null);
 
   const visibleRows = rows
     .filter((row) => `${row.user} ${row.email} ${row.role} ${row.schedule}`.toLowerCase().includes(search.toLowerCase()))
@@ -1391,11 +1526,71 @@ function StaffManagementPage() {
     apiFetch(`${baseUrl}/schedules/requests`, { signal: controller.signal, headers: { Authorization: `Bearer ${token}` } })
       .then(async (response) => {
         const payload = await response.json();
-        if (response.ok) setScheduleRequestCount((payload?.data?.scheduleRequests ?? []).length);
+        if (response.ok) {
+          const requests = (payload?.data?.scheduleRequests ?? []) as ScheduleRequestRow[];
+          setScheduleRequests(requests);
+          setScheduleRequestCount(requests.length);
+        }
       })
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => { if (!controller.signal.aborted) setScheduleRequestsLoading(false); });
     return () => controller.abort();
   }, []);
+
+  /**
+   * Load the schedule requests.
+   *
+   * The list is reloaded after a review so the status shown here is the
+   * status the server recorded, including the requester's identity.
+   */
+  async function loadScheduleRequests() {
+    const token = getAccessToken();
+    if (!token && !mockApiEnabled) return;
+    const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+    try {
+      const response = await apiFetch(`${baseUrl}/schedules/requests`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const payload = await response.json();
+      if (!response.ok) return;
+      const requests = (payload?.data?.scheduleRequests ?? []) as ScheduleRequestRow[];
+      setScheduleRequests(requests);
+      setScheduleRequestCount(requests.length);
+    } catch {
+      /* The panel keeps the requests it already has. */
+    }
+  }
+
+  /**
+   * Approve or reject a schedule request.
+   *
+   * The requester is named in the confirmation, so the administrator is
+   * acting on a request they can identify.
+   */
+  async function reviewScheduleRequest(request: ScheduleRequestRow, decision: 'approve' | 'reject') {
+    const token = getAccessToken();
+    if (!token) { setAccessError('Sign in with an administrator account to review requests.'); return; }
+    const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+    setReviewingRequestId(request.id);
+    try {
+      const response = await apiFetch(`${baseUrl}/schedules/requests/${request.id}/${decision}`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        setAccessError(payload?.message ?? 'The request could not be reviewed.');
+        return;
+      }
+      setAccessNotice(`Request from ${request.requesterName ?? 'the staff member'} was ${decision === 'approve' ? 'approved' : 'rejected'}.`);
+      await loadScheduleRequests();
+    } catch {
+      setAccessError('The request could not be reviewed.');
+    } finally {
+      setReviewingRequestId(null);
+      setPendingReview(null);
+    }
+  }
 
   /**
    * Change whether a staff account may sign in.
@@ -1455,42 +1650,6 @@ function StaffManagementPage() {
     }
   }
 
-  /**
-   * Accounts that can receive a staff profile.
-   *
-   * A staff profile can only be attached to an account that already holds
-   * the staff role and has no profile yet, which is the rule the API applies.
-   */
-  async function openProfileDialog() {
-    const token = getAccessToken();
-    if (!token && !mockApiEnabled) return;
-    const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
-    try {
-      const [accountResponse, staffResponse] = await Promise.all([
-        apiFetch(`${baseUrl}/accounts?page=1&limit=100`, { headers: { Authorization: `Bearer ${token}` } }),
-        apiFetch(`${baseUrl}/staff?page=1&limit=100`, { headers: { Authorization: `Bearer ${token}` } }),
-      ]);
-      if (!accountResponse.ok || !staffResponse.ok) {
-        setAccessError('The staff accounts could not be loaded.');
-        return;
-      }
-      const accountPayload = await accountResponse.json();
-      const staffPayload = await staffResponse.json();
-      const profiledAccountIds = new Set((staffPayload?.data?.staff ?? []).map((member: any) => member.accountId));
-      const candidates: StaffProfileCandidate[] = (accountPayload?.data?.accounts ?? [])
-        .filter((account: any) => account.role === 'STAFF' && account.status === 'ACTIVE' && !profiledAccountIds.has(account.id))
-        .map((account: any) => ({
-          accountId: account.id,
-          email: account.email,
-          name: `${account.firstName ?? ''} ${account.lastName ?? ''}`.trim() || account.email,
-        }));
-      setProfileCandidates(candidates);
-      setShowProfileDialog(true);
-    } catch {
-      setAccessError('The staff accounts could not be loaded.');
-    }
-  }
-
   return (
     <>
       <div className="stats-grid four-col staff-metrics">
@@ -1512,14 +1671,60 @@ function StaffManagementPage() {
         </div>
       </div>
 
+      <section className="panel schedule-requests-panel">
+        <div className="panel-header compact">
+          <h3>Schedule Requests</h3>
+          <span>{scheduleRequestCount} {scheduleRequestCount === 1 ? 'request' : 'requests'}</span>
+        </div>
+        {scheduleRequestsLoading ? (
+          <SkeletonRegion label="Loading schedule requests">
+            <ListSkeleton rows={3} />
+          </SkeletonRegion>
+        ) : scheduleRequests.length === 0 ? (
+          <p className="empty-list">No schedule requests have been submitted.</p>
+        ) : (
+          <ul className="schedule-request-list">
+            {scheduleRequests.map((request) => (
+              <li key={request.id} className="schedule-request-item">
+                <div className="schedule-request-who">
+                  {/* The requester is named in words, not by an identifier,
+                      so the administrator can tell whose request this is. */}
+                  <strong>{request.requesterName ?? 'Unknown staff member'}</strong>
+                  <small>{request.requesterEmail || 'No email on file'}</small>
+                </div>
+                <div className="schedule-request-what">
+                  <span className="schedule-request-type">{request.requestType}</span>
+                  <small>
+                    {formatRequestDate(request.requestedDate)}
+                    {request.requestedStartTime && request.requestedEndTime
+                      ? ` · ${request.requestedStartTime}–${request.requestedEndTime}`
+                      : request.requestedStartTime ? ` · from ${request.requestedStartTime}` : ''}
+                  </small>
+                  {request.reason && <small className="schedule-request-reason">{request.reason}</small>}
+                  <small className="schedule-request-submitted">Submitted {formatRequestDate(request.createdAt)}</small>
+                </div>
+                <span className={`status-badge ${request.status === 'APPROVED' ? 'success' : request.status === 'REJECTED' ? 'danger' : 'warning'}`}>
+                  {request.status === 'APPROVED' ? 'Approved' : request.status === 'REJECTED' ? 'Rejected' : 'Pending'}
+                </span>
+                {request.status === 'PENDING' && (
+                  <span className="schedule-request-actions">
+                    <button type="button" className="link-button approve-link" disabled={reviewingRequestId === request.id} onClick={() => setPendingReview({ request, decision: 'approve' })}>Approve</button>
+                    <button type="button" className="link-button danger-link" disabled={reviewingRequestId === request.id} onClick={() => setPendingReview({ request, decision: 'reject' })}>Reject</button>
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
       {accessNotice && <p className="form-hint" role="status">{accessNotice}</p>}
-      {profileNotice && <p className="form-hint" role="status">{profileNotice}</p>}
       {accessError && <p className="form-error" role="alert">{accessError}</p>}
       {credentialError && <p className="form-error" role="alert">{credentialError}</p>}
       {issuing && <p className="form-hint" role="status">Issuing a temporary password…</p>}
 
       <section className="panel table-panel large-table">
-        <div className="panel-header compact">
+        <div className="panel-header compact staff-directory-header">
           <h3>Royal Salon Professional Staff Directory</h3>
           <div className="table-tools">
             <input aria-label="Search staff" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by name, email or role..." className="search-input" />
@@ -1542,10 +1747,13 @@ function StaffManagementPage() {
               <option value="Active">Can sign in</option>
               <option value="Deactivated">Cannot sign in</option>
             </select>
-            <button type="button" className="primary-button create-account-button" onClick={() => void openProfileDialog()}>Create Staff Profile</button>
           </div>
         </div>
-        {loadState === 'loading' && <p className="empty-list">Loading the staff directory…</p>}
+        {loadState === 'loading' && (
+          <SkeletonRegion label="Loading the staff directory">
+            <TableSkeleton rows={5} columns={4} />
+          </SkeletonRegion>
+        )}
         {loadState === 'error' && <p className="form-error" role="alert">The staff directory could not be loaded. Check the backend connection and reload the page.</p>}
         {loadState === 'ready' && (
         <div className="table-scroll">
@@ -1590,7 +1798,7 @@ function StaffManagementPage() {
                     <button type="button" className="link-button" disabled={!row.id} onClick={() => row.id && setEditingStaff(row)}>Edit</button>
                     <button
                       type="button"
-                      className="link-button"
+                      className={`link-button${row.accountStatus === 'Active' ? ' danger-link' : ' approve-link'}`}
                       disabled={!row.accountId}
                       onClick={() => row.accountId && setAccessChange({
                         row,
@@ -1628,29 +1836,6 @@ function StaffManagementPage() {
         />
       )}
 
-      {showProfileDialog && (
-        profileCandidates.length > 0 ? (
-          <StaffProfileDialog
-            candidates={profileCandidates}
-            onClose={() => setShowProfileDialog(false)}
-            onCreated={(message) => {
-              setShowProfileDialog(false);
-              setProfileNotice(message);
-              window.location.reload();
-            }}
-          />
-        ) : (
-          <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="staff-profile-empty" onClick={() => setShowProfileDialog(false)}>
-            <section className="modal-card result-modal" onClick={(event) => event.stopPropagation()}>
-              <h3 id="staff-profile-empty">No staff accounts are waiting</h3>
-              <p>Every active staff account already has a staff profile.</p>
-              <div className="modal-actions">
-                <button type="button" className="primary-action" onClick={() => setShowProfileDialog(false)}>Close</button>
-              </div>
-            </section>
-          </div>
-        )
-      )}
 
       {credentials && (
         <StaffCredentialsPanel
@@ -1659,6 +1844,19 @@ function StaffManagementPage() {
         />
       )}
 
+      {pendingReview && (
+        <ConfirmModal
+          title={pendingReview.decision === 'approve' ? 'Approve schedule request?' : 'Reject schedule request?'}
+          message={pendingReview.decision === 'approve'
+            ? `Approve the ${pendingReview.request.requestType.toLowerCase()} request from ${pendingReview.request.requesterName ?? 'the staff member'}${pendingReview.request.requesterEmail ? ` (${pendingReview.request.requesterEmail})` : ''}?`
+            : `Reject the ${pendingReview.request.requestType.toLowerCase()} request from ${pendingReview.request.requesterName ?? 'the staff member'}${pendingReview.request.requesterEmail ? ` (${pendingReview.request.requesterEmail})` : ''}?`}
+          confirmLabel={pendingReview.decision === 'approve' ? 'Approve request' : 'Reject request'}
+          danger={pendingReview.decision === 'reject'}
+          onClose={() => { setPendingReview(null); }}
+          onConfirm={() => void reviewScheduleRequest(pendingReview.request, pendingReview.decision)}
+          onError={(error) => setAccessError(error)}
+        />
+      )}
       {accessChange && (
         <div className="modal-overlay confirm-layer" role="dialog" aria-modal="true" aria-labelledby="staff-access-confirm" onClick={() => setAccessChange(null)}>
           <section className="modal-card confirm-modal" onClick={(event) => event.stopPropagation()}>
@@ -1677,7 +1875,7 @@ function StaffManagementPage() {
               <button type="button" className="secondary-action" disabled={savingAccess} onClick={() => setAccessChange(null)}>Cancel</button>
               <button
                 type="button"
-                className={accessChange.next === 'ACTIVE' ? 'primary-action' : 'reject-action'}
+                className={accessChange.next === 'ACTIVE' ? 'approve-action' : 'reject-action'}
                 disabled={savingAccess}
                 onClick={() => void changeAccountAccess(accessChange.row, accessChange.next)}
               >
@@ -1868,36 +2066,14 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
             </div>
           </form>
 
-          <div className="panel scheduling-rules-panel">
-            <div className="panel-header"><h4>Scheduling Rules</h4></div>
-            <div className="staff-schedule-section">
-              <span className="field-label">WEEKLY SCHEDULE</span>
-              <div className="schedule-grid">
-                {schedule.map((day) => (
-                  <div key={day.dayOfWeek} className={`schedule-day${day.enabled ? ' enabled' : ''}`}>
-                    <label className="schedule-day-header">
-                      <input type="checkbox" checked={day.enabled} onChange={(e) => updateScheduleDay(day.dayOfWeek, 'enabled', e.target.checked)} />
-                      <span>{weekDayLabels[day.dayOfWeek - 1]}</span>
-                    </label>
-                    {day.enabled && (
-                      <div className="schedule-day-times">
-                        <input type="time" className="modal-input" value={day.startTime} onChange={(e) => updateScheduleDay(day.dayOfWeek, 'startTime', e.target.value)} aria-label={`${weekDayLabels[day.dayOfWeek - 1]} start time`} />
-                        <span>–</span>
-                        <input type="time" className="modal-input" value={day.endTime} onChange={(e) => updateScheduleDay(day.dayOfWeek, 'endTime', e.target.value)} aria-label={`${weekDayLabels[day.dayOfWeek - 1]} end time`} />
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-              {scheduleError && <p className="form-error" role="alert">{scheduleError}</p>}
-              <button type="button" className="secondary-action" onClick={saveSchedule} disabled={savingSchedule}>{savingSchedule ? 'Saving…' : 'Save Schedule'}</button>
-            </div>
-          </div>
-
           <div className="panel time-off-panel">
             <div className="panel-header"><div><h4>Vacation &amp; Day Off</h4><p>Set date-based availability for this staff account.</p></div><button type="button" className="primary-button" disabled={timeOffUnavailable} onClick={() => { setEditingTimeOff(null); setShowTimeOff(true); }}>+ Add Vacation / Day Off</button></div>
             {timeOffUnavailable && <p className="form-hint">Date-specific time off is not supported by the configured backend. The development demo stores these entries locally.</p>}
-            {loadingTimeOff && <p className="empty-list">Loading time-off entries…</p>}
+            {loadingTimeOff && (
+              <SkeletonRegion label="Loading time-off entries">
+                <ListSkeleton rows={2} />
+              </SkeletonRegion>
+            )}
             {!loadingTimeOff && timeOff.length === 0 && <p className="empty-list">No vacation or day-off entries recorded.</p>}
             {timeOff.length > 0 && <div className="time-off-list">{timeOff.map((entry) => (
               <div className="time-off-row" key={entry.id}>
@@ -1909,6 +2085,46 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
             {notice && <p className="table-message" role="status">{notice}</p>}
             {showTimeOff && <TimeOffModal entry={editingTimeOff} onClose={() => { setShowTimeOff(false); setEditingTimeOff(null); }} onSave={saveTimeOff} />}
           </div>
+          <div className="panel scheduling-rules-panel">
+            <div className="panel-header">
+              <div>
+                <h4>Scheduling Rules</h4>
+                <p>The hours this staff member is available each week.</p>
+              </div>
+            </div>
+            <div className="staff-schedule-section">
+              <span className="field-label">WEEKLY SCHEDULE</span>
+              <div className="schedule-grid">
+                {schedule.map((day) => (
+                  <div key={day.dayOfWeek} className={`schedule-day${day.enabled ? ' enabled' : ''}`}>
+                    <label className="schedule-day-header">
+                      <input type="checkbox" checked={day.enabled} onChange={(e) => updateScheduleDay(day.dayOfWeek, 'enabled', e.target.checked)} />
+                      <span>{weekDayLabels[day.dayOfWeek - 1]}</span>
+                    </label>
+                    {day.enabled && (
+                      /* Each field carries its own visible label. A native
+                         time control shows only the digits, so without a
+                         label the administrator cannot tell which of the two
+                         fields is the start and which is the end. */
+                      <div className="schedule-day-times">
+                        <label className="schedule-time-field">
+                          <span className="schedule-time-label">Start</span>
+                          <input type="time" className="modal-input" value={day.startTime} onChange={(e) => updateScheduleDay(day.dayOfWeek, 'startTime', e.target.value)} aria-label={`${weekDayLabels[day.dayOfWeek - 1]} start time`} />
+                        </label>
+                        <label className="schedule-time-field">
+                          <span className="schedule-time-label">End</span>
+                          <input type="time" className="modal-input" value={day.endTime} onChange={(e) => updateScheduleDay(day.dayOfWeek, 'endTime', e.target.value)} aria-label={`${weekDayLabels[day.dayOfWeek - 1]} end time`} />
+                        </label>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {scheduleError && <p className="form-error" role="alert">{scheduleError}</p>}
+              <button type="button" className="secondary-action" onClick={saveSchedule} disabled={savingSchedule}>{savingSchedule ? 'Saving…' : 'Save Schedule'}</button>
+            </div>
+          </div>
+
         </div>
       </section>
     </div>
@@ -1970,7 +2186,7 @@ function TimeOffModal({ entry, onClose, onSave }: {
 }
 
 function AppointmentPage() {
-  const [appointments, setAppointments] = useAppointmentData();
+  const [appointments, setAppointments, appointmentsLoading] = useAppointmentData();
   const [selectedAppointment, setSelectedAppointment] = useState<AppointmentRow | null>(null);
   const [confirmation, setConfirmation] = useState<{ appointment: AppointmentRow; status: string } | null>(null);
   const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
@@ -1995,9 +2211,34 @@ function AppointmentPage() {
   const monthAppointments = appointments.filter((item) => item.appointmentDate.startsWith(daysInMonthPrefix));
   const monthStatusSequence = ['CONFIRMED', 'COMPLETED', 'CANCELLED', 'RESERVED', 'NO_SHOW'] as const;
   const monthStatusCounts = new Map(monthStatusSequence.map((status) => [status, monthAppointments.filter((item) => item.status === status).length]));
-  const monthBreakdown = monthStatusSequence
+  // The axis is every day of the selected month, so the line shows how the
+  // month fills in rather than a summary of what it ended up as.
+  const monthAxis: LineAxisPoint[] = (() => {
+    const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
+    return Array.from({ length: daysInMonth }, (_, index) => {
+      const day = index + 1;
+      const key = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      return {
+        key,
+        label: String(day),
+        fullLabel: new Date(month.getFullYear(), month.getMonth(), day).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
+      };
+    });
+  })();
+  // One line per state that actually occurs in the month, so there is no
+  // flat line sitting on the baseline for a state that never happens. Each
+  // line takes the colour of the badge for that state.
+  const monthStatusSeries: LineSeries[] = monthStatusSequence
     .filter((status) => (monthStatusCounts.get(status) ?? 0) > 0)
-    .map((status) => `${monthStatusCounts.get(status)} ${appointmentStatusText(status).toLowerCase()}`);
+    .map((status) => ({
+      key: status,
+      label: appointmentStatusText(status),
+      color: `--chart-${APPOINTMENT_CHART_COLOR[status] ?? status.toLowerCase()}`,
+      values: Object.fromEntries(monthAxis.map((point) => [
+        point.key,
+        monthAppointments.filter((item) => item.appointmentDate === point.key && item.status === status).length,
+      ])),
+    }));
   const selectedAppointments = appointments
     .filter((item) => item.appointmentDate === selectedDate)
     .sort((a, b) => a.startTime.localeCompare(b.startTime));
@@ -2078,11 +2319,16 @@ function AppointmentPage() {
               aria-pressed={statusFilter === button.key}
               onClick={() => setStatusFilter(button.key)}
             >
-              {button.label} ({button.count})
+              {button.label}{appointmentsLoading ? '' : ` (${button.count})`}
             </button>
           ))}
         </div>
-        {visibleSections.length === 0 && <p className="empty-list">{statusFilter === 'all' ? 'No appointments scheduled yet.' : 'No appointments match this filter.'}</p>}
+        {appointmentsLoading && (
+          <SkeletonRegion label="Loading appointments by status">
+            <ListSkeleton rows={3} />
+          </SkeletonRegion>
+        )}
+        {!appointmentsLoading && visibleSections.length === 0 && <p className="empty-list">{statusFilter === 'all' ? 'No appointments scheduled yet.' : 'No appointments match this filter.'}</p>}
         {visibleSections.map((section) => (
           <section key={section.status ?? 'other'} className="sidebar-status-section">
             <div className="sidebar-status-header">
@@ -2119,11 +2365,19 @@ function AppointmentPage() {
           <button type="button" className="tiny-button" aria-label="Next month" onClick={() => moveCalendarMonth(1)}>›</button>
         </div>
         <p className="calendar-month-summary" aria-live="polite">
-          <strong>{monthAppointments.length === 0
-            ? 'No appointments this month'
-            : `${monthAppointments.length} ${monthAppointments.length === 1 ? 'appointment' : 'appointments'} this month`}</strong>
-          {monthBreakdown.length > 0 && <span className="calendar-summary-breakdown">{monthBreakdown.join(' · ')}</span>}
+          {appointmentsLoading ? (
+            <Skeleton width="13rem" height={11} />
+          ) : (
+            <strong>{monthAppointments.length === 0
+              ? 'No appointments this month'
+              : `${monthAppointments.length} ${monthAppointments.length === 1 ? 'appointment' : 'appointments'} this month`}</strong>
+          )}
         </p>
+        {appointmentsLoading ? (
+          <SkeletonRegion label="Loading the calendar">
+            <CalendarSkeleton weeks={Math.ceil(calendarCells.length / 7)} />
+          </SkeletonRegion>
+        ) : (
         <div className="calendar-grid">
           {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => <div key={day} className="weekday-label">{day}</div>)}
           {calendarCells.map((day, index) => {
@@ -2148,9 +2402,20 @@ function AppointmentPage() {
             );
           })}
         </div>
-        <section className="selected-day-panel">
-          <div className="panel-header compact"><h3>{new Date(`${selectedDate}T12:00:00`).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</h3><span>{selectedAppointments.length} {selectedAppointments.length === 1 ? 'appointment' : 'appointments'}</span></div>
-          {selectedAppointments.map((appointment) => (
+        )}
+      </section>
+
+      <section className="panel selected-day-panel">
+          <div className="panel-header compact">
+            <h3>{new Date(`${selectedDate}T12:00:00`).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</h3>
+            {!appointmentsLoading && <span>{selectedAppointments.length} {selectedAppointments.length === 1 ? 'appointment' : 'appointments'}</span>}
+          </div>
+          {appointmentsLoading && (
+            <SkeletonRegion label="Loading the selected day's bookings">
+              <ListSkeleton rows={3} />
+            </SkeletonRegion>
+          )}
+          {!appointmentsLoading && selectedAppointments.map((appointment) => (
             <button type="button" key={appointment.code} className="selected-appointment" onClick={() => setSelectedAppointment(appointment)}>
               <span>
                 <strong>{appointment.customerName || 'Customer'} · {appointment.staffName || 'Staff'}</strong>
@@ -2160,9 +2425,31 @@ function AppointmentPage() {
               <span className={`status-badge ${appointmentStatusBadge(appointment.status)}`}>{appointmentStatusText(appointment.status)}</span>
             </button>
           ))}
-          {selectedAppointments.length === 0 && <p className="empty-list">No appointments scheduled for this date.</p>}
+          {!appointmentsLoading && selectedAppointments.length === 0 && <p className="empty-list">No appointments scheduled for this date.</p>}
           {message && <p className="table-message" role="status">{message}</p>}
-        </section>
+      </section>
+
+      <section className="panel month-trend-panel">
+        <div className="panel-header compact">
+          <h3>Appointments through {month.toLocaleDateString('en-US', { month: 'long' })}</h3>
+          <span>Daily, by status</span>
+        </div>
+        {appointmentsLoading ? (
+          <SkeletonRegion label="Loading the month's appointments">
+            <ChartSkeleton height={190} />
+          </SkeletonRegion>
+        ) : (
+          <LineChart
+            axis={monthAxis}
+            series={monthStatusSeries}
+            unit="appointments"
+            metricName="Appointments"
+            emptyMessage="No appointments are recorded in this month."
+            height={190}
+            area={false}
+          />
+        )}
+        <DataOriginNote>Read from the {month.toLocaleDateString('en-US', { month: 'long' })} appointment records on this page.</DataOriginNote>
       </section>
       {selectedAppointment && (
         <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="appointment-detail-title" onClick={closeAppointmentDetail}>
@@ -2350,7 +2637,7 @@ function PaymentPage() {
                       <td role="cell" data-label="Booking"><span className={`status-badge ${appointmentStatusBadge(String(payment.bookingStatus ?? 'RESERVED'))}`}>{appointmentStatusText(String(payment.bookingStatus ?? 'RESERVED'))}</span></td>
                       <td role="cell" data-label="Payment"><span className={`status-badge ${payment.status === 'VERIFIED' ? 'success' : payment.status === 'REJECTED' ? 'danger' : 'warning'}`}>{payment.status === 'VERIFIED' ? 'Verified' : payment.status === 'REJECTED' ? 'Rejected' : 'Pending'}</span></td>
                       <td className="cell-actions" role="cell" data-label="Action">{payment.status === 'UNVERIFIED'
-                        ? <button type="button" className="payment-action" disabled={!token || !mockApiEnabled} onClick={() => { setSelectedPayment(payment); setVerificationCode(''); setCodeError(''); }}>Verify</button>
+                        ? <button type="button" className="payment-action approve-action" disabled={!token || !mockApiEnabled} onClick={() => { setSelectedPayment(payment); setVerificationCode(''); setCodeError(''); }}>Verify</button>
                         : <span className="payment-date">{payment.verifiedAt ? new Date(payment.verifiedAt).toLocaleDateString() : '—'}</span>}</td>
                     </tr>
                   ))}
@@ -2516,7 +2803,7 @@ function PaymentVerificationPage() {
           {status === 'VERIFIED' && (
             <div className="verify-confirmation-box">
               <p>The code matches this booking. Record this payment as verified?</p>
-              <button type="button" className="primary-action" disabled={busy} onClick={() => updatePaymentStatus('VERIFIED')}>Confirm payment</button>
+              <button type="button" className="approve-action" disabled={busy} onClick={() => updatePaymentStatus('VERIFIED')}>Confirm payment</button>
             </div>
           )}
         </div>
@@ -2828,7 +3115,7 @@ function LoginPage({ onLogin }: { onLogin: (role: AccountRole | null) => void })
       <main className="login-form-panel">
         <div className="login-pane">
           <div className="login-brand-head">
-            <span className="login-monogram" aria-hidden="true">R</span>
+            <span className="login-monogram" aria-hidden="true"><img src="/images/Logo.jpg" alt="" /></span>
             <div className="login-wordmark-block">
               <p className="login-wordmark">ROYALTY</p>
               <p className="login-brand-studio">Hair &amp; Nails Studio</p>

@@ -98,6 +98,10 @@ export const reviewScheduleRequestSchema = z.object({
 export const scheduleRequestResponseSchema = z.object({
   id: z.string().uuid(),
   staffId: z.string().uuid(),
+  /** The display name of the staff member who sent the request. */
+  requesterName: z.string().nullable(),
+  /** The email on the account the request belongs to. */
+  requesterEmail: z.string().nullable(),
   requestedDate: z.string(),
   requestedStartTime: z.string().nullable(),
   requestedEndTime: z.string().nullable(),

@@ -521,6 +521,18 @@ function makeDemoData(): MockData {
         reviewedAt: null,
         createdAt: isoAtOffset(-2),
       },
+      {
+        id: 'bbbbbbbb-0000-4000-8000-000000000002',
+        staffId: staff[1].id,
+        requestedDate: dateAtOffset(9),
+        requestedStartTime: '09:00',
+        requestedEndTime: '13:00',
+        requestType: 'Shift change',
+        reason: 'Covering a late appointment that morning.',
+        status: 'PENDING',
+        reviewedAt: null,
+        createdAt: isoAtOffset(-1),
+      },
     ],
     paymentActivity: [
       { id: 'activity-1', message: 'RS-48212 payment confirmed at the counter.', createdAt: isoAtOffset(0) },
@@ -537,6 +549,31 @@ function readData(): MockData {
     try {
       const data = JSON.parse(saved) as MockData;
       if (!Array.isArray(data.timeOff)) data.timeOff = [];
+      // A dataset stored before the administrator could see who sent a
+      // request gains a second one here, so two requesters can be told
+      // apart. It is added once, by its identifier, so it never appears
+      // twice and never overwrites a request that has since been reviewed.
+      if (!Array.isArray(data.scheduleRequests)) data.scheduleRequests = [];
+      const secondRequestId = 'bbbbbbbb-0000-4000-8000-000000000002';
+      // A dataset that holds no requests at all is left alone: the
+      // administrator may have cleared them, and the empty state is a real
+      // state. Only a dataset that already holds requests gains the second.
+      if (data.scheduleRequests.length > 0
+        && !data.scheduleRequests.some((request) => request.id === secondRequestId)
+        && data.staff[1]) {
+        data.scheduleRequests.push({
+          id: secondRequestId,
+          staffId: data.staff[1].id,
+          requestedDate: dateAtOffset(9),
+          requestedStartTime: '09:00',
+          requestedEndTime: '13:00',
+          requestType: 'Shift change',
+          reason: 'Covering a late appointment that morning.',
+          status: 'PENDING',
+          reviewedAt: null,
+          createdAt: isoAtOffset(-1),
+        });
+      }
       // A dataset stored before staff service assignments existed gains them
       // here, so an existing browser session keeps working.
       if (!Array.isArray(data.staffServices)) {
@@ -764,9 +801,23 @@ export function generateTemporaryPassword(length = 14): string {
  * The API returns the calendar date as a UTC-midnight timestamp, so the mock
  * returns the same shape and the interface is exercised against it.
  */
-function toScheduleRequestInfo(request: MockScheduleRequest) {
+/**
+ * The requester identity, resolved on the server side.
+ *
+ * The request stores the staff profile ID, which is the durable link to the
+ * account that sent it. The name and email are read from that profile and
+ * its account when the request is read, so a renamed staff member still
+ * shows their current name, and a request whose profile has been removed
+ * lists with no requester rather than breaking the whole list.
+ */
+function toScheduleRequestInfo(request: MockScheduleRequest, data: MockData) {
+  const profile = data.staff.find((item) => item.id === request.staffId);
+  const account = profile ? data.accounts.find((item) => item.id === profile.accountId) : undefined;
+  const name = profile ? `${profile.firstName ?? ''} ${profile.lastName ?? ''}`.trim() : '';
   return {
     ...request,
+    requesterName: name || null,
+    requesterEmail: account?.email ?? null,
     requestedDate: `${request.requestedDate}T00:00:00.000Z`,
   };
 }
@@ -936,7 +987,7 @@ function mockRequest(input: RequestInfo | URL, init?: RequestInit): Response {
     if (!member) return errorResponse('No staff profile found for this account.', 404);
     const requests = data.scheduleRequests
       .filter((request) => request.staffId === member.id)
-      .map(toScheduleRequestInfo);
+      .map((request) => toScheduleRequestInfo(request, data));
     return jsonResponse({ data: { scheduleRequests: requests } });
   }
 
@@ -971,7 +1022,7 @@ function mockRequest(input: RequestInfo | URL, init?: RequestInit): Response {
     };
     data.scheduleRequests.unshift(request as never);
     writeData(data);
-    return jsonResponse({ data: { scheduleRequest: toScheduleRequestInfo(request) } }, 201);
+    return jsonResponse({ data: { scheduleRequest: toScheduleRequestInfo(request, data) } }, 201);
   }
 
   if (path === '/services/staff/me/services' && method === 'GET') {
@@ -1195,7 +1246,20 @@ function mockRequest(input: RequestInfo | URL, init?: RequestInit): Response {
     writeData(data);
     return jsonResponse({ data: { staffSchedules: updated } });
   }
-  if (path === '/schedules/requests' && method === 'GET') return jsonResponse({ data: { scheduleRequests: data.scheduleRequests.map(toScheduleRequestInfo) } });
+  if (path === '/schedules/requests' && method === 'GET') return jsonResponse({ data: { scheduleRequests: data.scheduleRequests.map((request) => toScheduleRequestInfo(request, data)) } });
+  if (/^\/schedules\/requests\/[^/]+\/(approve|reject)$/.test(path) && method === 'PATCH') {
+    const denied = requireMockRole(init, 'ADMIN', 'MANAGER');
+    if (denied) return denied;
+    const id = path.split('/')[3];
+    const decision = path.endsWith('/approve') ? 'APPROVED' : 'REJECTED';
+    const request = data.scheduleRequests.find((item) => item.id === id);
+    if (!request) return errorResponse('Schedule request not found.', 404);
+    if (request.status !== 'PENDING') return errorResponse('Only pending requests can be reviewed.', 409);
+    request.status = decision;
+    request.reviewedAt = new Date().toISOString();
+    writeData(data);
+    return jsonResponse({ data: { scheduleRequest: toScheduleRequestInfo(request, data) } });
+  }
 
   if (path === '/appointments' && method === 'GET') {
     const records = [...data.appointments]

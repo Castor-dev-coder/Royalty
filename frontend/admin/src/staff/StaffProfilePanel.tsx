@@ -3,7 +3,8 @@ import { useDialogBehavior } from '../components/useDialogBehavior';
 import {
   EmptyState,
   ErrorState,
-  LoadingState,
+  SkeletonRegion,
+  ListSkeleton,
   Panel,
   formatDate,
 } from '../shared/ui';
@@ -131,7 +132,13 @@ export function StaffProfilePanel() {
     }
   }
 
-  if (loading) return <LoadingState>Loading your profile…</LoadingState>;
+  if (loading) {
+    return (
+      <SkeletonRegion label="Loading your profile">
+        <ListSkeleton rows={5} />
+      </SkeletonRegion>
+    );
+  }
   if (loadError) return <ErrorState>{loadError}</ErrorState>;
   if (!profile) return <ErrorState>No staff profile is linked to this account.</ErrorState>;
 

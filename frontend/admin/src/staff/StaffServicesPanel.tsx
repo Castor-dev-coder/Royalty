@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { EmptyState, ErrorState, LoadingState, Panel, formatMoney } from '../shared/ui';
+import { EmptyState, ErrorState, Panel, SkeletonRegion, TableSkeleton, formatMoney } from '../shared/ui';
 import { staffApi, type StaffServiceInfo } from './staffApi';
 
 /**
@@ -30,7 +30,13 @@ export function StaffServicesPanel() {
     return () => { active = false; };
   }, []);
 
-  if (loading) return <LoadingState>Loading your services…</LoadingState>;
+  if (loading) {
+    return (
+      <SkeletonRegion label="Loading your services">
+        <TableSkeleton rows={3} columns={4} />
+      </SkeletonRegion>
+    );
+  }
   if (loadError) return <ErrorState>{loadError}</ErrorState>;
 
   return (

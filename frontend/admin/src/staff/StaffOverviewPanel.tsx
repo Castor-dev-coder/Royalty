@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   EmptyState,
   ErrorState,
-  LoadingState,
+  SkeletonRegion,
+  StatCardSkeleton,
+  ListSkeleton,
   Panel,
   StatCard,
   StatusBadge,
@@ -65,7 +67,16 @@ export function StaffOverviewPanel() {
     return { today: today, todays, upcoming, completed, next, total: all.length };
   }, [appointments]);
 
-  if (loading) return <LoadingState>Loading your day…</LoadingState>;
+  if (loading) {
+    return (
+      <SkeletonRegion label="Loading your day">
+        <div className="stats-grid four-col">
+          {Array.from({ length: 4 }, (_, index) => <StatCardSkeleton key={index} />)}
+        </div>
+        <ListSkeleton rows={3} />
+      </SkeletonRegion>
+    );
+  }
   if (loadError) return <ErrorState>{loadError}</ErrorState>;
 
   return (
