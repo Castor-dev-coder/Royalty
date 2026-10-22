@@ -3,6 +3,7 @@ import { db } from '../../prisma/db.js';
 import { pgVarchar } from '../../prisma/contract-compat.js';
 import { NotFoundError, ForbiddenError, ConflictError, BadRequestError } from '../../errors/index.js';
 import { generateAuditLog } from '../../utils/audit.js';
+import { GMAIL_MESSAGE, isValidGmail } from '../../utils/validation.js';
 
 export interface AccountProfile {
   id: string;
@@ -161,14 +162,6 @@ export class AccountService {
    * Users can update their own email.
    */
   static async updateOwnProfile(accountId: string, newEmail: string): Promise<AccountProfile> {
-    // Check if email is already taken by another account
-    if (newEmail) {
-      const existing = await db.orm.public.Account.where({ email: pgVarchar<255>(newEmail) }).first();
-      if (existing && existing.id !== accountId) {
-        throw new ConflictError('This email is already in use by another account');
-      }
-    }
-
     const account = await db.orm.public.Account.where({ id: accountId }).first();
     if (!account) {
       throw new NotFoundError('Account not found');
@@ -176,6 +169,22 @@ export class AccountService {
 
     const updateData: Record<string, unknown> = {};
     if (newEmail) {
+      // An address that is being set for the first time has to be a Gmail
+      // address. An address the account already has is left alone, so an
+      // account on another domain is never asked to change it and can
+      // still be saved.
+      const current = String(account.email ?? '').trim().toLowerCase();
+      const next = newEmail.trim().toLowerCase();
+      if (next !== current && !isValidGmail(newEmail)) {
+        throw new BadRequestError(GMAIL_MESSAGE);
+      }
+
+      // Check if email is already taken by another account
+      const existing = await db.orm.public.Account.where({ email: pgVarchar<255>(newEmail) }).first();
+      if (existing && existing.id !== accountId) {
+        throw new ConflictError('This email is already in use by another account');
+      }
+
       updateData.email = newEmail;
     }
 

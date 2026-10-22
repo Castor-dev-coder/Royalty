@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useDialogBehavior } from '../components/useDialogBehavior';
+import { FieldError, invalidField } from '../shared/ui';
+import { isValidFreeText, isValidTimeRange, TIME_RANGE_MESSAGE } from '../shared/validation';
 import {
   EmptyState,
   ErrorState,
@@ -49,6 +51,7 @@ export function StaffSchedulePanel() {
   const [showRequestForm, setShowRequestForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState('');
 
   const closeForm = () => setShowRequestForm(false);
@@ -86,18 +89,26 @@ export function StaffSchedulePanel() {
     const startTime = String(form.get('requestedStartTime') ?? '').trim();
     const endTime = String(form.get('requestedEndTime') ?? '').trim();
 
-    if (!date) {
-      setFormError('Choose a date for the request.');
-      setSubmitting(false);
-      return;
+    // Each field is checked by its own rule, and the message for the field
+    // that is wrong is shown beside it.
+    const errors: Record<string, string> = {};
+    if (!date) errors.requestedDate = 'Choose a date for the request.';
+    if (!requestType) errors.requestType = 'Describe the type of change you are requesting.';
+    else if (requestType.length > 20) errors.requestType = 'Keep the type under 20 characters.';
+    if (startTime && endTime && !isValidTimeRange(startTime, endTime)) {
+      errors.requestedEndTime = TIME_RANGE_MESSAGE;
     }
-    if (!requestType) {
-      setFormError('Describe the type of change you are requesting.');
-      setSubmitting(false);
-      return;
+    if (!isValidFreeText(reason)) {
+      errors.reason = 'The reason contains characters that cannot be stored.';
     }
-    if (startTime && endTime && startTime >= endTime) {
-      setFormError('The end time must be after the start time.');
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      // The form stays open and keeps what was typed.
+      for (const field of ['requestedDate', 'requestType', 'requestedStartTime', 'requestedEndTime', 'reason']) {
+        if (!errors[field]) continue;
+        event.currentTarget.querySelector<HTMLElement>(`[name="${field}"]`)?.focus();
+        break;
+      }
       setSubmitting(false);
       return;
     }
@@ -146,7 +157,6 @@ export function StaffSchedulePanel() {
         <Panel
           title="My Weekly Schedule"
           meta={activeDays.length ? `${activeDays.length} working days` : 'Not scheduled'}
-          className="side-panel"
         >
           {activeDays.length === 0 ? (
             <EmptyState>No recurring schedule is set for you yet.</EmptyState>
@@ -190,7 +200,7 @@ export function StaffSchedulePanel() {
 
       {showRequestForm && (
         <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="schedule-request-title" onClick={closeForm}>
-          <form ref={formRef} className="modal-card" onSubmit={submitRequest} onClick={(event) => event.stopPropagation()}>
+          <form ref={formRef} className="modal-card" onSubmit={submitRequest} onClick={(event) => event.stopPropagation()} noValidate>
             <div className="modal-header">
               <h3 id="schedule-request-title">Request a schedule change</h3>
               <button type="button" className="close-button" aria-label="Close request form" onClick={closeForm}>×</button>
@@ -198,18 +208,35 @@ export function StaffSchedulePanel() {
             <div className="modal-subtitle">A manager reviews every request before it takes effect.</div>
 
             <label className="field-label" htmlFor="request-date">DATE</label>
-            <input id="request-date" name="requestedDate" type="date" className="modal-input" min={earliestDate} required />
+            <input id="request-date" name="requestedDate" type="date" className="modal-input" min={earliestDate} required
+              onChange={() => setFieldErrors((current) => { const next = { ...current }; delete next.requestedDate; return next; })}
+              {...invalidField('request-date-error', fieldErrors.requestedDate)} />
+            <FieldError id="request-date-error" message={fieldErrors.requestedDate} />
 
             <label className="field-label" htmlFor="request-type">TYPE OF CHANGE</label>
-            <input id="request-type" name="requestType" className="modal-input" maxLength={20} placeholder="e.g. Day off" required />
+            <input id="request-type" name="requestType" className="modal-input" maxLength={20} placeholder="e.g. Day off" required
+              onChange={() => setFieldErrors((current) => { const next = { ...current }; delete next.requestType; return next; })}
+              {...invalidField('request-type-error', fieldErrors.requestType)} />
+            <FieldError id="request-type-error" message={fieldErrors.requestType} />
 
             <div className="form-grid">
-              <label className="field-label" htmlFor="request-start">START TIME (OPTIONAL)<input id="request-start" name="requestedStartTime" type="time" className="modal-input" /></label>
-              <label className="field-label" htmlFor="request-end">END TIME (OPTIONAL)<input id="request-end" name="requestedEndTime" type="time" className="modal-input" /></label>
+              <label className="field-label" htmlFor="request-start">START TIME (OPTIONAL)
+                <input id="request-start" name="requestedStartTime" type="time" className="modal-input"
+                  onChange={() => setFieldErrors((current) => { const next = { ...current }; delete next.requestedEndTime; return next; })} />
+              </label>
+              <label className="field-label" htmlFor="request-end">END TIME (OPTIONAL)
+                <input id="request-end" name="requestedEndTime" type="time" className="modal-input"
+                  onChange={() => setFieldErrors((current) => { const next = { ...current }; delete next.requestedEndTime; return next; })}
+                  {...invalidField('request-end-error', fieldErrors.requestedEndTime)} />
+                <FieldError id="request-end-error" message={fieldErrors.requestedEndTime} />
+              </label>
             </div>
 
             <label className="field-label" htmlFor="request-reason">REASON (OPTIONAL)</label>
-            <input id="request-reason" name="reason" className="modal-input" maxLength={500} placeholder="Anything your manager should know" />
+            <input id="request-reason" name="reason" className="modal-input" maxLength={500} placeholder="Anything your manager should know"
+              onChange={() => setFieldErrors((current) => { const next = { ...current }; delete next.reason; return next; })}
+              {...invalidField('request-reason-error', fieldErrors.reason)} />
+            <FieldError id="request-reason-error" message={fieldErrors.reason} />
 
             {formError && <p className="form-error" role="alert">{formError}</p>}
 

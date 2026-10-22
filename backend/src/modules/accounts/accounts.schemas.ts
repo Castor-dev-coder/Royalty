@@ -1,11 +1,13 @@
 import { z } from 'zod';
+import { emailSchema, gmailSchema } from '../../utils/validation.js';
 
 // ============================================================
 // Account schemas
 // ============================================================
 
 export const createAccountSchema = z.object({
-  email: z.string().email().max(255),
+  // A new account is given a Gmail address.
+  email: gmailSchema(),
   password: z.string().min(8).max(100),
   role: z.enum(['ADMIN', 'MANAGER', 'STAFF', 'CUSTOMER']).default('CUSTOMER'),
 });
@@ -19,7 +21,10 @@ export const updateAccountStatusSchema = z.object({
 export type UpdateAccountStatusRequest = z.infer<typeof updateAccountStatusSchema>;
 
 export const updateOwnProfileSchema = z.object({
-  email: z.string().email().max(255).optional(),
+  // The address is checked for shape here. Whether it has to be a Gmail
+  // address depends on whether it is the one the account already has, and
+  // only the service knows that, so the rule lives there.
+  email: emailSchema().optional(),
   // Password is handled separately via change-password endpoint
 });
 

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { amountSchema, durationMinutesSchema, freeTextSchema } from '../../utils/validation.js';
 
 // ============================================================
 // Service schemas
@@ -22,10 +23,10 @@ export type UpdateServiceCategoryRequest = z.infer<typeof updateServiceCategoryS
 // Create service schema
 export const createServiceSchema = z.object({
   categoryId: z.string().uuid(),
-  name: z.string().min(1).max(200),
-  description: z.string().max(500).optional(),
-  price: z.number().positive(),
-  durationMinutes: z.number().int().positive().max(300),
+  name: z.string().trim().min(1).max(200),
+  description: freeTextSchema(500).optional(),
+  price: amountSchema(),
+  durationMinutes: durationMinutesSchema(),
 });
 
 export type CreateServiceRequest = z.infer<typeof createServiceSchema>;
@@ -33,10 +34,10 @@ export type CreateServiceRequest = z.infer<typeof createServiceSchema>;
 // Update service schema (admin can update any field)
 export const updateServiceSchema = z.object({
   categoryId: z.string().uuid().optional(),
-  name: z.string().min(1).max(200).optional(),
-  description: z.string().max(500).nullable().optional(),
-  price: z.number().positive().optional(),
-  durationMinutes: z.number().int().positive().max(300).optional(),
+  name: z.string().trim().min(1).max(200).optional(),
+  description: freeTextSchema(500).nullable().optional(),
+  price: amountSchema().optional(),
+  durationMinutes: durationMinutesSchema().optional(),
   isActive: z.boolean().optional(),
 });
 

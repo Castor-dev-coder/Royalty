@@ -1,12 +1,32 @@
 import { BrowserRouter, Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiFetch, clearAccessTokens, DEMO_STAFF_ACCOUNT, generateTemporaryPassword, getAccessToken, mockApiEnabled, resetMockData, storeAccessTokens } from './api';
+import {
+  accountEmailError,
+  DURATION_MESSAGE,
+  POSITIVE_AMOUNT_MESSAGE,
+  TIME_RANGE_MESSAGE,
+  EMAIL_MESSAGE,
+  isValidAmount,
+  isValidDuration,
+  isValidEmail,
+  isValidPassword,
+  isValidPersonName,
+  isValidPhilippineMobile,
+  isValidTimeRange,
+  PASSWORD_MATCH_MESSAGE,
+  PASSWORD_MESSAGE,
+  personNameMessage,
+  PHONE_MESSAGE,
+  passwordsMatch,
+} from './shared/validation';
 import { ThemeProvider } from './theme';
 import { ThemeSwitch } from './components/ThemeSwitch';
+import { SignOutControl } from './components/SignOutControl';
 import { BrandShowcase } from './components/BrandShowcase';
 import { DemoCredentials } from './components/DemoCredentials';
 import { SidebarStatusPanel } from './components/SidebarStatusPanel';
-import { CalendarSkeleton, ChartSkeleton, ListSkeleton, Skeleton, SkeletonRegion, StatCardSkeleton, TableSkeleton } from './shared/ui';
+import { CalendarSkeleton, ChartSkeleton, FieldError, invalidField, ListSkeleton, Skeleton, SkeletonRegion, StatCardSkeleton, TableSkeleton } from './shared/ui';
 import { CategoryBars, DataOriginNote, LineChart, type LineAxisPoint, type LineSeries } from './components/charts';
 import { AccountsIcon, CalendarIcon, DashboardIcon, PaymentsIcon, StaffIcon } from './components/icons';
 import { useDialogBehavior } from './components/useDialogBehavior';
@@ -531,6 +551,7 @@ function Shell() {
           <SidebarStatusPanel />
           <SignOutControl
             label={mockApiEnabled ? 'Demo Administrator' : 'Signed in'}
+            initials="SA"
             onSignOut={() => {
               clearAccessTokens();
               clearAccountSession();
@@ -990,14 +1011,63 @@ function ServiceEditorModal({ service, categories, onClose, onSave }: {
   const [imagePreview, setImagePreview] = useState(service?.imageUrl ?? '');
   const [fileHint, setFileHint] = useState('');
   const [dragActive, setDragActive] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const dialogRef = useDialogBehavior<HTMLFormElement>(onClose);
 
+  /**
+   * Check the fields of the service editor.
+   *
+   * The price is a peso amount, so it may hold two decimal places and may
+   * not be negative. The duration is a count of whole minutes. The name is
+   * the name of a service, not the name of a person, so the personal-name
+   * rule does not apply to it.
+   */
+  function collectFieldErrors(form: FormData): Record<string, string> {
+    const errors: Record<string, string> = {};
+    const name = String(form.get('name') ?? '').trim();
+    const description = String(form.get('description') ?? '').trim();
+    const price = String(form.get('price') ?? '').trim();
+    const duration = String(form.get('durationMinutes') ?? '').trim();
+    if (!name) errors.name = 'Enter a name for the service.';
+    else if (name.length > 200) errors.name = 'Keep the name under 200 characters.';
+    if (description.length > 500) errors.description = 'Keep the description under 500 characters.';
+    if (!price) errors.price = 'Enter a price.';
+    // The API requires a price above zero, so the field does too.
+    else if (!isValidAmount(price, { allowZero: false })) errors.price = POSITIVE_AMOUNT_MESSAGE;
+    if (!duration) errors.durationMinutes = 'Enter a duration.';
+    else if (!isValidDuration(duration)) errors.durationMinutes = DURATION_MESSAGE;
+    return errors;
+  }
+
+  function recheckField(field: string, form: HTMLFormElement | null) {
+    if (!form) return;
+    if (!Object.prototype.hasOwnProperty.call(fieldErrors, field)) return;
+    const errors = collectFieldErrors(new FormData(form));
+    setFieldErrors((current) => {
+      const next = { ...current };
+      if (errors[field]) next[field] = errors[field];
+      else delete next[field];
+      return next;
+    });
+  }
+
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const errors = collectFieldErrors(form);
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      // The dialog stays open and keeps what was typed.
+      for (const field of ['name', 'description', 'price', 'durationMinutes']) {
+        if (!errors[field]) continue;
+        event.currentTarget.querySelector<HTMLElement>(`[name="${field}"]`)?.focus();
+        break;
+      }
+      return;
+    }
     setBusy(true);
     setError('');
-    const form = new FormData(event.currentTarget);
     try {
       await onSave({
         categoryId: String(form.get('categoryId')),
@@ -1060,7 +1130,7 @@ function ServiceEditorModal({ service, categories, onClose, onSave }: {
 
   return (
     <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="service-editor-title" onClick={onClose}>
-      <form ref={dialogRef} className="modal-card service-modal" onSubmit={submit} onClick={(event) => event.stopPropagation()}>
+      <form ref={dialogRef} className="modal-card service-modal" onSubmit={submit} onClick={(event) => event.stopPropagation()} noValidate>
         <div className="modal-header"><h3 id="service-editor-title">{service ? 'Edit Service' : 'Add Service'}</h3><button type="button" className="close-button" aria-label="Close" onClick={onClose}>×</button></div>
 
         <div className="service-upload-field">
@@ -1095,12 +1165,34 @@ function ServiceEditorModal({ service, categories, onClose, onSave }: {
           )}
         </div>
 
-        <label className="field-label">SERVICE NAME<input className="modal-input" name="name" defaultValue={service?.name ?? ''} required maxLength={200} /></label>
+        <label className="field-label">SERVICE NAME
+          <input className="modal-input" name="name" defaultValue={service?.name ?? ''} required maxLength={200}
+            onBlur={(event) => recheckField('name', event.currentTarget.form)}
+            {...invalidField('service-name-error', fieldErrors.name)} />
+          <FieldError id="service-name-error" message={fieldErrors.name} />
+        </label>
         <label className="field-label">CATEGORY<select className="modal-input" name="categoryId" defaultValue={service?.categoryId ?? categories[0]?.id ?? ''} required>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
-        <label className="field-label">DESCRIPTION<textarea className="modal-input" name="description" defaultValue={service?.description ?? ''} maxLength={500} rows={3} /></label>
+        <label className="field-label">DESCRIPTION
+          <textarea className="modal-input" name="description" defaultValue={service?.description ?? ''} maxLength={500} rows={3}
+            onBlur={(event) => recheckField('description', event.currentTarget.form)}
+            {...invalidField('service-description-error', fieldErrors.description)} />
+          <FieldError id="service-description-error" message={fieldErrors.description} />
+        </label>
         <div className="form-grid">
-          <label className="field-label">PRICE (PHP)<input className="modal-input" name="price" type="number" min="0.01" step="0.01" defaultValue={service?.price ?? ''} required /></label>
-          <label className="field-label">DURATION (MINUTES)<input className="modal-input" name="durationMinutes" type="number" min="1" max="300" step="1" defaultValue={service?.durationMinutes ?? ''} required /></label>
+          <label className="field-label">PRICE (PHP)
+          <input className="modal-input" name="price" type="text" inputMode="decimal" min="0" step="0.01"
+            defaultValue={service?.price ?? ''} required
+            onBlur={(event) => recheckField('price', event.currentTarget.form)}
+            {...invalidField('service-price-error', fieldErrors.price)} />
+          <FieldError id="service-price-error" message={fieldErrors.price} />
+        </label>
+          <label className="field-label">DURATION (MINUTES)
+          <input className="modal-input" name="durationMinutes" type="text" inputMode="numeric" min="1" max="300" step="1"
+            defaultValue={service?.durationMinutes ?? ''} required
+            onBlur={(event) => recheckField('durationMinutes', event.currentTarget.form)}
+            {...invalidField('service-duration-error', fieldErrors.durationMinutes)} />
+          <FieldError id="service-duration-error" message={fieldErrors.durationMinutes} />
+        </label>
         </div>
         {categories.length === 0 && <p className="form-error">Add an active category before creating a service.</p>}
         {error && <p className="form-error" role="alert">{error}</p>}
@@ -1120,11 +1212,24 @@ function CategoryManagerModal({ categories, onClose, onChanged, onOutcome }: {
   const [editingId, setEditingId] = useState('');
   const [editingName, setEditingName] = useState('');
   const [error, setError] = useState('');
+  const [nameError, setNameError] = useState('');
   const [busy, setBusy] = useState(false);
   const dialogRef = useDialogBehavior(onClose);
   async function saveCategory(id?: string) {
     const name = (id ? editingName : newName).trim();
-    if (!name) { setError('Enter a category name.'); return; }
+    // A category is a short label, so it is checked as short text rather
+    // than by any of the rules meant for a person's name.
+    if (!name) {
+      if (id) setError('Enter a category name.');
+      else setNameError('Enter a category name.');
+      return;
+    }
+    if (name.length > 100) {
+      if (id) setError('Keep the category name under 100 characters.');
+      else setNameError('Keep the category name under 100 characters.');
+      return;
+    }
+    setNameError('');
     const token = getAccessToken();
     if (!token) { setError('Sign in with an administrator account to manage categories.'); return; }
     setBusy(true);
@@ -1170,7 +1275,13 @@ function CategoryManagerModal({ categories, onClose, onChanged, onOutcome }: {
     <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="category-manager-title" onClick={onClose}>
       <section ref={dialogRef} className="modal-card service-modal" onClick={(event) => event.stopPropagation()}>
         <div className="modal-header"><h3 id="category-manager-title">Manage Categories</h3><button type="button" className="close-button" aria-label="Close" onClick={onClose}>×</button></div>
-        <div className="category-create-row"><input className="modal-input" aria-label="New category name" placeholder="New category name" value={newName} onChange={(event) => setNewName(event.target.value)} maxLength={100} /><button type="button" className="primary-action" disabled={busy} onClick={() => void saveCategory()}>Add</button></div>
+        <div className="category-create-row">
+          <input className="modal-input" aria-label="New category name" placeholder="New category name" value={newName}
+            onChange={(event) => { setNewName(event.target.value); setNameError(''); }} maxLength={100}
+            {...invalidField('category-new-name-error', nameError)} />
+          <button type="button" className="primary-action" disabled={busy} onClick={() => void saveCategory()}>Add</button>
+        </div>
+        <FieldError id="category-new-name-error" message={nameError} />
         <ul className="category-list">{categories.map((category) => (
           <li key={category.id}>
             {editingId === category.id
@@ -1185,102 +1296,6 @@ function CategoryManagerModal({ categories, onClose, onChanged, onOutcome }: {
   );
 }
 
-function SignOutControl({ label, onSignOut }: { label: string; onSignOut: () => void }) {
-  const [popoverOpen, setPopoverOpen] = useState(false);
-  const [pending, setPending] = useState(false);
-  const [executing, setExecuting] = useState(false);
-  const wrapRef = useRef<HTMLDivElement | null>(null);
-  const confirmRef = useRef<HTMLButtonElement | null>(null);
-  const closeTimer = useRef<number | undefined>(undefined);
-
-  useEffect(() => () => { window.clearTimeout(closeTimer.current); }, []);
-
-  useEffect(() => {
-    if (!pending || executing) return;
-    confirmRef.current?.focus();
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key !== 'Escape') return;
-      setExecuting(false);
-      setPending(false);
-      setPopoverOpen(false);
-    }
-    function onPointerDown(event: PointerEvent) {
-      if (wrapRef.current && !wrapRef.current.contains(event.target as Node)) {
-        setPending(false);
-        setPopoverOpen(false);
-      }
-    }
-    document.addEventListener('keydown', onKeyDown);
-    document.addEventListener('pointerdown', onPointerDown);
-    return () => {
-      document.removeEventListener('keydown', onKeyDown);
-      document.removeEventListener('pointerdown', onPointerDown);
-    };
-  }, [pending, executing]);
-
-  function keepPopoverOpen() { window.clearTimeout(closeTimer.current); setPopoverOpen(true); }
-  function schedulePopoverClose() { closeTimer.current = window.setTimeout(() => setPopoverOpen(false), 180); }
-
-  function requestSignOut() {
-    if (executing) return;
-    setExecuting(true);
-    onSignOut();
-  }
-
-  function handlePrimaryClick() {
-    if (executing) return;
-    if (!pending) {
-      setPending(true);
-      setPopoverOpen(true);
-      return;
-    }
-    requestSignOut();
-  }
-
-  return (
-    <div
-      ref={wrapRef}
-      className={`signout-wrap${pending ? ' pending' : ''}`}
-      onPointerEnter={keepPopoverOpen}
-      onPointerLeave={schedulePopoverClose}
-      onFocus={(event) => { if (event.target instanceof Element && wrapRef.current?.contains(event.target)) keepPopoverOpen(); }}
-      onBlur={(event) => { if (!pending && !event.currentTarget.contains(event.relatedTarget as Node | null)) schedulePopoverClose(); }}
-    >
-      <div className={`signout-popover${pending ? ' pending' : ''}`} role="dialog" aria-label={pending ? 'Confirm sign out' : 'Sign out warning'} hidden={!popoverOpen}>
-        <p className="signout-popover-title">{pending ? 'Are you sure?' : 'Leaving so soon?'}</p>
-        <p className="signout-popover-text">{pending ? "You'll need to sign in again to access your account." : "You'll be signed out of your Royalty account."}</p>
-        {pending && (
-          <div className="signout-popover-actions">
-            <button type="button" className="reject-action" ref={confirmRef} disabled={executing} onClick={requestSignOut}>
-              {executing ? 'Signing out…' : 'Sign Out'}
-            </button>
-            <button
-              type="button"
-              className="secondary-action"
-              onClick={() => { setExecuting(false); setPending(false); setPopoverOpen(false); }}
-            >
-              Cancel
-            </button>
-          </div>
-        )}
-      </div>
-      <button
-        type="button"
-        className="profile-card sidebar-profile"
-        aria-haspopup="dialog"
-        aria-expanded={popoverOpen}
-        aria-label={`${label}. Sign out`}
-        onClick={handlePrimaryClick}
-      >
-        <div className="avatar">SA</div>
-        <div>
-          <strong>{label}</strong>
-          <span>Sign out</span>
-        </div>
-      </button>
-    </div>
-  );
-}
 
 function ConfirmModal({ title, message, confirmLabel, danger, onClose, onConfirm, onError }: {
   title: string;
@@ -1911,6 +1926,7 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
   const [schedule, setSchedule] = useState(normalizeWeeklySchedule());
   const [scheduleError, setScheduleError] = useState('');
   const [savingSchedule, setSavingSchedule] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const dialogRef = useDialogBehavior(onClose);
 
   useEffect(() => {
@@ -1944,13 +1960,60 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
       .catch(() => undefined);
   }, [staff.id]);
 
+  /**
+   * Check the fields of the staff editor.
+   *
+   * A name is checked as a name, the phone number as a Philippine mobile
+   * number, and the role as a short piece of text. The values are checked
+   * whole, so a pasted value is caught as well as a typed one.
+   */
+  function collectFieldErrors(form: FormData): Record<string, string> {
+    const errors: Record<string, string> = {};
+    const firstName = String(form.get('firstName') ?? '').trim();
+    const lastName = String(form.get('lastName') ?? '').trim();
+    const phone = String(form.get('phone') ?? '').trim();
+    const primaryRole = String(form.get('primaryRole') ?? '').trim();
+    if (!firstName) errors.firstName = 'Enter a first name.';
+    else if (!isValidPersonName(firstName)) errors.firstName = personNameMessage(firstName);
+    if (!lastName) errors.lastName = 'Enter a last name.';
+    else if (!isValidPersonName(lastName)) errors.lastName = personNameMessage(lastName);
+    if (phone && !isValidPhilippineMobile(phone)) errors.phone = PHONE_MESSAGE;
+    if (!primaryRole) errors.primaryRole = 'Enter a primary role.';
+    else if (primaryRole.length > 100) errors.primaryRole = 'Keep the role under 100 characters.';
+    return errors;
+  }
+
+  /** Re-check one field, once the reader has left it. */
+  function recheckField(field: string, form: HTMLFormElement | null) {
+    if (!form) return;
+    if (!Object.prototype.hasOwnProperty.call(fieldErrors, field)) return;
+    const errors = collectFieldErrors(new FormData(form));
+    setFieldErrors((current) => {
+      const next = { ...current };
+      if (errors[field]) next[field] = errors[field];
+      else delete next[field];
+      return next;
+    });
+  }
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const errors = collectFieldErrors(form);
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      // The dialog stays open and keeps what was typed.
+      for (const field of ['firstName', 'lastName', 'phone', 'primaryRole']) {
+        if (!errors[field]) continue;
+        event.currentTarget.querySelector<HTMLElement>(`[name="${field}"]`)?.focus();
+        break;
+      }
+      return;
+    }
     const token = getAccessToken();
     if (!token) { setError('Sign in with an administrator account to edit staff.'); return; }
     setSubmitting(true);
     setError('');
-    const form = new FormData(event.currentTarget);
     const lastName = String(form.get('lastName') ?? '').trim();
     try {
       const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/staff/${staff.id}`, {
@@ -1978,8 +2041,8 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
     const token = getAccessToken();
     if (!token) { setError('Sign in with an administrator account to save schedule.'); return; }
     for (const day of schedule) {
-      if (day.enabled && (!day.startTime || !day.endTime || day.startTime >= day.endTime)) {
-        setScheduleError(`${weekDayLabels[day.dayOfWeek - 1]}: Set valid start and end times.`);
+      if (day.enabled && (!day.startTime || !day.endTime || !isValidTimeRange(day.startTime, day.endTime))) {
+        setScheduleError(`${weekDayLabels[day.dayOfWeek - 1]}: Set valid start and end times (start must be before end).`);
         return;
       }
     }
@@ -2046,15 +2109,38 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
           <button type="button" className="close-button" aria-label="Close" onClick={onClose}>×</button>
         </div>
         <div className="staff-edit-content">
-          <form className="staff-account-form" onSubmit={handleSubmit}>
+          <form className="staff-account-form" onSubmit={handleSubmit} noValidate>
             <h4>Staff Account Information</h4>
             <p className="form-hint">{staff.email}</p>
             <div className="form-grid">
-              <label className="field-label">FIRST NAME<input className="modal-input" name="firstName" defaultValue={staff.firstName ?? ''} required maxLength={100} /></label>
-              <label className="field-label">LAST NAME<input className="modal-input" name="lastName" defaultValue={staff.lastName ?? ''} required maxLength={100} /></label>
+              <label className="field-label">FIRST NAME
+                <input className="modal-input" name="firstName" defaultValue={staff.firstName ?? ''} required maxLength={100}
+                  autoComplete="given-name"
+                  onBlur={(event) => recheckField('firstName', event.currentTarget.form)}
+                  {...invalidField('staff-edit-first-name-error', fieldErrors.firstName)} />
+                <FieldError id="staff-edit-first-name-error" message={fieldErrors.firstName} />
+              </label>
+              <label className="field-label">LAST NAME
+                <input className="modal-input" name="lastName" defaultValue={staff.lastName ?? ''} required maxLength={100}
+                  autoComplete="family-name"
+                  onBlur={(event) => recheckField('lastName', event.currentTarget.form)}
+                  {...invalidField('staff-edit-last-name-error', fieldErrors.lastName)} />
+                <FieldError id="staff-edit-last-name-error" message={fieldErrors.lastName} />
+              </label>
             </div>
-            <label className="field-label">PHONE<input className="modal-input" name="phone" type="tel" defaultValue={staff.phone ?? ''} maxLength={30} /></label>
-            <label className="field-label">PRIMARY ROLE<input className="modal-input" name="primaryRole" defaultValue={staff.role} required maxLength={100} /></label>
+            <label className="field-label">PHONE
+              <input className="modal-input" name="phone" type="tel" defaultValue={staff.phone ?? ''} maxLength={30}
+                inputMode="tel" autoComplete="tel"
+                onBlur={(event) => recheckField('phone', event.currentTarget.form)}
+                {...invalidField('staff-edit-phone-error', fieldErrors.phone)} />
+              <FieldError id="staff-edit-phone-error" message={fieldErrors.phone} />
+            </label>
+            <label className="field-label">PRIMARY ROLE
+              <input className="modal-input" name="primaryRole" defaultValue={staff.role} required maxLength={100}
+                onBlur={(event) => recheckField('primaryRole', event.currentTarget.form)}
+                {...invalidField('staff-edit-primary-role-error', fieldErrors.primaryRole)} />
+              <FieldError id="staff-edit-primary-role-error" message={fieldErrors.primaryRole} />
+            </label>
             <div className="form-grid">
               <label className="field-label">EMPLOYMENT TYPE<select className="modal-input" name="employmentType" defaultValue={staff.employment === 'Part Time' ? 'PART_TIME' : 'FULL_TIME'}><option value="FULL_TIME">Full Time</option><option value="PART_TIME">Part Time</option></select></label>
               <label className="field-label">WORK STATUS<select className="modal-input" name="workStatus" defaultValue={staff.status === 'Active' ? 'ON_DUTY' : staff.status === 'On Vacation' ? 'UNAVAILABLE' : 'DAY_OFF'}><option value="ON_DUTY">On Duty</option><option value="DAY_OFF">Day Off</option><option value="UNAVAILABLE">Unavailable</option></select></label>
@@ -2146,9 +2232,10 @@ function TimeOffModal({ entry, onClose, onSave }: {
     const endDate = String(form.get('endDate') ?? '');
     const startTime = String(form.get('startTime') ?? '') || null;
     const endTime = String(form.get('endTime') ?? '') || null;
+    if (!startDate || !endDate) { setError('Enter both the start date and the end date.'); return; }
     if (startDate > endDate) { setError('The end date must be on or after the start date.'); return; }
     if ((startTime === null) !== (endTime === null)) { setError('Enter both start and end times, or leave both blank for all day.'); return; }
-    if (startTime && endTime && startTime >= endTime) { setError('The end time must be later than the start time.'); return; }
+    if (startTime && endTime && !isValidTimeRange(startTime, endTime)) { setError(TIME_RANGE_MESSAGE); return; }
     setBusy(true);
     setError('');
     try {
@@ -2166,7 +2253,7 @@ function TimeOffModal({ entry, onClose, onSave }: {
   }
   return (
     <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="time-off-title" onClick={onClose}>
-      <form ref={dialogRef} className="modal-card service-modal" onSubmit={submit} onClick={(event) => event.stopPropagation()}>
+      <form ref={dialogRef} className="modal-card service-modal" onSubmit={submit} onClick={(event) => event.stopPropagation()} noValidate>
         <div className="modal-header"><h3 id="time-off-title">{entry ? 'Edit Time Off' : 'Add Vacation / Day Off'}</h3><button type="button" className="close-button" aria-label="Close" onClick={onClose}>×</button></div>
         <label className="field-label">TYPE<select className="modal-input" name="type" defaultValue={entry?.type ?? 'VACATION'}><option value="VACATION">Vacation</option><option value="DAY_OFF">Day Off</option></select></label>
         <div className="form-grid">
@@ -2673,7 +2760,7 @@ function PaymentPage() {
               <div><dt>Amount</dt><dd>₱{Number(selectedPayment.amount).toLocaleString()}</dd></div>
               <div><dt>Method</dt><dd>{selectedPayment.paymentMethod}</dd></div>
             </dl>
-            {mockApiEnabled && <label className="field-label payment-code-field">PAYMENT CODE<input className="modal-input" inputMode="numeric" autoComplete="off" maxLength={5} value={verificationCode} onChange={(event) => { setVerificationCode(event.target.value.replace(/\D/g, '').slice(0, 5)); setCodeError(''); }} aria-describedby={codeError ? 'payment-code-error' : undefined} /></label>}
+            {mockApiEnabled && <label className="field-label payment-code-field">PAYMENT CODE<input className="modal-input" inputMode="numeric" autoComplete="off" maxLength={5} value={verificationCode} onChange={(event) => { setVerificationCode(event.target.value.replace(/\D/g, '').slice(0, 5)); setCodeError(''); }} aria-describedby={codeError ? 'payment-code-error' : undefined} aria-invalid={codeError ? true : undefined} /></label>}
             {codeError && <p id="payment-code-error" className="form-error" role="alert">{codeError}</p>}
             <div className="modal-actions">
               <button type="button" className="secondary-action" onClick={() => setSelectedPayment(null)}>Cancel</button>
@@ -2824,10 +2911,61 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
   const [schedule, setSchedule] = useState(normalizeWeeklySchedule());
   const [scheduleError, setScheduleError] = useState('');
   const [copied, setCopied] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const dialogRef = useDialogBehavior<HTMLFormElement>(onClose);
 
   function validatePasswordStrength(value: string): boolean {
-    return /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/.test(value);
+    return isValidPassword(value);
+  }
+
+  /**
+   * Check the fields of this form.
+   *
+   * Each field is checked by its own rule: a name is a name, an address is
+   * an address and a password is a password. The value is checked whole, so
+   * a pasted value is caught as well as a typed one, and the message for
+   * each field is returned with it.
+   */
+  function collectFieldErrors(form: FormData): Record<string, string> {
+    const errors: Record<string, string> = {};
+    const firstName = String(form.get('firstName') ?? '').trim();
+    const lastName = String(form.get('lastName') ?? '').trim();
+    const email = String(form.get('email') ?? '').trim();
+    if (!firstName) errors.firstName = 'Enter a first name.';
+    else if (!isValidPersonName(firstName)) errors.firstName = personNameMessage(firstName);
+    if (!lastName) errors.lastName = 'Enter a last name.';
+    else if (!isValidPersonName(lastName)) errors.lastName = personNameMessage(lastName);
+    // A new account is given a Gmail address.
+    const emailError = accountEmailError(email);
+    if (emailError) errors.email = emailError;
+    if (!password) errors.password = 'Enter a temporary password.';
+    else if (!isValidPassword(password)) errors.password = PASSWORD_MESSAGE;
+    if (!confirmPassword) errors.confirmPassword = 'Repeat the temporary password.';
+    else if (!passwordsMatch(password, confirmPassword)) errors.confirmPassword = PASSWORD_MATCH_MESSAGE;
+    return errors;
+  }
+
+  /** Re-check one field, once the reader has left it. */
+  function recheckField(field: string, form: HTMLFormElement | null) {
+    if (!form) return;
+    if (!Object.prototype.hasOwnProperty.call(fieldErrors, field)) return;
+    const errors = collectFieldErrors(new FormData(form));
+    setFieldErrors((current) => {
+      const next = { ...current };
+      if (errors[field]) next[field] = errors[field];
+      else delete next[field];
+      return next;
+    });
+  }
+
+  /** Show the message for the first field that is not acceptable. */
+  function focusFirstError(errors: Record<string, string>) {
+    const order = ['firstName', 'lastName', 'email', 'password', 'confirmPassword'];
+    for (const field of order) {
+      if (!errors[field]) continue;
+      dialogRef.current?.querySelector<HTMLElement>(`[name="${field}"]`)?.focus();
+      return;
+    }
   }
 
   function generatePassword() {
@@ -2860,7 +2998,7 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
   function validateSchedule(): boolean {
     for (const day of schedule) {
       if (day.enabled) {
-        if (!day.startTime || !day.endTime || day.startTime >= day.endTime) {
+        if (!day.startTime || !day.endTime || !isValidTimeRange(day.startTime, day.endTime)) {
           setScheduleError(`${weekDayLabels[day.dayOfWeek - 1]}: Set valid start and end times (start must be before end).`);
           return false;
         }
@@ -2876,6 +3014,15 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
 
   async function createAccount(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const errors = collectFieldErrors(form);
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      // The form stays open and keeps what was typed, so the reader can
+      // put right the one field that is wrong.
+      focusFirstError(errors);
+      return;
+    }
     if (!mockApiEnabled) {
       setResult({ success: false, title: 'Account not created', message: 'Account provisioning is not available: the configured backend has no administrator account-creation endpoint.' });
       return;
@@ -2895,7 +3042,6 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
     }
     if (!validateSchedule()) return;
     setSubmitting(true);
-    const form = new FormData(event.currentTarget);
     try {
     const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/accounts`, {
       method: 'POST',
@@ -2959,7 +3105,7 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="modal-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="account-creation-title">
-      <form ref={dialogRef} className="modal-card account-creation-modal" onSubmit={createAccount} onClick={(event) => event.stopPropagation()}>
+      <form ref={dialogRef} className="modal-card account-creation-modal" onSubmit={createAccount} onClick={(event) => event.stopPropagation()} noValidate>
         <div className="modal-header">
           <h3 id="account-creation-title">Create Staff / Manager Account</h3>
           <button type="button" className="close-button" aria-label="Close account modal" onClick={onClose}>×</button>
@@ -2969,12 +3115,29 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
         <div className="form-section">
           <h4 className="form-section-title">Account details</h4>
           <div className="form-grid">
-            <label className="field-label" htmlFor="account-first-name">FIRST NAME<input id="account-first-name" name="firstName" className="modal-input" required maxLength={100} /></label>
-            <label className="field-label" htmlFor="account-last-name">LAST NAME<input id="account-last-name" name="lastName" className="modal-input" required maxLength={100} /></label>
+            <label className="field-label" htmlFor="account-first-name">FIRST NAME
+              <input id="account-first-name" name="firstName" className="modal-input" required maxLength={100}
+                autoComplete="given-name"
+                onBlur={(event) => recheckField('firstName', event.currentTarget.form)}
+                {...invalidField('account-first-name-error', fieldErrors.firstName)} />
+              <FieldError id="account-first-name-error" message={fieldErrors.firstName} />
+            </label>
+            <label className="field-label" htmlFor="account-last-name">LAST NAME
+              <input id="account-last-name" name="lastName" className="modal-input" required maxLength={100}
+                autoComplete="family-name"
+                onBlur={(event) => recheckField('lastName', event.currentTarget.form)}
+                {...invalidField('account-last-name-error', fieldErrors.lastName)} />
+              <FieldError id="account-last-name-error" message={fieldErrors.lastName} />
+            </label>
           </div>
 
-          <label className="field-label" htmlFor="account-email">EMAIL ADDRESS</label>
-          <input id="account-email" name="email" className="modal-input" type="email" required />
+          <label className="field-label" htmlFor="account-email">EMAIL ADDRESS
+            <input id="account-email" name="email" className="modal-input" type="email" required
+              autoComplete="email" inputMode="email"
+              onBlur={(event) => recheckField('email', event.currentTarget.form)}
+              {...invalidField('account-email-error', fieldErrors.email)} />
+            <FieldError id="account-email-error" message={fieldErrors.email} />
+          </label>
         </div>
 
         <div className="form-section">
@@ -2983,7 +3146,11 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
           <div>
           <label className="field-label" htmlFor="account-temp-password">TEMPORARY PASSWORD</label>
           <div className="password-input-group">
-            <input id="account-temp-password" className="modal-input" type={showPassword ? 'text' : 'password'} value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} required />
+            <input id="account-temp-password" className="modal-input" type={showPassword ? 'text' : 'password'} value={password}
+              onChange={(event) => { setPassword(event.target.value); setFieldErrors((current) => { const next = { ...current }; delete next.password; return next; }); }}
+              onBlur={(event) => recheckField('password', event.currentTarget.form)}
+              minLength={8} required autoComplete="new-password"
+              {...invalidField('account-temp-password-error', fieldErrors.password)} />
             <button type="button" className="password-toggle" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword} title={showPassword ? 'Hide password' : 'Show password'}>
               {showPassword ? (
                 <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
@@ -2996,7 +3163,11 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
           <div>
           <label className="field-label" htmlFor="account-temp-password-confirm">CONFIRM PASSWORD</label>
           <div className="password-input-group">
-            <input id="account-temp-password-confirm" className="modal-input" type={showConfirmPassword ? 'text' : 'password'} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} minLength={8} required />
+            <input id="account-temp-password-confirm" className="modal-input" type={showConfirmPassword ? 'text' : 'password'} value={confirmPassword}
+              onChange={(event) => { setConfirmPassword(event.target.value); setFieldErrors((current) => { const next = { ...current }; delete next.confirmPassword; return next; }); }}
+              onBlur={(event) => recheckField('confirmPassword', event.currentTarget.form)}
+              minLength={8} required autoComplete="new-password"
+              {...invalidField('account-temp-password-confirm-error', fieldErrors.confirmPassword)} />
           <button type="button" className="password-toggle" onClick={() => setShowConfirmPassword(!showConfirmPassword)} aria-label={showConfirmPassword ? 'Hide password' : 'Show password'} aria-pressed={showConfirmPassword} title={showConfirmPassword ? 'Hide password' : 'Show password'}>
             {showConfirmPassword ? (
               <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
@@ -3005,7 +3176,9 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
             )}
           </button>
         </div>
+          <FieldError id="account-temp-password-error" message={fieldErrors.password} />
           </div>
+          <FieldError id="account-temp-password-confirm-error" message={fieldErrors.confirmPassword} />
           </div>
           <div className="password-helper-row">
             <p className="form-hint">Use at least 8 characters with upper/lowercase, a number, and a special character.</p>
@@ -3081,10 +3254,38 @@ function LoginPage({ onLogin }: { onLogin: (role: AccountRole | null) => void })
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
+  /**
+   * Check the sign-in form.
+   *
+   * The address is checked for shape only. Whether it exists is the
+   * server's business, and no domain is required here: the demo accounts
+   * and the seeded staff accounts do not all share one domain.
+   */
+  function collectFieldErrors(): Record<string, string> {
+    const errors: Record<string, string> = {};
+    const address = email.trim();
+    if (!address) errors.email = 'Enter your email address.';
+    else if (!isValidEmail(address)) errors.email = EMAIL_MESSAGE;
+    if (!password) errors.password = 'Enter your password.';
+    return errors;
+  }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (submitting) return;
+    const errors = collectFieldErrors();
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      const order = ['email', 'password'];
+      for (const field of order) {
+        if (!errors[field]) continue;
+        event.currentTarget.querySelector<HTMLElement>(`#login-${field}`)?.focus();
+        break;
+      }
+      return;
+    }
     setSubmitting(true);
     setError('');
 
@@ -3128,7 +3329,7 @@ function LoginPage({ onLogin }: { onLogin: (role: AccountRole | null) => void })
             <p className="login-lede">Sign in to manage appointments, services, staff schedules and payments for the studio.</p>
           </header>
 
-          <form onSubmit={handleSubmit} className="login-form">
+          <form onSubmit={handleSubmit} className="login-form" noValidate>
             <div className="login-field">
               <label className="login-field-label" htmlFor="login-email">Email Address</label>
               <input
@@ -3136,11 +3337,13 @@ function LoginPage({ onLogin }: { onLogin: (role: AccountRole | null) => void })
                 className="login-input"
                 type="email"
                 value={email}
-                onChange={(e) => { setEmail(e.target.value); setError(''); }}
+                onChange={(e) => { setEmail(e.target.value); setError(''); setFieldErrors((current) => { const next = { ...current }; delete next.email; return next; }); }}
                 autoComplete="username"
                 placeholder="you@royalty.studio"
                 required
+                {...invalidField('login-email-error', fieldErrors.email)}
               />
+              <FieldError id="login-email-error" message={fieldErrors.email} />
             </div>
             <div className="login-field">
               <label className="login-field-label" htmlFor="login-password">Password</label>
@@ -3150,10 +3353,11 @@ function LoginPage({ onLogin }: { onLogin: (role: AccountRole | null) => void })
                   className="login-input"
                   type={showPassword ? 'text' : 'password'}
                   value={password}
-                  onChange={(e) => { setPassword(e.target.value); setError(''); }}
+                  onChange={(e) => { setPassword(e.target.value); setError(''); setFieldErrors((current) => { const next = { ...current }; delete next.password; return next; }); }}
                   autoComplete="current-password"
                   placeholder="Enter your password"
                   required
+                  {...invalidField('login-password-error', fieldErrors.password)}
                 />
                 <button
                   type="button"
@@ -3170,6 +3374,7 @@ function LoginPage({ onLogin }: { onLogin: (role: AccountRole | null) => void })
                   )}
                 </button>
               </div>
+              <FieldError id="login-password-error" message={fieldErrors.password} />
             </div>
             {error && (
               <p className="login-error" role="alert">
@@ -3194,57 +3399,6 @@ function LoginPage({ onLogin }: { onLogin: (role: AccountRole | null) => void })
       </main>
 
       <BrandShowcase />
-    </div>
-  );
-}
-
-function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: () => void }) {
-  const [error, setError] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const dialogRef = useDialogBehavior<HTMLFormElement>(onClose);
-
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setSubmitting(true);
-    setError('');
-    const formData = new FormData(event.currentTarget);
-
-    try {
-      const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
-      const response = await apiFetch(`${baseUrl}/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: formData.get('email'), password: formData.get('password') }),
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.message ?? 'Unable to sign in. Check your credentials and API connection.');
-      storeAccessTokens(payload.data.accessToken, payload.data.refreshToken);
-      onLogin();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Unable to sign in.');
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <div className="modal-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="login-title">
-      <form className="modal-card login-modal" onSubmit={handleSubmit} onClick={(event) => event.stopPropagation()}>
-        <div className="modal-header">
-          <h3 id="login-title">Sign in to Royalty</h3>
-          <button type="button" className="close-button" aria-label="Close sign in" onClick={onClose}>×</button>
-        </div>
-        <label className="field-label" htmlFor="login-email">EMAIL ADDRESS</label>
-        <input className="modal-input" id="login-email" name="email" type="email" autoComplete="username" required />
-        <label className="field-label" htmlFor="login-password">PASSWORD</label>
-        <input className="modal-input" id="login-password" name="password" type="password" autoComplete="current-password" required />
-        {mockApiEnabled && <p className="form-hint">Demo only: admin@seed.royalty.local · RoyaltyDemo2026!</p>}
-        {error && <p className="form-error" role="alert">{error}</p>}
-        <div className="modal-actions">
-          <button type="button" className="secondary-action" onClick={onClose}>Cancel</button>
-          <button type="submit" className="primary-action" disabled={submitting}>{submitting ? 'Signing in…' : 'Sign in'}</button>
-        </div>
-      </form>
     </div>
   );
 }

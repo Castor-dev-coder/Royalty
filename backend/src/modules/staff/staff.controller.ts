@@ -1,7 +1,14 @@
 import { Request, Response, NextFunction } from 'express';
 import { StaffService } from './staff.service.js';
 import { AuthenticatedRequest } from '../../middleware/auth.js';
-import { createStaffSchema, EligibleStaffQuery, updateOwnStaffProfileSchema } from './staff.schemas.js';
+import {
+  createStaffSchema,
+  CreateStaffRequest,
+  EligibleStaffQuery,
+  updateOwnStaffProfileSchema,
+  UpdateOwnStaffProfileRequest,
+  UpdateStaffDetailsRequest,
+} from './staff.schemas.js';
 import { validateRequest } from '../../middleware/validator.js';
 
 export async function listEligibleStaffController(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
@@ -66,7 +73,11 @@ export async function listStaffController(req: AuthenticatedRequest, res: Respon
 // POST /staff - Create staff member (admin/manager only)
 export async function createStaffController(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
   try {
-    const { accountId, firstName, lastName, phone, primaryRole, employmentType, workStatus } = req.body;
+    // The validated body is used, so the name that was trimmed and the
+    // number that was normalised are the ones that are stored.
+    const { accountId, firstName, lastName, phone, primaryRole, employmentType, workStatus } = (req as Request & {
+      validatedData: CreateStaffRequest;
+    }).validatedData;
 
     const staff = await StaffService.create(
       { accountId, firstName, lastName, phone, primaryRole, employmentType, workStatus },
@@ -82,7 +93,7 @@ export async function createStaffController(req: AuthenticatedRequest, res: Resp
 // PATCH /staff/me - Update own staff profile (phone only)
 export async function updateOwnStaffController(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
   try {
-    const { phone } = req.body;
+    const { phone } = (req as Request & { validatedData: UpdateOwnStaffProfileRequest }).validatedData;
 
     const staff = await StaffService.updateOwnProfile(req.user!.userId, { phone });
     res.json({ data: staff });
@@ -95,7 +106,9 @@ export async function updateOwnStaffController(req: AuthenticatedRequest, res: R
 export async function updateStaffController(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
   try {
     const id = String(req.params.id);
-    const { firstName, lastName, phone, primaryRole, employmentType, workStatus } = req.body;
+    const { firstName, lastName, phone, primaryRole, employmentType, workStatus } = (req as Request & {
+      validatedData: UpdateStaffDetailsRequest;
+    }).validatedData;
 
     const staff = await StaffService.updateEmployment(
       id,

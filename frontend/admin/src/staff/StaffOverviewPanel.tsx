@@ -89,7 +89,7 @@ export function StaffOverviewPanel() {
       </div>
 
       <div className="two-col-panel">
-        <Panel title="Today's Bookings" meta={`${summary.todays.length} today`} className="side-panel">
+        <Panel title="Today's Bookings" meta={`${summary.todays.length} today`}>
           {summary.todays.length === 0 ? (
             <EmptyState>No bookings are scheduled for today.</EmptyState>
           ) : (
@@ -142,11 +142,11 @@ export function StaffOverviewPanel() {
         </Panel>
       </div>
 
-      <Panel title="Services I Can Perform" meta={`${(services ?? []).length} assigned`} className="side-panel">
+      <Panel title="Services I Can Perform" meta={`${(services ?? []).length} assigned`}>
         {(services ?? []).length === 0 ? (
           <EmptyState>No services are assigned to you yet.</EmptyState>
         ) : (
-          <ul className="summary-list">
+          <ul className="summary-list staff-services-list">
             {(services ?? []).map((service) => (
               <li key={service.id}>
                 <span>

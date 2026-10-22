@@ -49,7 +49,7 @@ export function StaffServicesPanel() {
         <EmptyState>No services are assigned to you yet. A manager assigns services to staff members.</EmptyState>
       ) : (
         <div className="table-scroll">
-          <table role="table" className="responsive-table">
+          <table role="table" className="responsive-table staff-services-table">
             <thead role="rowgroup">
               <tr role="row">
                 <th role="columnheader" scope="col">Service</th>

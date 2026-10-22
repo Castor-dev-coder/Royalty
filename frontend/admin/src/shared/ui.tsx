@@ -30,6 +30,30 @@ export function appointmentStatusText(status: string): string {
   return APPOINTMENT_STATUS_TEXT[status] ?? String(status).replace('_', ' ').toLowerCase();
 }
 
+/**
+ * The message shown under a field that will not accept what was typed.
+ *
+ * The message is a sentence that says how to fix the problem, not a red
+ * border on its own. It is linked to the field with `aria-describedby` and
+ * announced as an alert, so a screen reader reads it when it appears.
+ */
+export function FieldError({ id, message }: { id: string; message?: string }) {
+  if (!message) return null;
+  return <p className="field-error" id={id} role="alert">{message}</p>;
+}
+
+/**
+ * The attributes a field carries when it holds something that will not be
+ * accepted. The message is linked to the field, and the field is marked
+ * invalid for assistive technology.
+ */
+export function invalidField(id: string, message?: string) {
+  return {
+    'aria-invalid': message ? (true as const) : undefined,
+    'aria-describedby': message ? id : undefined,
+  };
+}
+
 export function appointmentStatusBadge(status: string): string {
   return APPOINTMENT_STATUS_BADGE[status] ?? 'status-noshow';
 }

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { personNameSchema, philippineMobileSchema } from '../../utils/validation.js';
 
 const serviceIdsSchema = z.array(z.string().uuid()).min(1).max(10).refine(
   (ids) => new Set(ids).size === ids.length,
@@ -17,9 +18,9 @@ export type EligibleStaffQuery = z.infer<typeof eligibleStaffQuerySchema>;
 
 export const createStaffSchema = z.object({
   accountId: z.string().uuid(),
-  firstName: z.string().min(1).max(100),
-  lastName: z.string().min(1).max(100),
-  phone: z.string().max(30).optional(),
+  firstName: personNameSchema(),
+  lastName: personNameSchema(true),
+  phone: philippineMobileSchema(),
   primaryRole: z.string().min(1).max(100),
   employmentType: z.enum(['FULL_TIME', 'PART_TIME']),
   workStatus: z.enum(['ON_DUTY', 'DAY_OFF', 'UNAVAILABLE']).default('DAY_OFF'),
@@ -29,7 +30,7 @@ export type CreateStaffRequest = z.infer<typeof createStaffSchema>;
 
 // Staff can update their own phone
 export const updateOwnStaffProfileSchema = z.object({
-  phone: z.string().max(30).optional(),
+  phone: philippineMobileSchema(),
 });
 
 export type UpdateOwnStaffProfileRequest = z.infer<typeof updateOwnStaffProfileSchema>;
@@ -45,9 +46,9 @@ export type UpdateStaffEmploymentRequest = z.infer<typeof updateStaffEmploymentS
 
 // Combined update schema for admin/manager (all fields except accountId and sensitive fields)
 export const updateStaffDetailsSchema = z.object({
-  firstName: z.string().min(1).max(100).optional(),
-  lastName: z.string().min(1).max(100).optional(),
-  phone: z.string().max(30).optional(),
+  firstName: personNameSchema().optional(),
+  lastName: personNameSchema(true).optional(),
+  phone: philippineMobileSchema(),
   primaryRole: z.string().min(1).max(100).optional(),
   employmentType: z.enum(['FULL_TIME', 'PART_TIME']).optional(),
   workStatus: z.enum(['ON_DUTY', 'DAY_OFF', 'UNAVAILABLE']).optional(),

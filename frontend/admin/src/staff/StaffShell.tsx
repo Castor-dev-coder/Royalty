@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { clearAccessTokens, getAccessToken } from '../api';
 import { ThemeSwitch } from '../components/ThemeSwitch';
 import { CalendarIcon, DashboardIcon, ServicesIcon, StaffIcon, UserIcon } from '../components/icons';
-import { useDialogBehavior } from '../components/useDialogBehavior';
+import { SignOutControl } from '../components/SignOutControl';
 import { clearAccountSession } from '../session';
 import { StaffSignIn } from './StaffSignIn';
 
@@ -115,7 +115,20 @@ export function StaffShell() {
               </NavLink>
             ))}
           </nav>
-          <StaffSignOut />
+          <SignOutControl
+            label="Staff member"
+            initials="ST"
+            onSignOut={() => {
+              clearAccessTokens();
+              clearAccountSession();
+              setIsAuthenticated(false);
+              // Sign out to the administrator sign-in, which shows both the
+              // administrator and the staff demo accounts. Sending the visitor
+              // to the staff page here would hide the administrator
+              // credentials behind a staff-only screen.
+              window.location.assign('/');
+            }}
+          />
         </aside>
 
         <main className="content-panel">
@@ -130,87 +143,11 @@ export function StaffShell() {
             </div>
           </section>
 
-          <div className="route-content">
+          <div className="route-content staff-content">
             <Outlet />
           </div>
         </main>
       </div>
-    </div>
-  );
-}
-
-function StaffSignOut() {
-  const [popoverOpen, setPopoverOpen] = useState(false);
-  const [pending, setPending] = useState(false);
-  const wrapRef = useRef<HTMLDivElement | null>(null);
-  const confirmRef = useRef<HTMLButtonElement | null>(null);
-  const popoverRef = useDialogBehavior<HTMLDivElement>(() => {
-    setPopoverOpen(false);
-    setPending(false);
-  }, popoverOpen);
-
-  useEffect(() => {
-    if (!pending) return;
-    confirmRef.current?.focus();
-    function onPointerDown(event: PointerEvent) {
-      if (wrapRef.current && !wrapRef.current.contains(event.target as Node)) {
-        setPending(false);
-      }
-    }
-    document.addEventListener('pointerdown', onPointerDown);
-    return () => document.removeEventListener('pointerdown', onPointerDown);
-  }, [pending]);
-
-  function signOut() {
-    clearAccessTokens();
-    clearAccountSession();
-    // Sign out to the administrator sign-in, which shows both the
-    // administrator and the staff demo accounts. Sending the visitor to the
-    // staff page here would hide the administrator credentials behind a
-    // staff-only screen.
-    window.location.assign('/');
-  }
-
-  return (
-    <div ref={wrapRef} className={`signout-wrap${pending ? ' pending' : ''}`}>
-      <div
-        ref={popoverRef}
-        className={`signout-popover${pending ? ' pending' : ''}`}
-        role="dialog"
-        aria-label={pending ? 'Confirm sign out' : 'Sign out warning'}
-        hidden={!popoverOpen}
-      >
-        <p className="signout-popover-title">{pending ? 'Are you sure?' : 'Leaving so soon?'}</p>
-        <p className="signout-popover-text">
-          {pending ? "You'll need to sign in again to access your account." : "You'll be signed out of your Royalty account."}
-        </p>
-        {pending && (
-          <div className="signout-popover-actions">
-            <button type="button" className="reject-action" ref={confirmRef} onClick={signOut}>Sign Out</button>
-            <button type="button" className="secondary-action" onClick={() => { setPending(false); setPopoverOpen(false); }}>Cancel</button>
-          </div>
-        )}
-      </div>
-      <button
-        type="button"
-        className="profile-card sidebar-profile"
-        aria-haspopup="dialog"
-        aria-expanded={popoverOpen}
-        aria-label="Signed in. Sign out"
-        onClick={() => {
-          if (!popoverOpen) {
-            setPopoverOpen(true);
-            return;
-          }
-          setPending(true);
-        }}
-      >
-        <div className="avatar">ST</div>
-        <div>
-          <strong>Staff member</strong>
-          <span>Sign out</span>
-        </div>
-      </button>
     </div>
   );
 }

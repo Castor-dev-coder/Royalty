@@ -1,7 +1,12 @@
 import { Request, Response, NextFunction } from 'express';
 import { AccountService } from './accounts.service.js';
 import { AuthenticatedRequest } from '../../middleware/auth.js';
-import { updateAccountStatusSchema, updateOwnProfileSchema, changePasswordSchema } from './accounts.schemas.js';
+import {
+  changePasswordSchema,
+  updateAccountStatusSchema,
+  updateOwnProfileSchema,
+  UpdateOwnProfileRequest,
+} from './accounts.schemas.js';
 import { validateRequest } from '../../middleware/validator.js';
 
 // GET /accounts/:id - Get account by ID
@@ -59,9 +64,11 @@ export async function updateAccountStatusController(req: AuthenticatedRequest, r
 // PATCH /accounts/me - Update own profile
 export async function updateOwnProfileController(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
   try {
-    const { email } = req.body;
+    // The validated body is used, so the address that was checked is the
+    // address that is stored.
+    const { email } = (req as Request & { validatedData: UpdateOwnProfileRequest }).validatedData;
 
-    const account = await AccountService.updateOwnProfile(req.user!.userId, email);
+    const account = await AccountService.updateOwnProfile(req.user!.userId, email ?? '');
     res.json({ data: account });
   } catch (error) {
     next(error);

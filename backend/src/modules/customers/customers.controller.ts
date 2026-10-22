@@ -1,7 +1,12 @@
 import { Request, Response, NextFunction } from 'express';
 import { CustomerService } from './customers.service.js';
 import { AuthenticatedRequest } from '../../middleware/auth.js';
-import { createCustomerSchema, updateCustomerSchema } from './customers.schemas.js';
+import {
+  createCustomerSchema,
+  CreateCustomerRequest,
+  updateCustomerSchema,
+  UpdateCustomerRequest,
+} from './customers.schemas.js';
 import { validateRequest } from '../../middleware/validator.js';
 
 // GET /customers/:id - Get customer by ID
@@ -56,7 +61,11 @@ export async function listCustomersController(req: AuthenticatedRequest, res: Re
 // POST /customers - Create customer (admin only)
 export async function createCustomerController(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
   try {
-    const { accountId, firstName, lastName, gender, phone } = req.body;
+    // The validated body is used, so the name that was trimmed and the
+    // number that was normalised are the ones that are stored.
+    const { accountId, firstName, lastName, gender, phone } = (req as Request & {
+      validatedData: CreateCustomerRequest;
+    }).validatedData;
 
     const customer = await CustomerService.create(
       { accountId, firstName, lastName, gender, phone },
@@ -74,7 +83,9 @@ export async function createCustomerController(req: AuthenticatedRequest, res: R
 export async function updateCustomerController(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
   try {
     const id = String(req.params.id);
-    const { firstName, lastName, gender, phone } = req.body;
+    const { firstName, lastName, gender, phone } = (req as Request & {
+      validatedData: UpdateCustomerRequest;
+    }).validatedData;
 
     const customer = await CustomerService.update(
       id,

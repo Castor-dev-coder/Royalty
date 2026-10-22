@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { personNameSchema, philippineMobileSchema } from '../../utils/validation.js';
 
 // ============================================================
 // Customer schemas
@@ -6,19 +7,19 @@ import { z } from 'zod';
 
 export const createCustomerSchema = z.object({
   accountId: z.string().uuid(),
-  firstName: z.string().min(1).max(100),
-  lastName: z.string().min(1).max(100),
+  firstName: personNameSchema(),
+  lastName: personNameSchema(true),
   gender: z.string().max(30).optional(),
-  phone: z.string().max(30).optional(),
+  phone: philippineMobileSchema(),
 });
 
 export type CreateCustomerRequest = z.infer<typeof createCustomerSchema>;
 
 export const updateCustomerSchema = z.object({
-  firstName: z.string().min(1).max(100).optional(),
-  lastName: z.string().min(1).max(100).optional(),
+  firstName: personNameSchema().optional(),
+  lastName: personNameSchema(true).optional(),
   gender: z.string().max(30).optional(),
-  phone: z.string().max(30).optional(),
+  phone: philippineMobileSchema(),
 });
 
 export type UpdateCustomerRequest = z.infer<typeof updateCustomerSchema>;

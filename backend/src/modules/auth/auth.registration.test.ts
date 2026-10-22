@@ -8,8 +8,10 @@ process.env.JWT_SECRET ??= randomBytes(32).toString('hex');
 process.env.JWT_REFRESH_SECRET ??= randomBytes(32).toString('hex');
 const { AuthService } = await import('./auth.service.js');
 
+// A new account is given a Gmail address, so the registration fixture
+// uses one. The accounts that already exist keep the addresses they have.
 const registration = {
-  email: 'customer@example.com',
+  email: 'customer@gmail.com',
   password: 'correct-horse-battery',
   firstName: 'Riley',
   lastName: 'Customer',

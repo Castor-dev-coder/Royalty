@@ -1,22 +1,32 @@
 import { z } from 'zod';
+import {
+  emailSchema,
+  gmailSchema,
+  personNameSchema,
+  philippineMobileSchema,
+} from '../utils/validation.js';
 
 // ============================================================
 // Auth schemas
 // ============================================================
 
 export const registerSchema = z.object({
-  email: z.string().email().max(255),
+  // A new account is given a Gmail address.
+  email: gmailSchema(),
   password: z.string().min(8).max(100),
-  firstName: z.string().trim().min(1).max(100),
-  lastName: z.string().trim().min(1).max(100),
+  firstName: personNameSchema(),
+  lastName: personNameSchema(true),
   gender: z.string().max(30).optional(),
-  phone: z.string().max(30).optional(),
+  phone: philippineMobileSchema(),
 });
 
 export type RegisterRequest = z.infer<typeof registerSchema>;
 
 export const loginSchema = z.object({
-  email: z.string().email().max(255),
+  // Signing in accepts any address. The seeded, demo and test accounts do
+  // not all share one domain, and an account is never asked to change its
+  // address just to be able to sign in.
+  email: emailSchema(),
   password: z.string().min(1),
 });
 
@@ -33,7 +43,8 @@ export type RefreshTokenRequest = z.infer<typeof refreshTokenSchema>;
 // ============================================================
 
 export const createAccountSchema = z.object({
-  email: z.string().email().max(255),
+  // A new account is given a Gmail address.
+  email: gmailSchema(),
   password: z.string().min(8).max(100),
   role: z.enum(['ADMIN', 'MANAGER', 'STAFF', 'CUSTOMER']).default('CUSTOMER'),
 });
@@ -52,19 +63,19 @@ export type UpdateAccountStatusRequest = z.infer<typeof updateAccountStatusSchem
 
 export const createCustomerSchema = z.object({
   accountId: z.string().uuid(),
-  firstName: z.string().min(1).max(100),
-  lastName: z.string().min(1).max(100),
+  firstName: personNameSchema(),
+  lastName: personNameSchema(true),
   gender: z.string().max(30).optional(),
-  phone: z.string().max(30).optional(),
+  phone: philippineMobileSchema(),
 });
 
 export type CreateCustomerRequest = z.infer<typeof createCustomerSchema>;
 
 export const updateCustomerSchema = z.object({
-  firstName: z.string().min(1).max(100).optional(),
-  lastName: z.string().min(1).max(100).optional(),
+  firstName: personNameSchema().optional(),
+  lastName: personNameSchema(true).optional(),
   gender: z.string().max(30).optional(),
-  phone: z.string().max(30).optional(),
+  phone: philippineMobileSchema(),
 });
 
 export type UpdateCustomerRequest = z.infer<typeof updateCustomerSchema>;
@@ -75,9 +86,9 @@ export type UpdateCustomerRequest = z.infer<typeof updateCustomerSchema>;
 
 export const createStaffSchema = z.object({
   accountId: z.string().uuid(),
-  firstName: z.string().min(1).max(100),
-  lastName: z.string().min(1).max(100),
-  phone: z.string().max(30).optional(),
+  firstName: personNameSchema(),
+  lastName: personNameSchema(true),
+  phone: philippineMobileSchema(),
   primaryRole: z.string().min(1).max(100),
   employmentType: z.enum(['FULL_TIME', 'PART_TIME']),
   workStatus: z.enum(['ON_DUTY', 'DAY_OFF', 'UNAVAILABLE']).default('DAY_OFF'),
@@ -86,9 +97,9 @@ export const createStaffSchema = z.object({
 export type CreateStaffRequest = z.infer<typeof createStaffSchema>;
 
 export const updateStaffSchema = z.object({
-  firstName: z.string().min(1).max(100).optional(),
-  lastName: z.string().min(1).max(100).optional(),
-  phone: z.string().max(30).optional(),
+  firstName: personNameSchema().optional(),
+  lastName: personNameSchema(true).optional(),
+  phone: philippineMobileSchema(),
   primaryRole: z.string().min(1).max(100).optional(),
   employmentType: z.enum(['FULL_TIME', 'PART_TIME']).optional(),
   workStatus: z.enum(['ON_DUTY', 'DAY_OFF', 'UNAVAILABLE']).optional(),

@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { apiFetch, mockApiEnabled, storeAccessTokens } from '../api';
+import { FieldError, invalidField } from '../shared/ui';
+import { EMAIL_MESSAGE, isValidEmail } from '../shared/validation';
 import { BrandShowcase } from '../components/BrandShowcase';
 import { DemoCredentials } from '../components/DemoCredentials';
 import { readLoginSession, storeAccountSession } from '../session';
@@ -18,10 +20,26 @@ export function StaffSignIn({ onSignedIn }: { onSignedIn: () => void }) {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (submitting) return;
+    // The address is checked for shape only. The staff accounts do not all
+    // share one domain, so no domain is required here.
+    const errors: Record<string, string> = {};
+    if (!email.trim()) errors.email = 'Enter your email address.';
+    else if (!isValidEmail(email.trim())) errors.email = EMAIL_MESSAGE;
+    if (!password) errors.password = 'Enter your password.';
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      for (const field of ['email', 'password']) {
+        if (!errors[field]) continue;
+        event.currentTarget.querySelector<HTMLElement>(`#staff-login-${field}`)?.focus();
+        break;
+      }
+      return;
+    }
     setSubmitting(true);
     setError('');
 
@@ -62,7 +80,7 @@ export function StaffSignIn({ onSignedIn }: { onSignedIn: () => void }) {
             <p className="login-lede">Sign in to see your bookings, your schedule and the services you can perform.</p>
           </header>
 
-          <form onSubmit={handleSubmit} className="login-form">
+          <form onSubmit={handleSubmit} className="login-form" noValidate>
             <div className="login-field">
               <label className="login-field-label" htmlFor="staff-login-email">Email Address</label>
               <input
@@ -70,11 +88,13 @@ export function StaffSignIn({ onSignedIn }: { onSignedIn: () => void }) {
                 className="login-input"
                 type="email"
                 value={email}
-                onChange={(event) => { setEmail(event.target.value); setError(''); }}
+                onChange={(event) => { setEmail(event.target.value); setError(''); setFieldErrors((current) => { const next = { ...current }; delete next.email; return next; }); }}
                 autoComplete="username"
                 placeholder="you@royalty.studio"
                 required
+                {...invalidField('staff-login-email-error', fieldErrors.email)}
               />
+              <FieldError id="staff-login-email-error" message={fieldErrors.email} />
             </div>
             <div className="login-field">
               <label className="login-field-label" htmlFor="staff-login-password">Password</label>
@@ -84,10 +104,11 @@ export function StaffSignIn({ onSignedIn }: { onSignedIn: () => void }) {
                   className="login-input"
                   type={showPassword ? 'text' : 'password'}
                   value={password}
-                  onChange={(event) => { setPassword(event.target.value); setError(''); }}
+                  onChange={(event) => { setPassword(event.target.value); setError(''); setFieldErrors((current) => { const next = { ...current }; delete next.password; return next; }); }}
                   autoComplete="current-password"
                   placeholder="Enter your password"
                   required
+                  {...invalidField('staff-login-password-error', fieldErrors.password)}
                 />
                 <button
                   type="button"
@@ -104,6 +125,7 @@ export function StaffSignIn({ onSignedIn }: { onSignedIn: () => void }) {
                   )}
                 </button>
               </div>
+              <FieldError id="staff-login-password-error" message={fieldErrors.password} />
             </div>
             {error && (
               <p className="login-error" role="alert">

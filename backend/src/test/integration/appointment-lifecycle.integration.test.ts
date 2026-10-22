@@ -9,7 +9,10 @@ import { cleanupTestRecords } from './helpers/cleanup.js';
 import { pgVarchar } from '../../prisma/contract-compat.js';
 import { db } from '../../prisma/db.js';
 
-const TEST_EMAIL = 'test-customer-batch5d@test.royalty.local';
+// A new account is given a Gmail address, so the customer this test
+// registers through the public endpoint uses one. The seeded accounts keep
+// the addresses they have.
+const TEST_EMAIL = 'test-customer-batch5d@gmail.com';
 const TEST_PASSWORD = 'TestPassword123!';
 const SEED_STAFF_ID = '33333333-0000-4000-8000-000000000001';
 const SEED_SERVICE_IDS = [

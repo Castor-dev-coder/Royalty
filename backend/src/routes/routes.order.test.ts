@@ -6,12 +6,20 @@ import type { NextFunction, Response } from 'express';
 process.env.JWT_SECRET ??= randomBytes(32).toString('hex');
 process.env.JWT_REFRESH_SECRET ??= randomBytes(32).toString('hex');
 
-const [{ staffRouter }, { schedulesRouter }, { servicesRouter }, { StaffService }, { updateOwnStaffController }] = await Promise.all([
+const [
+  { staffRouter },
+  { schedulesRouter },
+  { servicesRouter },
+  { StaffService },
+  { updateOwnStaffController },
+  { updateOwnStaffProfileSchema },
+] = await Promise.all([
   import('./staff.js'),
   import('./schedules.js'),
   import('./services.js'),
   import('../modules/staff/staff.service.js'),
   import('../modules/staff/staff.controller.js'),
+  import('../modules/staff/staff.schemas.js'),
 ]);
 
 interface RouterLayer {
@@ -47,7 +55,7 @@ test('PATCH /staff/me updates the authenticated account profile without a route 
     accountId,
     firstName: 'Riley',
     lastName: 'Staff',
-    phone: '555-0100',
+    phone: '09175551100',
     primaryRole: 'Stylist',
     employmentType: 'FULL_TIME' as const,
     workStatus: 'ON_DUTY' as const,
@@ -65,7 +73,10 @@ test('PATCH /staff/me updates the authenticated account profile without a route 
   let forwardedError: unknown;
   const req = {
     params: {},
-    body: { phone: '555-0101' },
+    body: { phone: '0917-555-1101' },
+    // The middleware validates the body and puts the result here, so the
+    // controller reads the checked number rather than the raw one.
+    validatedData: updateOwnStaffProfileSchema.parse({ phone: '0917-555-1101' }),
     user: { userId: accountId, email: 'staff@example.com', role: 'STAFF' },
   };
   const res = { json(value: unknown) { response = value; return this; } };
@@ -75,5 +86,6 @@ test('PATCH /staff/me updates the authenticated account profile without a route 
 
   assert.equal(forwardedError, undefined);
   assert.equal(receivedAccountId, accountId);
-  assert.deepEqual(response, { data: { ...staff, phone: '555-0101' } });
+  // The number is stored in one form, whatever way it was written.
+  assert.deepEqual(response, { data: { ...staff, phone: '09175551101' } });
 });

@@ -527,6 +527,16 @@ small { font-size: var(--text-2xs); line-height: var(--leading-snug); }
 .summary-list li:last-child { border-bottom: none; padding-bottom: 0; }
 .summary-list span { color: var(--text-secondary); font-size: 0.8rem; }
 .summary-list strong { font-size: 0.96rem; color: var(--text-primary); }
+/* The detail beneath a summary line is a second line of its own, rather
+   than more text running on from the first. The request type already sets
+   itself as a block, so it keeps its own colour. */
+.summary-list small:not(.request-type) {
+  display: block;
+  margin-top: var(--space-1);
+  color: var(--text-secondary);
+  font-size: var(--text-2xs);
+  line-height: var(--leading-snug);
+}
 
 /* Service popularity list */
 .service-list { display: grid; gap: var(--space-3); }
@@ -889,7 +899,10 @@ tbody tr:hover td { background: var(--surface-hover); }
 .tab-group button:hover { background: var(--surface-hover); color: var(--text-primary); }
 .tab-group button.active { background: var(--accent); color: var(--text-on-accent); }
 .tab-group button span { min-width: 19px; padding: 1px 5px; border-radius: var(--radius-pill); background: var(--surface-sunken); text-align: center; font-size: var(--text-2xs); color: var(--text-secondary); }
-.tab-group button.active span { background: var(--accent-soft); color: var(--text-on-accent); }
+/* The count badge on the active tab has its own soft surface, so it needs a
+   colour that reads against that surface. The text colour for the solid tab
+   was used here, which left the number almost invisible in the dark theme. */
+.tab-group button.active span { background: var(--accent-soft); color: var(--accent-text); }
 .payment-tabs .search-input { min-width: min(310px, 100%); }
 .payment-table-scroll { width: 100%; overflow-x: auto; }
 .payment-table-scroll table { min-width: 770px; margin-top: 10px; }
@@ -961,6 +974,10 @@ tbody tr:hover td { background: var(--surface-hover); }
   padding: var(--space-5) 0 0;
 }
 .staff-account-form { grid-column: 1; grid-row: 1; }
+/* The action row sits inside a column of the two-column editor, not across
+   the whole dialog. The modal's full-bleed margin would push it into the
+   neighbouring panel, so it keeps the width of its own column here. */
+.staff-account-form .modal-actions { margin-left: 0; margin-right: 0; }
 .time-off-panel { grid-column: 2; grid-row: 1; }
 /* The weekly rules take a row of their own. Seven days side by side need
    the full width of the dialog, because a native time control is about
@@ -994,9 +1011,15 @@ tbody tr:hover td { background: var(--surface-hover); }
 textarea.modal-input { line-height: 1.55; }
 .modal-actions {
   position: sticky; bottom: 0; z-index: 2;
-  display: flex; justify-content: flex-end; align-items: center; gap: var(--space-3);
+  display: flex; justify-content: flex-end; align-items: center;
+  /* The buttons are separated from each other, and the row wraps rather
+     than pushing them out of a narrow dialog. */
+  gap: var(--space-3); row-gap: var(--space-2);
+  flex-wrap: wrap;
   margin: var(--space-5) calc(var(--modal-gutter) * -1) 0;
-  padding: var(--space-3) var(--modal-gutter) var(--space-4);
+  /* Room above the buttons, at the sides, and under them, so nothing sits
+     against the edge of the dialog or against the rule above it. */
+  padding: var(--space-4) var(--modal-gutter) var(--space-5);
   background: var(--surface-base);
   border-top: 1px solid var(--border);
 }
@@ -1007,6 +1030,15 @@ textarea.modal-input { line-height: 1.55; }
   line-height: var(--leading-snug);}
 .form-hint { color: var(--text-muted); font-size: var(--text-sm);
   line-height: var(--leading-snug);}
+/* The message under a field that will not accept what was typed. It sits
+   close to the field it belongs to, and it says how to put it right. */
+.field-error { color: var(--danger-text); font-size: var(--text-2xs); margin: var(--space-1) 0 0; line-height: var(--leading-snug); }
+/* A field that holds something invalid is marked as well as coloured, so
+   the state is not carried by the colour alone. */
+.modal-input[aria-invalid='true'], .login-input[aria-invalid='true'] {
+  border-color: var(--danger-border);
+  background: var(--danger-soft);
+}
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
 /* A form's parts are grouped under a heading, so the dialog reads as a few
    short sections rather than one long list of fields. */
@@ -1276,7 +1308,6 @@ textarea.modal-input { line-height: 1.55; }
   color: inherit;
   -webkit-text-fill-color: currentColor;
 }
-
 
 /* ==========================================================================
    Login screen
@@ -1720,7 +1751,7 @@ textarea.modal-input { line-height: 1.55; }
   .modal-actions { flex-direction: column; align-items: stretch;
   gap: var(--space-3);
   margin: var(--space-5) calc(var(--modal-gutter) * -1) 0;
-  padding: var(--space-3) var(--modal-gutter) var(--space-4);}
+  padding: var(--space-4) var(--modal-gutter) var(--space-4);}
   .secondary-action, .primary-action, .reject-action, .ghost-button { width: 100%; min-height: 46px; }
   .tiny-button { width: 38px; height: 38px; }
   .nav-link { padding: var(--space-3); font-size: var(--text-sm);
@@ -2003,7 +2034,6 @@ textarea.modal-input { line-height: 1.55; }
   }
   .responsive-table tbody td.cell-actions { grid-template-columns: minmax(0, 1fr); }
 }
-
 
 /* ==========================================================================
    Semantic action variants
@@ -2578,4 +2608,72 @@ textarea.modal-input { line-height: 1.55; }
   .panel-header-tools { width: 100%; justify-content: flex-start; }
   .panel-header-tools .search-input { flex: 1 1 140px; min-width: 0; }
   .panel-header-tools .create-account-button { width: 100%; }
+}
+
+/* ============================================================================
+   The staff workspace
+   The staff pages stack their panels with one consistent gap, so no two
+   panels touch and no two gaps disagree with each other. These rules are
+   scoped to the staff content, so the administrator's own panels keep the
+   layout they have.
+   ========================================================================== */
+.route-content.staff-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+/* The children carry margins of their own, which would add to the gap and
+   leave the rhythm disagreeing with itself. The stack owns the spacing. */
+.route-content.staff-content > * { margin-top: 0; margin-bottom: 0; }
+.route-content.staff-content .two-col-panel { gap: var(--space-4); }
+
+/* The three things a staff member can change share one row, so a single
+   field is not stretched across half the screen. */
+.route-content.staff-content .three-col-panel {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+@media (max-width: 760px) {
+  .route-content.staff-content .three-col-panel { grid-template-columns: minmax(0, 1fr); }
+}
+/* The three panels are the same height, so their action rows share one
+   baseline instead of floating at different heights. */
+.route-content.staff-content .three-col-panel .panel { display: flex; flex-direction: column; }
+.route-content.staff-content .three-col-panel .panel form { flex: 1; display: flex; flex-direction: column; }
+.route-content.staff-content .three-col-panel .form-actions { margin-top: auto; }
+.route-content.staff-content .three-col-panel .panel > button { margin-top: auto; }
+
+/* A side panel carries supporting information beside the main content, so
+   it sits in a recessed well while the main content stays raised. The
+   difference has to be large enough to see: a barely different tone reads
+   as the same panel. The class belongs to the staff pages alone. */
+.side-panel { background: var(--surface-sunken); }
+
+/* An action row inside a page, rather than at the foot of a dialog. It does
+   not bleed past the panel it belongs to, and it does not stick. */
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* A wide panel holds a list in two columns rather than one long column. */
+@media (min-width: 981px) {
+  .staff-services-list { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--space-6); }
+}
+
+/* The short columns of the services table take only the width they need,
+   and the service name takes the rest. */
+@media (min-width: 981px) {
+  .staff-services-table th:nth-child(3),
+  .staff-services-table th:nth-child(4),
+  .staff-services-table th:nth-child(5) { width: 1%; white-space: nowrap; }
+  .staff-services-table th:nth-child(1) { width: 46%; }
+  .staff-services-table th:nth-child(2) { width: 30%; }
 }

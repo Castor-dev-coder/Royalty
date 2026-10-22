@@ -141,7 +141,7 @@ export async function countScopedRecords(scope: string | ScopeMarker): Promise<S
  *
  * Matching normalizes the identifier — lowercased, non-alphanumerics stripped —
  * so one rule covers emails, names and appointment codes:
- *   'test-customer-batch5d@test.royalty.local' -> contains 'batch5d'
+ *   'test-customer-batch5d@gmail.com' -> contains 'batch5d'
  *   '[TEST] Batch 5E Category'                 -> contains 'batch5e'
  *   'APT-TEST-BATCH5D-1A2B3C4D'                -> contains 'batch5d'
  */

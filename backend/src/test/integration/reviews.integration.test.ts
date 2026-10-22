@@ -21,7 +21,9 @@ const SEED_STAFF_EMAIL = 'staff@seed.royalty.local';
 const SEED_ADMIN_EMAIL = 'admin@seed.royalty.local';
 
 const SCOPE: ScopeMarker = buildScopeMarker('5f', 'reviews', generateRunId(), 'REV');
-const TEST_EMAIL = `test+${SCOPE.emailToken}@test.royalty.local`;
+// A new account is given a Gmail address, so the customer this test
+// registers through the public endpoint uses one.
+const TEST_EMAIL = `test+${SCOPE.emailToken}@gmail.com`;
 const TEST_PASSWORD = 'TestPassword123!';
 /** varchar(40): 'APT-TEST-REV-xxxxxxxx' = 21 chars. */
 const COMPLETED_CODE = `APT-TEST-${SCOPE.codeToken}`;
