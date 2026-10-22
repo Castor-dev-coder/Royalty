@@ -11,6 +11,7 @@ import {
   createServiceController,
   updateServiceController,
   getStaffForServiceController,
+  getOwnServicesForStaffController,
   getServicesForStaffController,
   assignStaffToServiceController,
   removeStaffFromServiceController,
@@ -59,4 +60,7 @@ servicesRouter.post('/:id/assign', requireRole('ADMIN', 'MANAGER'), validateRequ
 // Staff View (read-only for staff assigned to service)
 // ============================================================
 
+// The self-scoped route is registered before the parameterized one so that
+// "/staff/me/services" is never captured as a staff row with the id "me".
+servicesRouter.get('/staff/me/services', requireRole('STAFF', 'ADMIN', 'MANAGER'), getOwnServicesForStaffController);
 servicesRouter.get('/staff/:id/services', requireRole('ADMIN', 'MANAGER'), getServicesForStaffController);

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { getStaffController, getMyStaffController, listStaffController, createStaffController, updateOwnStaffController, updateStaffController, listEligibleStaffController } from '../modules/staff/staff.controller.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import { validateQuery, validateRequest } from '../middleware/validator.js';
-import { createStaffSchema, eligibleStaffQuerySchema, updateOwnStaffProfileSchema, updateStaffEmploymentSchema } from '../modules/staff/staff.schemas.js';
+import { createStaffSchema, eligibleStaffQuerySchema, updateOwnStaffProfileSchema, updateStaffDetailsSchema } from '../modules/staff/staff.schemas.js';
 
 export const staffRouter = Router();
 
@@ -27,5 +27,8 @@ staffRouter.post('/', requireRole('ADMIN', 'MANAGER'), validateRequest(createSta
 // PATCH /staff/me - Update own staff profile (phone only)
 staffRouter.patch('/me', validateRequest(updateOwnStaffProfileSchema), updateOwnStaffController);
 
-// PATCH /staff/:id - Update staff employment details (admin/manager only)
-staffRouter.patch('/:id', requireRole('ADMIN', 'MANAGER'), validateRequest(updateStaffEmploymentSchema), updateStaffController);
+// PATCH /staff/:id - Update staff details (admin/manager only)
+// The details schema covers every field the service applies. The employment-only
+// schema stripped firstName/lastName/phone even though the controller and the
+// service both write them, so those edits were silently discarded.
+staffRouter.patch('/:id', requireRole('ADMIN', 'MANAGER'), validateRequest(updateStaffDetailsSchema), updateStaffController);

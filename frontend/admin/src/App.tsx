@@ -1,6 +1,22 @@
-import { BrowserRouter, NavLink, Outlet, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { apiFetch, clearAccessTokens, getAccessToken, mockApiEnabled, resetMockData, storeAccessTokens } from './api';
+import { BrowserRouter, Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { apiFetch, clearAccessTokens, DEMO_STAFF_ACCOUNT, generateTemporaryPassword, getAccessToken, mockApiEnabled, resetMockData, storeAccessTokens } from './api';
+import { ThemeProvider } from './theme';
+import { ThemeSwitch } from './components/ThemeSwitch';
+import { BrandShowcase } from './components/BrandShowcase';
+import { DemoCredentials } from './components/DemoCredentials';
+import { SidebarStatusPanel } from './components/SidebarStatusPanel';
+import { AccountsIcon, CalendarIcon, DashboardIcon, PaymentsIcon, StaffIcon } from './components/icons';
+import { useDialogBehavior } from './components/useDialogBehavior';
+import { clearAccountSession, currentSession, readLoginSession, storeAccountSession, type AccountRole } from './session';
+import { StaffShell } from './staff/StaffShell';
+import { StaffOverviewPanel } from './staff/StaffOverviewPanel';
+import { StaffAppointmentsPanel } from './staff/StaffAppointmentsPanel';
+import { StaffSchedulePanel } from './staff/StaffSchedulePanel';
+import { StaffServicesPanel } from './staff/StaffServicesPanel';
+import { StaffProfilePanel } from './staff/StaffProfilePanel';
+import { StaffProfileDialog, type StaffProfileCandidate } from './staff/StaffProfileDialog';
+import { StaffCredentialsPanel, issueStaffPassword, type StaffCredentials } from './staff/StaffCredentialsPanel';
 
 type Review = {
   id: string;
@@ -32,6 +48,12 @@ type StaffRow = {
   role: string;
   employment: string;
   schedule: string;
+  /**
+   * Account access: whether the account may sign in.
+   * Availability below is a separate concern and never implies access.
+   */
+  accountStatus: 'Active' | 'Deactivated';
+  /** Availability: whether the staff member is working, off, or unavailable. */
   status: 'Active' | 'On Vacation' | 'Day Off';
 };
 
@@ -50,12 +72,22 @@ type AppointmentRow = {
   totalAmount?: number;
 };
 
-const navItems = [
-  { label: 'Business Dashboard', to: '/' },
-  { label: 'Account Management', to: '/accounts' },
-  { label: 'Appointments & Calendar', to: '/appointments' },
-  { label: 'Payments & Verification', to: '/payments' },
-  { label: 'Staff Management', to: '/staff' },
+const navSections = [
+  {
+    label: 'Overview',
+    items: [
+      { label: 'Business Dashboard', to: '/', Icon: DashboardIcon },
+      { label: 'Appointments & Calendar', to: '/appointments', Icon: CalendarIcon },
+    ],
+  },
+  {
+    label: 'Management',
+    items: [
+      { label: 'Account Management', to: '/accounts', Icon: AccountsIcon },
+      { label: 'Staff Management', to: '/staff', Icon: StaffIcon },
+      { label: 'Payments & Verification', to: '/payments', Icon: PaymentsIcon },
+    ],
+  },
 ];
 
 const weekDayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -125,19 +157,52 @@ function summarizeSchedule(days: Array<{ dayOfWeek: number; enabled: boolean; st
 
 function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route element={<Shell />}>
-          <Route index element={<BusinessDashboardPage />} />
-          <Route path="services" element={<ServiceManagementPage />} />
-          <Route path="accounts" element={<AccountManagementPage />} />
-          <Route path="staff" element={<StaffManagementPage />} />
+    <ThemeProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route element={<AdminArea />}>
+            <Route index element={<BusinessDashboardPage />} />
+            <Route path="services" element={<ServiceManagementPage />} />
+            <Route path="accounts" element={<AccountManagementPage />} />
+            <Route path="staff" element={<StaffManagementPage />} />
             <Route path="appointments" element={<AppointmentPage />} />
-          <Route path="payments" element={<PaymentPage />} />
-        </Route>
-      </Routes>
-    </BrowserRouter>
+            <Route path="payments" element={<PaymentPage />} />
+          </Route>
+          <Route path="/my" element={<StaffArea />}>
+            <Route index element={<StaffOverviewPanel />} />
+            <Route path="appointments" element={<StaffAppointmentsPanel />} />
+            <Route path="schedule" element={<StaffSchedulePanel />} />
+            <Route path="services" element={<StaffServicesPanel />} />
+            <Route path="profile" element={<StaffProfilePanel />} />
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </ThemeProvider>
   );
+}
+
+/**
+ * The administrator area.
+ *
+ * A staff session is sent to its own area rather than shown administrator
+ * pages. The API enforces the same boundary, so hiding the pages here is a
+ * convenience and not the control.
+ */
+function AdminArea() {
+  const session = currentSession(getAccessToken());
+  if (session?.role === 'STAFF') return <Navigate to="/my" replace />;
+  return <Shell />;
+}
+
+/**
+ * The staff area.
+ *
+ * A session that is not a staff member is sent to the administrator area.
+ */
+function StaffArea() {
+  const session = currentSession(getAccessToken());
+  if (session && session.role !== 'STAFF') return <Navigate to="/" replace />;
+  return <StaffShell />;
 }
 
 function useReviewData() {
@@ -177,12 +242,18 @@ function useReviewData() {
   return data;
 }
 
+type LoadState = 'loading' | 'ready' | 'error';
+
 function useAccountData() {
   const [data, setData] = useState<TableRow[]>([]);
+  const [status, setStatus] = useState<LoadState>('loading');
 
   useEffect(() => {
     const token = getAccessToken();
-    if (!token && !mockApiEnabled) return;
+    if (!token && !mockApiEnabled) {
+      setStatus('error');
+      return;
+    }
 
     const controller = new AbortController();
     const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
@@ -211,23 +282,31 @@ function useAccountData() {
           }));
           setData(mapped);
         }
+        setStatus('ready');
       })
       .catch(() => {
-        if (!controller.signal.aborted) setData([]);
+        if (!controller.signal.aborted) {
+          setData([]);
+          setStatus('error');
+        }
       });
 
     return () => controller.abort();
   }, []);
 
-  return [data, setData] as const;
+  return [data, setData, status] as const;
 }
 
 function useStaffData() {
   const [data, setData] = useState<StaffRow[]>([]);
+  const [status, setStatus] = useState<LoadState>('loading');
 
   useEffect(() => {
     const token = getAccessToken();
-    if (!token && !mockApiEnabled) return;
+    if (!token && !mockApiEnabled) {
+      setStatus('error');
+      return;
+    }
     const controller = new AbortController();
     const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
     const headers = { Authorization: `Bearer ${token}` };
@@ -243,6 +322,10 @@ function useStaffData() {
         const accountPayload = accountResponse.ok ? await accountResponse.json() : { data: { accounts: [] } };
         const schedulePayload = scheduleResponse.ok ? await scheduleResponse.json() : { data: { staffSchedules: [] } };
         const emails = new Map((accountPayload?.data?.accounts ?? []).map((account: any) => [account.id, account.email]));
+        // The account status is read from the account row, separately from the
+        // staff work status. A deactivated account blocks sign-in; a day off
+        // does not.
+        const accountStatuses = new Map((accountPayload?.data?.accounts ?? []).map((account: any) => [account.id, account.status]));
         const schedules = new Map<string, any[]>();
         for (const schedule of schedulePayload?.data?.staffSchedules ?? []) {
           const current = schedules.get(schedule.staffId) ?? [];
@@ -265,19 +348,26 @@ function useStaffData() {
               const [hour, minute] = time.split(':').map(Number);
               return `${hour % 12 || 12}${minute ? `:${String(minute).padStart(2, '0')}` : ''}${hour >= 12 ? 'PM' : 'AM'}`;
             };
-            return `${day || (schedule.dayOfWeek === 0 ? 'Sun' : '')}, ${formatTime(schedule.startTime)}-${formatTime(schedule.endTime)}`;
+            // A non-breaking hyphen keeps a time range together when the schedule
+            // wraps onto a second line, instead of splitting "9AM-" from "6PM".
+            return `${day || (schedule.dayOfWeek === 0 ? 'Sun' : '')}, ${formatTime(schedule.startTime)}\u2011${formatTime(schedule.endTime)}`;
           }).join(' · ') || 'No schedule assigned',
+          accountStatus: (accountStatuses.get(staff.accountId) === 'DEACTIVATED' ? 'Deactivated' : 'Active') as StaffRow['accountStatus'],
           status: staff.workStatus === 'ON_DUTY' ? 'Active' : staff.workStatus === 'UNAVAILABLE' ? 'On Vacation' : 'Day Off',
         })));
+        setStatus('ready');
       })
       .catch(() => {
-        if (!controller.signal.aborted) setData([]);
+        if (!controller.signal.aborted) {
+          setData([]);
+          setStatus('error');
+        }
       });
 
     return () => controller.abort();
   }, []);
 
-  return [data, setData] as const;
+  return [data, setData, status] as const;
 }
 
 function useAppointmentData() {
@@ -323,13 +413,25 @@ function useAppointmentData() {
 function Shell() {
   const location = useLocation();
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showLoginModal, setShowLoginModal] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(Boolean(getAccessToken()));
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const mobileNavToggleRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     setMobileNavOpen(false);
   }, [location.pathname]);
+
+  useEffect(() => {
+    if (!mobileNavOpen) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setMobileNavOpen(false);
+        mobileNavToggleRef.current?.focus();
+      }
+    }
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [mobileNavOpen]);
 
   const pageTitle = useMemo(() => {
     if (location.pathname === '/accounts') return 'Authentication & Account Management';
@@ -342,13 +444,30 @@ function Shell() {
   }, [location.pathname]);
 
   if (!isAuthenticated) {
-    return <LoginPage onLogin={() => { setIsAuthenticated(true); window.location.reload(); }} />;
+    return <LoginPage onLogin={(role) => {
+      setIsAuthenticated(true);
+      // A staff member opens the staff dashboard; an administrator opens the
+      // business dashboard. The reload re-reads the stored session.
+      if (role === 'STAFF') {
+        window.location.assign('/my');
+        return;
+      }
+      window.location.reload();
+    }} />;
   }
 
   return (
     <div className="page-bg">
       <div className="viewer-shell">
-        <button type="button" className="mobile-nav-toggle" aria-label="Toggle navigation" aria-expanded={mobileNavOpen} onClick={() => setMobileNavOpen((open) => !open)}>
+        <button
+          ref={mobileNavToggleRef}
+          type="button"
+          className="mobile-nav-toggle"
+          aria-label="Toggle navigation"
+          aria-expanded={mobileNavOpen}
+          aria-controls="primary-navigation"
+          onClick={() => setMobileNavOpen((open) => !open)}
+        >
           <span />
           <span />
           <span />
@@ -362,18 +481,25 @@ function Shell() {
               <p>ADMIN PANEL</p>
             </div>
           </div>
-          <nav className="nav" aria-label="Main navigation">
-            {navItems.map(({ label, to }) => (
-              <NavLink key={label} to={to} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`} onClick={() => setMobileNavOpen(false)}>
-                <span className="nav-icon" aria-hidden="true">{label === 'Business Dashboard' ? '▣' : label === 'Account Management' ? '◫' : label === 'Appointments & Calendar' ? '▤' : label === 'Payments & Verification' ? '≡' : '◎'}</span>
-                {label}
-              </NavLink>
+          <nav className="nav" id="primary-navigation" aria-label="Main navigation">
+            {navSections.map((section) => (
+              <div key={section.label}>
+                <p className="nav-section">{section.label}</p>
+                {section.items.map(({ label, to, Icon }) => (
+                  <NavLink key={label} to={to} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`} onClick={() => setMobileNavOpen(false)}>
+                    <span className="nav-icon" aria-hidden="true"><Icon /></span>
+                    {label}
+                  </NavLink>
+                ))}
+              </div>
             ))}
           </nav>
+          <SidebarStatusPanel />
           <SignOutControl
             label={mockApiEnabled ? 'Demo Administrator' : 'Signed in'}
             onSignOut={() => {
               clearAccessTokens();
+              clearAccountSession();
               setIsAuthenticated(false);
               window.location.reload();
             }}
@@ -383,6 +509,7 @@ function Shell() {
         <main className="content-panel">
           <section className="page-header">
             <div>
+              <p className="page-eyebrow">Royalty Salon</p>
               <h2>{pageTitle}</h2>
               <p>
                 {location.pathname === '/accounts'
@@ -398,9 +525,12 @@ function Shell() {
                         : 'Overview of bookings, revenue, and customer insights.'}
               </p>
             </div>
-            {location.pathname === '/accounts' ? (
-              <button type="button" className="primary-button create-account-button" onClick={() => setShowCreateModal(true)}>+ Create New Account</button>
-            ) : null}
+            <div className="page-header-actions">
+              {location.pathname === '/accounts' && (
+                <button type="button" className="primary-button create-account-button" onClick={() => setShowCreateModal(true)}>Create New Account</button>
+              )}
+              <ThemeSwitch />
+            </div>
           </section>
 
           {mockApiEnabled && (
@@ -468,7 +598,10 @@ function BusinessDashboardPage() {
   const verifiedPayments = payments.filter((payment) => payment.status === 'VERIFIED');
   const averageRating = reviewData.length ? (reviewData.reduce((total, review) => total + review.rating, 0) / reviewData.length).toFixed(1) : '—';
   const dashboardMetrics = [
-    { label: "TODAY'S BOOKINGS", value: appointmentsAvailable ? appointments.filter((item) => item.appointmentDate === todayKey).length : '—', suffix: 'TODAY' },
+    // A cancelled appointment is not a booking, so it is left out of the
+    // count. This keeps the figure in step with today's schedule in the
+    // sidebar, which lists the bookings that are still going ahead.
+    { label: "TODAY'S BOOKINGS", value: appointmentsAvailable ? appointments.filter((item) => item.appointmentDate === todayKey && item.status !== 'CANCELLED').length : '—', suffix: 'TODAY' },
     { label: 'TOTAL BOOKINGS', value: appointmentsAvailable ? monthAppointments.length : '—', suffix: monthLabel },
     { label: 'COMPLETED', value: appointmentsAvailable ? monthAppointments.filter((item) => item.status === 'COMPLETED').length : '—', suffix: monthLabel },
     { label: 'CANCELLED', value: appointmentsAvailable ? monthAppointments.filter((item) => item.status === 'CANCELLED').length : '—', suffix: monthLabel },
@@ -521,7 +654,8 @@ function BusinessDashboardPage() {
           <div className="chart-bars" aria-label="Booking trend chart">
             {bookingTrend.map(({ label, value }) => (
               <div key={label} className="bar-group">
-                <div className="bar" style={{ height: `${value ? Math.max(18, (value / Math.max(1, ...bookingTrend.map((item) => item.value))) * 100) : 8}%` }} title={`${value} bookings`} />
+                <span className="bar-value">{value}</span>
+                <div className={`bar${value === 0 ? ' bar-empty' : ''}`} style={{ height: `${value ? Math.max(18, (value / Math.max(1, ...bookingTrend.map((item) => item.value))) * 100) : 8}%` }} title={`${value} bookings`} />
                 <span>{label}</span>
               </div>
             ))}
@@ -536,7 +670,7 @@ function BusinessDashboardPage() {
           <ul className="summary-list">
             <li><span>Total Verified</span><strong>{paymentsAvailable ? `₱${verifiedPayments.reduce((sum, payment) => sum + Number(payment.amount ?? 0), 0).toLocaleString()}` : '—'}</strong></li>
             <li><span>This Month</span><strong>{paymentsAvailable ? `₱${monthRevenue.toLocaleString()}` : '—'}</strong></li>
-            <li><span>Pending Payment</span><strong>{paymentsAvailable ? pendingPayments.length : '—'}</strong></li>
+            <li><span>Pending Payments</span><strong>{paymentsAvailable ? pendingPayments.length : '—'}</strong></li>
             <li><span>Needs verification</span><strong>{paymentsAvailable ? `₱${pendingPayments.reduce((sum, payment) => sum + Number(payment.amount ?? 0), 0).toLocaleString()}` : '—'}</strong></li>
           </ul>
         </section>
@@ -562,7 +696,7 @@ function BusinessDashboardPage() {
 
         <section className="panel review-panel">
           <div className="panel-header compact">
-            <h3>Customer Reviews & Ratings</h3>
+            <h3>Reviews &amp; Ratings</h3>
             <span className="rating-pill">{averageRating}</span>
           </div>
           <div className="customer-rating-row">
@@ -699,24 +833,24 @@ function ServiceManagementPage() {
       {loadError && <p className="form-error" role="alert">{loadError}</p>}
       {!loading && !loadError && (
         <div className="service-table-scroll">
-          <table>
-            <thead><tr><th>Service</th><th>Category</th><th>Duration</th><th>Price</th><th>Status</th><th>Actions</th></tr></thead>
-            <tbody>
+          <table role="table" className="responsive-table">
+            <thead role="rowgroup"><tr><th role="columnheader" scope="col">Service</th><th role="columnheader" scope="col">Category</th><th role="columnheader" scope="col">Duration</th><th role="columnheader" scope="col">Price</th><th role="columnheader" scope="col">Status</th><th role="columnheader" scope="col">Actions</th></tr></thead>
+            <tbody role="rowgroup">
               {visibleServices.map((service) => (
-                <tr key={service.id}>
-                  <td><strong>{service.name}</strong>{service.description && <small className="service-description">{service.description}</small>}</td>
-                  <td>{service.categoryName}</td>
-                  <td>{service.durationMinutes} min</td>
-                  <td>₱{Number(service.price).toLocaleString()}</td>
-                  <td><span className={`status-badge ${service.isActive ? 'success' : 'muted'}`}>{service.isActive ? 'Active' : 'Inactive'}</span></td>
-                  <td><div className="service-actions">
+                <tr role="row" key={service.id}>
+                  <td role="cell" data-label="Service" data-primary><strong>{service.name}</strong>{service.description && <small className="service-description">{service.description}</small>}</td>
+                  <td role="cell" data-label="Category">{service.categoryName}</td>
+                  <td role="cell" data-label="Duration">{service.durationMinutes} min</td>
+                  <td role="cell" data-label="Price">₱{Number(service.price).toLocaleString()}</td>
+                  <td role="cell" data-label="Status"><span className={`status-badge ${service.isActive ? 'success' : 'neutral'}`}>{service.isActive ? 'Active' : 'Inactive'}</span></td>
+                  <td className="cell-actions" role="cell" data-label="Actions"><div className="service-actions">
                     <button type="button" className="link-button" onClick={() => setEditing(service)}>Edit</button>
                     <button type="button" className="link-button" onClick={() => setAction({ type: 'suspend', service })}>{service.isActive ? 'Suspend' : 'Activate'}</button>
                     <button type="button" className="link-button danger-link" disabled={!service.isActive} onClick={() => setAction({ type: 'delete', service })}>Archive</button>
                   </div></td>
                 </tr>
               ))}
-              {visibleServices.length === 0 && <tr><td colSpan={6}>{services.length ? 'No services match these filters.' : 'No services in the catalog yet.'}</td></tr>}
+              {visibleServices.length === 0 && <tr role="row"><td colSpan={6} className="cell-empty" role="cell" data-empty>{services.length ? 'No services match these filters.' : 'No services in the catalog yet.'}</td></tr>}
             </tbody>
           </table>
         </div>
@@ -753,6 +887,7 @@ function ServiceEditorModal({ service, categories, onClose, onSave }: {
   const [fileHint, setFileHint] = useState('');
   const [dragActive, setDragActive] = useState(false);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const dialogRef = useDialogBehavior<HTMLFormElement>(onClose);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -821,7 +956,7 @@ function ServiceEditorModal({ service, categories, onClose, onSave }: {
 
   return (
     <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="service-editor-title" onClick={onClose}>
-      <form className="modal-card service-modal" onSubmit={submit} onClick={(event) => event.stopPropagation()}>
+      <form ref={dialogRef} className="modal-card service-modal" onSubmit={submit} onClick={(event) => event.stopPropagation()}>
         <div className="modal-header"><h3 id="service-editor-title">{service ? 'Edit Service' : 'Add Service'}</h3><button type="button" className="close-button" aria-label="Close" onClick={onClose}>×</button></div>
 
         <div className="service-upload-field">
@@ -882,6 +1017,7 @@ function CategoryManagerModal({ categories, onClose, onChanged, onOutcome }: {
   const [editingName, setEditingName] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const dialogRef = useDialogBehavior(onClose);
   async function saveCategory(id?: string) {
     const name = (id ? editingName : newName).trim();
     if (!name) { setError('Enter a category name.'); return; }
@@ -928,7 +1064,7 @@ function CategoryManagerModal({ categories, onClose, onChanged, onOutcome }: {
   }
   return (
     <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="category-manager-title" onClick={onClose}>
-      <section className="modal-card service-modal" onClick={(event) => event.stopPropagation()}>
+      <section ref={dialogRef} className="modal-card service-modal" onClick={(event) => event.stopPropagation()}>
         <div className="modal-header"><h3 id="category-manager-title">Manage Categories</h3><button type="button" className="close-button" aria-label="Close" onClick={onClose}>×</button></div>
         <div className="category-create-row"><input className="modal-input" aria-label="New category name" placeholder="New category name" value={newName} onChange={(event) => setNewName(event.target.value)} maxLength={100} /><button type="button" className="primary-action" disabled={busy} onClick={() => void saveCategory()}>Add</button></div>
         <ul className="category-list">{categories.map((category) => (
@@ -1052,6 +1188,7 @@ function ConfirmModal({ title, message, confirmLabel, danger, onClose, onConfirm
   onError: (error: string) => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const dialogRef = useDialogBehavior(onClose);
   async function confirm() {
     setBusy(true);
     try {
@@ -1065,7 +1202,7 @@ function ConfirmModal({ title, message, confirmLabel, danger, onClose, onConfirm
   }
   return (
     <div className="modal-overlay confirm-layer" role="dialog" aria-modal="true" aria-labelledby="confirm-action-title" onClick={onClose}>
-      <section className="modal-card confirm-modal" onClick={(event) => event.stopPropagation()}>
+      <section ref={dialogRef} className="modal-card confirm-modal" onClick={(event) => event.stopPropagation()}>
         <div className="modal-header"><h3 id="confirm-action-title">{title}</h3><button type="button" className="close-button" aria-label="Close" onClick={onClose}>×</button></div>
         <p>{message}</p>
         <div className="modal-actions"><button type="button" className="secondary-action" disabled={busy} onClick={onClose}>Cancel</button><button type="button" className={danger ? 'reject-action' : 'primary-action'} disabled={busy} onClick={() => void confirm()}>{busy ? 'Saving…' : confirmLabel}</button></div>
@@ -1075,9 +1212,10 @@ function ConfirmModal({ title, message, confirmLabel, danger, onClose, onConfirm
 }
 
 function ResultModal({ success, title, message, onClose }: { success: boolean; title: string; message: string; onClose: () => void }) {
+  const dialogRef = useDialogBehavior(onClose);
   return (
     <div className="modal-overlay result-layer" role="dialog" aria-modal="true" aria-labelledby="result-modal-title">
-      <section className="modal-card result-modal">
+      <section ref={dialogRef} className="modal-card result-modal">
         <div className={`result-icon ${success ? 'success' : 'failure'}`} aria-hidden="true">{success ? '✓' : '!'}</div>
         <h3 id="result-modal-title">{title}</h3>
         <p>{message}</p>
@@ -1088,7 +1226,7 @@ function ResultModal({ success, title, message, onClose }: { success: boolean; t
 }
 
 function AccountManagementPage() {
-  const [rows, setRows] = useAccountData();
+  const [rows, setRows, loadState] = useAccountData();
   const [search, setSearch] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
   const [pendingAction, setPendingAction] = useState<{ row: TableRow; nextStatus: 'ACTIVE' | 'DEACTIVATED' } | null>(null);
@@ -1149,41 +1287,47 @@ function AccountManagementPage() {
             <h3>User Accounts Directory</h3>
             <input aria-label="Search accounts" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by name, email or role..." className="search-input" />
           </div>
-          <table>
-            <thead>
-              <tr>
-                <th>User / Email</th>
-                <th>Role</th>
-                <th>Status</th>
-                <th>Last Login / Created</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visibleRows.map((row) => (
-                <tr key={row.email}>
-                  <td>
-                    <div className="user-cell">
-                      <span className="user-avatar">{row.id}</span>
-                      <div>
-                        <strong>{row.user}</strong>
-                        <small>{row.email}</small>
-                      </div>
-                    </div>
-                  </td>
-                  <td><span className="role-badge">{row.role}</span></td>
-                  <td>
-                    <span className={`status-badge ${row.status === 'Active' ? 'success' : row.status === 'Deactivated' ? 'muted' : 'warning'}`}>
-                      {row.status}
-                    </span>
-                  </td>
-                  <td>{row.lastLogin}</td>
-                  <td><button type="button" className="link-button" disabled={!row.accountId} onClick={() => setPendingAction({ row, nextStatus: row.status === 'Active' ? 'DEACTIVATED' : 'ACTIVE' })}>{row.status === 'Active' ? 'Deactivate' : 'Activate'}</button></td>
+          {loadState === 'loading' && <p className="empty-list">Loading accounts…</p>}
+          {loadState === 'error' && <p className="form-error" role="alert">Accounts could not be loaded. Check the backend connection and reload the page.</p>}
+          {loadState === 'ready' && (
+          <div className="table-scroll">
+            <table role="table" className="responsive-table">
+              <thead role="rowgroup">
+                <tr role="row">
+                  <th role="columnheader" scope="col">User / Email</th>
+                  <th role="columnheader" scope="col">Role</th>
+                  <th role="columnheader" scope="col">Status</th>
+                  <th role="columnheader" scope="col">Last Login / Created</th>
+                  <th role="columnheader" scope="col">Actions</th>
                 </tr>
-              ))}
-              {visibleRows.length === 0 && <tr><td colSpan={5}>{rows.length ? 'No accounts match this search.' : 'No account records are available for this session.'}</td></tr>}
-            </tbody>
-          </table>
+              </thead>
+              <tbody role="rowgroup">
+                {visibleRows.map((row) => (
+                  <tr role="row" key={row.email}>
+                    <td role="cell" data-label="User / Email" data-primary>
+                      <div className="user-cell">
+                        <span className="user-avatar">{row.id}</span>
+                        <div>
+                          <strong>{row.user}</strong>
+                          <small>{row.email}</small>
+                        </div>
+                      </div>
+                    </td>
+                    <td role="cell" data-label="Role"><span className="role-badge">{row.role}</span></td>
+                    <td role="cell" data-label="Status">
+                      <span className={`status-badge ${row.status === 'Active' ? 'success' : row.status === 'Deactivated' ? 'danger' : 'warning'}`}>
+                        {row.status}
+                      </span>
+                    </td>
+                    <td role="cell" data-label="Last Login / Created">{row.lastLogin}</td>
+                    <td className="cell-actions" role="cell" data-label="Actions"><button type="button" className="link-button" disabled={!row.accountId} onClick={() => setPendingAction({ row, nextStatus: row.status === 'Active' ? 'DEACTIVATED' : 'ACTIVE' })}>{row.status === 'Active' ? 'Deactivate' : 'Activate'}</button></td>
+                  </tr>
+                ))}
+                {visibleRows.length === 0 && <tr role="row"><td colSpan={5} className="cell-empty" role="cell" data-empty>{rows.length ? 'No accounts match this search.' : 'No account records are available for this session.'}</td></tr>}
+              </tbody>
+            </table>
+          </div>
+          )}
           {statusMessage && <p className="table-message" role="status">{statusMessage}</p>}
         </section>
 
@@ -1215,11 +1359,29 @@ function AccountManagementPage() {
 }
 
 function StaffManagementPage() {
-  const [rows, setRows] = useStaffData();
+  const [rows, setRows, loadState] = useStaffData();
   const [scheduleRequestCount, setScheduleRequestCount] = useState(0);
   const [search, setSearch] = useState('');
   const [editingStaff, setEditingStaff] = useState<StaffRow | null>(null);
-  const visibleRows = rows.filter((row) => `${row.user} ${row.email} ${row.role}`.toLowerCase().includes(search.toLowerCase()));
+  const [showProfileDialog, setShowProfileDialog] = useState(false);
+  const [profileCandidates, setProfileCandidates] = useState<StaffProfileCandidate[]>([]);
+  const [profileNotice, setProfileNotice] = useState('');
+  const [employmentFilter, setEmploymentFilter] = useState('all');
+  const [availabilityFilter, setAvailabilityFilter] = useState('all');
+  const [accessFilter, setAccessFilter] = useState('all');
+  const [accessNotice, setAccessNotice] = useState('');
+  const [accessError, setAccessError] = useState('');
+  const [accessChange, setAccessChange] = useState<{ row: StaffRow; next: 'ACTIVE' | 'DEACTIVATED' } | null>(null);
+  const [credentials, setCredentials] = useState<StaffCredentials | null>(null);
+  const [credentialError, setCredentialError] = useState('');
+  const [issuing, setIssuing] = useState(false);
+  const [savingAccess, setSavingAccess] = useState(false);
+
+  const visibleRows = rows
+    .filter((row) => `${row.user} ${row.email} ${row.role} ${row.schedule}`.toLowerCase().includes(search.toLowerCase()))
+    .filter((row) => employmentFilter === 'all' || row.employment === employmentFilter)
+    .filter((row) => availabilityFilter === 'all' || row.status === availabilityFilter)
+    .filter((row) => accessFilter === 'all' || row.accountStatus === accessFilter);
 
   useEffect(() => {
     const token = getAccessToken();
@@ -1234,6 +1396,100 @@ function StaffManagementPage() {
       .catch(() => undefined);
     return () => controller.abort();
   }, []);
+
+  /**
+   * Change whether a staff account may sign in.
+   *
+   * This is the account's own lifecycle, and it is separate from the staff
+   * work status. Deactivating an account blocks sign-in and leaves the staff
+   * profile and its schedule in place.
+   */
+  async function changeAccountAccess(row: StaffRow, next: 'ACTIVE' | 'DEACTIVATED') {
+    const token = getAccessToken();
+    if (!token || !row.accountId) {
+      setAccessError('Sign in with an administrator account to manage staff access.');
+      return;
+    }
+    setSavingAccess(true);
+    setAccessError('');
+    try {
+      const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+      const response = await apiFetch(`${baseUrl}/accounts/${row.accountId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ status: next }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload?.error?.message ?? payload.message ?? 'The account status could not be changed.');
+      setAccessChange(null);
+      setAccessNotice(next === 'ACTIVE'
+        ? `${row.user} can sign in again.`
+        : `${row.user} can no longer sign in. Their staff profile and schedule are unchanged.`);
+      window.location.reload();
+    } catch (cause) {
+      setAccessError(cause instanceof Error ? cause.message : 'The account status could not be changed.');
+    } finally {
+      setSavingAccess(false);
+    }
+  }
+
+  /**
+   * Issue a temporary sign-in password for a staff account.
+   *
+   * The API stores a hash and never returns the original password, so the
+   * administrator sets a new one. It is shown once, in the panel, and is not
+   * written to any browser storage.
+   */
+  async function setCredentialsFor(row: StaffRow) {
+    if (!row.accountId) return;
+    setCredentialError('');
+    setIssuing(true);
+    try {
+      const password = generateTemporaryPassword();
+      await issueStaffPassword(row.accountId, password);
+      setCredentials({ accountId: row.accountId, email: row.email, name: row.user, password });
+    } catch (cause) {
+      setCredentialError(cause instanceof Error ? cause.message : 'A temporary password could not be issued.');
+    } finally {
+      setIssuing(false);
+    }
+  }
+
+  /**
+   * Accounts that can receive a staff profile.
+   *
+   * A staff profile can only be attached to an account that already holds
+   * the staff role and has no profile yet, which is the rule the API applies.
+   */
+  async function openProfileDialog() {
+    const token = getAccessToken();
+    if (!token && !mockApiEnabled) return;
+    const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+    try {
+      const [accountResponse, staffResponse] = await Promise.all([
+        apiFetch(`${baseUrl}/accounts?page=1&limit=100`, { headers: { Authorization: `Bearer ${token}` } }),
+        apiFetch(`${baseUrl}/staff?page=1&limit=100`, { headers: { Authorization: `Bearer ${token}` } }),
+      ]);
+      if (!accountResponse.ok || !staffResponse.ok) {
+        setAccessError('The staff accounts could not be loaded.');
+        return;
+      }
+      const accountPayload = await accountResponse.json();
+      const staffPayload = await staffResponse.json();
+      const profiledAccountIds = new Set((staffPayload?.data?.staff ?? []).map((member: any) => member.accountId));
+      const candidates: StaffProfileCandidate[] = (accountPayload?.data?.accounts ?? [])
+        .filter((account: any) => account.role === 'STAFF' && account.status === 'ACTIVE' && !profiledAccountIds.has(account.id))
+        .map((account: any) => ({
+          accountId: account.id,
+          email: account.email,
+          name: `${account.firstName ?? ''} ${account.lastName ?? ''}`.trim() || account.email,
+        }));
+      setProfileCandidates(candidates);
+      setShowProfileDialog(true);
+    } catch {
+      setAccessError('The staff accounts could not be loaded.');
+    }
+  }
 
   return (
     <>
@@ -1256,50 +1512,112 @@ function StaffManagementPage() {
         </div>
       </div>
 
+      {accessNotice && <p className="form-hint" role="status">{accessNotice}</p>}
+      {profileNotice && <p className="form-hint" role="status">{profileNotice}</p>}
+      {accessError && <p className="form-error" role="alert">{accessError}</p>}
+      {credentialError && <p className="form-error" role="alert">{credentialError}</p>}
+      {issuing && <p className="form-hint" role="status">Issuing a temporary password…</p>}
+
       <section className="panel table-panel large-table">
         <div className="panel-header compact">
           <h3>Royal Salon Professional Staff Directory</h3>
           <div className="table-tools">
             <input aria-label="Search staff" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by name, email or role..." className="search-input" />
+            <label className="sr-only" htmlFor="staff-filter-employment">Filter by employment type</label>
+            <select id="staff-filter-employment" className="search-input" value={employmentFilter} onChange={(event) => setEmploymentFilter(event.target.value)}>
+              <option value="all">All employment</option>
+              <option value="Full Time">Full time</option>
+              <option value="Part Time">Part time</option>
+            </select>
+            <label className="sr-only" htmlFor="staff-filter-availability">Filter by availability</label>
+            <select id="staff-filter-availability" className="search-input" value={availabilityFilter} onChange={(event) => setAvailabilityFilter(event.target.value)}>
+              <option value="all">All availability</option>
+              <option value="Active">On duty</option>
+              <option value="Day Off">Day off</option>
+              <option value="On Vacation">Unavailable</option>
+            </select>
+            <label className="sr-only" htmlFor="staff-filter-access">Filter by account access</label>
+            <select id="staff-filter-access" className="search-input" value={accessFilter} onChange={(event) => setAccessFilter(event.target.value)}>
+              <option value="all">All access</option>
+              <option value="Active">Can sign in</option>
+              <option value="Deactivated">Cannot sign in</option>
+            </select>
+            <button type="button" className="primary-button create-account-button" onClick={() => void openProfileDialog()}>Create Staff Profile</button>
           </div>
         </div>
-        <table>
-          <thead>
-            <tr>
-              <th>User / Email</th>
-              <th>Primary Role</th>
-              <th>Employment Type</th>
-              <th>Current Schedule</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {visibleRows.map((row) => (
-              <tr key={row.email}>
-                <td>
-                  <div className="user-cell">
-                    <span className="user-avatar">{row.user.slice(0, 2).toUpperCase()}</span>
-                    <div>
-                      <strong>{row.user}</strong>
-                      <small>{row.email}</small>
-                    </div>
-                  </div>
-                </td>
-                <td>{row.role}</td>
-                <td>{row.employment}</td>
-                <td>{row.schedule}</td>
-                <td>
-                  <span className={`status-badge ${row.status === 'Active' ? 'success' : 'warning'}`}>
-                    {row.status}
-                  </span>
-                </td>
-                <td><button type="button" className="link-button" disabled={!row.id} onClick={() => row.id && setEditingStaff(row)}>Edit Staff Account</button></td>
+        {loadState === 'loading' && <p className="empty-list">Loading the staff directory…</p>}
+        {loadState === 'error' && <p className="form-error" role="alert">The staff directory could not be loaded. Check the backend connection and reload the page.</p>}
+        {loadState === 'ready' && (
+        <div className="table-scroll">
+          <table role="table" className="responsive-table">
+            <thead role="rowgroup">
+              <tr role="row">
+                <th role="columnheader" scope="col">User / Email</th>
+                <th role="columnheader" scope="col">Primary Role</th>
+                <th role="columnheader" scope="col">Employment Type</th>
+                <th role="columnheader" scope="col">Current Schedule</th>
+                <th role="columnheader" scope="col">Account Access</th>
+                <th role="columnheader" scope="col">Availability</th>
+                <th role="columnheader" scope="col">Actions</th>
               </tr>
-            ))}
-            {visibleRows.length === 0 && <tr><td colSpan={6}>No staff records match this view.</td></tr>}
-          </tbody>
-        </table>
+            </thead>
+            <tbody role="rowgroup">
+              {visibleRows.map((row) => (
+                <tr role="row" key={row.email}>
+                  <td role="cell" data-label="User / Email" data-primary>
+                    <div className="user-cell">
+                      <span className="user-avatar">{row.user.slice(0, 2).toUpperCase()}</span>
+                      <div>
+                        <strong>{row.user}</strong>
+                        <small className="user-cell-email">{row.email}</small>
+                      </div>
+                    </div>
+                  </td>
+                  <td role="cell" data-label="Primary Role">{row.role}</td>
+                  <td role="cell" data-label="Employment Type">{row.employment}</td>
+                  <td role="cell" data-label="Current Schedule">{row.schedule}</td>
+                  <td role="cell" data-label="Account Access">
+                    <span className={`status-badge ${row.accountStatus === 'Active' ? 'success' : 'danger'}`}>
+                      {row.accountStatus}
+                    </span>
+                  </td>
+                  <td role="cell" data-label="Availability">
+                    <span className={`status-badge ${row.status === 'Active' ? 'warning' : 'neutral'}`}>
+                      {row.status}
+                    </span>
+                  </td>
+                  <td className="staff-row-actions cell-actions" role="cell" data-label="Actions">
+                    <button type="button" className="link-button" disabled={!row.id} onClick={() => row.id && setEditingStaff(row)}>Edit</button>
+                    <button
+                      type="button"
+                      className="link-button"
+                      disabled={!row.accountId}
+                      onClick={() => row.accountId && setAccessChange({
+                        row,
+                        next: row.accountStatus === 'Active' ? 'DEACTIVATED' : 'ACTIVE',
+                      })}
+                    >
+                      {row.accountStatus === 'Active' ? 'Deactivate access' : 'Restore access'}
+                    </button>
+                    <button
+                      type="button"
+                      className="link-button"
+                      disabled={!row.accountId || row.email === DEMO_STAFF_ACCOUNT.email}
+                      onClick={() => row.accountId && setCredentialsFor(row)}
+                      title={row.email === DEMO_STAFF_ACCOUNT.email
+                        ? 'Published demo account — its sign-in details are shown on the sign-in page.'
+                        : 'Issue new sign-in details for this staff member.'}
+                    >
+                      Sign-in details
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {visibleRows.length === 0 && <tr role="row"><td colSpan={7} className="cell-empty" role="cell" data-empty>No staff records match this view.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+        )}
       </section>
 
       {editingStaff && (
@@ -1308,6 +1626,66 @@ function StaffManagementPage() {
           onClose={() => setEditingStaff(null)}
           onSaved={() => { setEditingStaff(null); window.location.reload(); }}
         />
+      )}
+
+      {showProfileDialog && (
+        profileCandidates.length > 0 ? (
+          <StaffProfileDialog
+            candidates={profileCandidates}
+            onClose={() => setShowProfileDialog(false)}
+            onCreated={(message) => {
+              setShowProfileDialog(false);
+              setProfileNotice(message);
+              window.location.reload();
+            }}
+          />
+        ) : (
+          <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="staff-profile-empty" onClick={() => setShowProfileDialog(false)}>
+            <section className="modal-card result-modal" onClick={(event) => event.stopPropagation()}>
+              <h3 id="staff-profile-empty">No staff accounts are waiting</h3>
+              <p>Every active staff account already has a staff profile.</p>
+              <div className="modal-actions">
+                <button type="button" className="primary-action" onClick={() => setShowProfileDialog(false)}>Close</button>
+              </div>
+            </section>
+          </div>
+        )
+      )}
+
+      {credentials && (
+        <StaffCredentialsPanel
+          credentials={credentials}
+          onClose={() => setCredentials(null)}
+        />
+      )}
+
+      {accessChange && (
+        <div className="modal-overlay confirm-layer" role="dialog" aria-modal="true" aria-labelledby="staff-access-confirm" onClick={() => setAccessChange(null)}>
+          <section className="modal-card confirm-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <h3 id="staff-access-confirm">
+                {accessChange.next === 'ACTIVE' ? 'Restore sign-in access?' : 'Deactivate sign-in access?'}
+              </h3>
+              <button type="button" className="close-button" aria-label="Close" onClick={() => setAccessChange(null)}>×</button>
+            </div>
+            <p>
+              {accessChange.next === 'ACTIVE'
+                ? `${accessChange.row.user} will be able to sign in to the staff dashboard again.`
+                : `${accessChange.row.user} will no longer be able to sign in. Their staff profile, schedule and bookings are kept as they are.`}
+            </p>
+            <div className="modal-actions">
+              <button type="button" className="secondary-action" disabled={savingAccess} onClick={() => setAccessChange(null)}>Cancel</button>
+              <button
+                type="button"
+                className={accessChange.next === 'ACTIVE' ? 'primary-action' : 'reject-action'}
+                disabled={savingAccess}
+                onClick={() => void changeAccountAccess(accessChange.row, accessChange.next)}
+              >
+                {savingAccess ? 'Saving…' : accessChange.next === 'ACTIVE' ? 'Restore access' : 'Deactivate access'}
+              </button>
+            </div>
+          </section>
+        </div>
       )}
     </>
   );
@@ -1335,6 +1713,7 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
   const [schedule, setSchedule] = useState(normalizeWeeklySchedule());
   const [scheduleError, setScheduleError] = useState('');
   const [savingSchedule, setSavingSchedule] = useState(false);
+  const dialogRef = useDialogBehavior(onClose);
 
   useEffect(() => {
     if (!mockApiEnabled) {
@@ -1380,6 +1759,7 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
+          firstName: String(form.get('firstName') ?? '').trim(),
           lastName,
           phone: String(form.get('phone') ?? ''),
           primaryRole: String(form.get('primaryRole') ?? '').trim(),
@@ -1462,7 +1842,7 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
 
   return (
     <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="staff-edit-title" onClick={onClose}>
-      <section className="modal-card staff-edit-modal" onClick={(event) => event.stopPropagation()}>
+      <section ref={dialogRef} className="modal-card staff-edit-modal" onClick={(event) => event.stopPropagation()}>
         <div className="modal-header">
           <h3 id="staff-edit-title">Edit Staff Account</h3>
           <button type="button" className="close-button" aria-label="Close" onClick={onClose}>×</button>
@@ -1472,7 +1852,7 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
             <h4>Staff Account Information</h4>
             <p className="form-hint">{staff.email}</p>
             <div className="form-grid">
-              <label className="field-label">FIRST NAME<input className="modal-input" name="firstName" value={staff.firstName ?? ''} readOnly disabled aria-label="First name (read only)" /></label>
+              <label className="field-label">FIRST NAME<input className="modal-input" name="firstName" defaultValue={staff.firstName ?? ''} required maxLength={100} /></label>
               <label className="field-label">LAST NAME<input className="modal-input" name="lastName" defaultValue={staff.lastName ?? ''} required maxLength={100} /></label>
             </div>
             <label className="field-label">PHONE<input className="modal-input" name="phone" type="tel" defaultValue={staff.phone ?? ''} maxLength={30} /></label>
@@ -1542,6 +1922,7 @@ function TimeOffModal({ entry, onClose, onSave }: {
 }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const dialogRef = useDialogBehavior<HTMLFormElement>(onClose);
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -1569,7 +1950,7 @@ function TimeOffModal({ entry, onClose, onSave }: {
   }
   return (
     <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="time-off-title" onClick={onClose}>
-      <form className="modal-card service-modal" onSubmit={submit} onClick={(event) => event.stopPropagation()}>
+      <form ref={dialogRef} className="modal-card service-modal" onSubmit={submit} onClick={(event) => event.stopPropagation()}>
         <div className="modal-header"><h3 id="time-off-title">{entry ? 'Edit Time Off' : 'Add Vacation / Day Off'}</h3><button type="button" className="close-button" aria-label="Close" onClick={onClose}>×</button></div>
         <label className="field-label">TYPE<select className="modal-input" name="type" defaultValue={entry?.type ?? 'VACATION'}><option value="VACATION">Vacation</option><option value="DAY_OFF">Day Off</option></select></label>
         <div className="form-grid">
@@ -1601,6 +1982,8 @@ function AppointmentPage() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'other' | (typeof SIDEBAR_STATUS_ORDER)[number]>('all');
   const token = getAccessToken();
   const navigate = useNavigate();
+  const closeAppointmentDetail = useCallback(() => setSelectedAppointment(null), []);
+  const appointmentDialogRef = useDialogBehavior<HTMLElement>(closeAppointmentDetail, selectedAppointment !== null);
   const monthStart = new Date(month.getFullYear(), month.getMonth(), 1);
   const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
   const calendarCells = Array.from({ length: Math.ceil((monthStart.getDay() + daysInMonth) / 7) * 7 }, (_, index) => {
@@ -1782,8 +2165,8 @@ function AppointmentPage() {
         </section>
       </section>
       {selectedAppointment && (
-        <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="appointment-detail-title" onClick={() => setSelectedAppointment(null)}>
-          <section className="modal-card appointment-detail-modal" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="appointment-detail-title" onClick={closeAppointmentDetail}>
+          <section ref={appointmentDialogRef} className="modal-card appointment-detail-modal" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header"><h3 id="appointment-detail-title">Appointment Details</h3><button type="button" className="close-button" aria-label="Close appointment details" onClick={() => setSelectedAppointment(null)}>×</button></div>
             <dl className="appointment-detail-list">
               <div><dt>Booking reference</dt><dd>{selectedAppointment.code}</dd></div>
@@ -1837,6 +2220,8 @@ function PaymentPage() {
   const token = getAccessToken();
   const navigate = useNavigate();
   const location = useLocation();
+  const closePaymentModal = useCallback(() => setSelectedPayment(null), []);
+  const paymentDialogRef = useDialogBehavior<HTMLElement>(closePaymentModal, selectedPayment !== null);
 
   useEffect(() => {
     const state = location.state as { completeAppointmentId?: string; appointmentCode?: string } | null;
@@ -1934,7 +2319,7 @@ function PaymentPage() {
         <div className="payment-stats">
           <div className="payment-stat"><span className="status-badge warning">Needs action</span><strong>{pendingPayments.length}</strong><small>Pending payments</small></div>
           <div className="payment-stat"><span className="status-badge success">Settled</span><strong>{confirmedToday.length}</strong><small>Confirmed today</small></div>
-          <div className="payment-stat"><span className="status-badge muted">Review</span><strong>{payments.filter((payment) => payment.status === 'REJECTED').length}</strong><small>Rejected</small></div>
+          <div className="payment-stat"><span className="status-badge neutral">Review</span><strong>{payments.filter((payment) => payment.status === 'REJECTED').length}</strong><small>Rejected</small></div>
           <div className="payment-stat"><span className="status-badge warning">Revenue</span><strong>₱{confirmedRevenue.toLocaleString()}</strong><small>Revenue confirmed</small></div>
         </div>
 
@@ -1954,22 +2339,22 @@ function PaymentPage() {
             </div>
           ) : (
             <div className="payment-table-scroll">
-              <table>
-                <thead><tr><th>Reference / Customer</th><th>Service</th><th>Amount</th><th>Booking</th><th>Payment</th><th>Action</th></tr></thead>
-                <tbody>
+              <table role="table" className="responsive-table">
+                <thead role="rowgroup"><tr><th role="columnheader" scope="col">Reference / Customer</th><th role="columnheader" scope="col">Service</th><th role="columnheader" scope="col">Amount</th><th role="columnheader" scope="col">Booking</th><th role="columnheader" scope="col">Payment</th><th role="columnheader" scope="col">Action</th></tr></thead>
+                <tbody role="rowgroup">
                   {displayedPayments.map((payment) => (
-                    <tr key={payment.id}>
-                      <td><div className="payment-customer"><strong>{payment.customerName}</strong><small>{payment.appointmentCode} · {payment.customerEmail}</small></div></td>
-                      <td>{payment.serviceName}</td>
-                      <td><strong>₱{Number(payment.amount).toLocaleString()}</strong><small className="payment-method">{payment.paymentMethod}</small></td>
-                      <td><span className={`status-badge ${appointmentStatusBadge(String(payment.bookingStatus ?? 'RESERVED'))}`}>{appointmentStatusText(String(payment.bookingStatus ?? 'RESERVED'))}</span></td>
-                      <td><span className={`status-badge ${payment.status === 'VERIFIED' ? 'success' : payment.status === 'REJECTED' ? 'muted' : 'warning'}`}>{payment.status === 'VERIFIED' ? 'Verified' : payment.status === 'REJECTED' ? 'Rejected' : 'Pending'}</span></td>
-                      <td>{payment.status === 'UNVERIFIED'
+                    <tr role="row" key={payment.id}>
+                      <td role="cell" data-label="Reference / Customer" data-primary><div className="payment-customer"><strong>{payment.customerName}</strong><small>{payment.appointmentCode} · {payment.customerEmail}</small></div></td>
+                      <td role="cell" data-label="Service">{payment.serviceName}</td>
+                      <td role="cell" data-label="Amount"><strong>₱{Number(payment.amount).toLocaleString()}</strong><small className="payment-method">{payment.paymentMethod}</small></td>
+                      <td role="cell" data-label="Booking"><span className={`status-badge ${appointmentStatusBadge(String(payment.bookingStatus ?? 'RESERVED'))}`}>{appointmentStatusText(String(payment.bookingStatus ?? 'RESERVED'))}</span></td>
+                      <td role="cell" data-label="Payment"><span className={`status-badge ${payment.status === 'VERIFIED' ? 'success' : payment.status === 'REJECTED' ? 'danger' : 'warning'}`}>{payment.status === 'VERIFIED' ? 'Verified' : payment.status === 'REJECTED' ? 'Rejected' : 'Pending'}</span></td>
+                      <td className="cell-actions" role="cell" data-label="Action">{payment.status === 'UNVERIFIED'
                         ? <button type="button" className="payment-action" disabled={!token || !mockApiEnabled} onClick={() => { setSelectedPayment(payment); setVerificationCode(''); setCodeError(''); }}>Verify</button>
                         : <span className="payment-date">{payment.verifiedAt ? new Date(payment.verifiedAt).toLocaleDateString() : '—'}</span>}</td>
                     </tr>
                   ))}
-                  {displayedPayments.length === 0 && <tr><td colSpan={6}>{payments.length ? 'No payments match this view.' : 'No payment records are available.'}</td></tr>}
+                  {displayedPayments.length === 0 && <tr role="row"><td colSpan={6} className="cell-empty" role="cell" data-empty>{payments.length ? 'No payments match this view.' : 'No payment records are available.'}</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -1990,8 +2375,8 @@ function PaymentPage() {
       </section>
 
       {selectedPayment && (
-        <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="verify-payment-title" onClick={() => setSelectedPayment(null)}>
-          <section className="modal-card payment-modal" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="verify-payment-title" onClick={closePaymentModal}>
+          <section ref={paymentDialogRef} className="modal-card payment-modal" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header"><h3 id="verify-payment-title">Verify payment</h3><button type="button" className="close-button" aria-label="Close payment verification" onClick={() => setSelectedPayment(null)}>×</button></div>
             <p className="form-hint">Enter the five-digit payment code supplied for this appointment. This development verification does not process a real payment.</p>
             <dl className="payment-details">
@@ -2144,6 +2529,7 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
   const [selectedRole, setSelectedRole] = useState<'Manager' | 'Staff'>('Manager');
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{ success: boolean; title: string; message: string } | null>(null);
+  const [createdCredentials, setCreatedCredentials] = useState<StaffCredentials | null>(null);
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -2151,6 +2537,7 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
   const [schedule, setSchedule] = useState(normalizeWeeklySchedule());
   const [scheduleError, setScheduleError] = useState('');
   const [copied, setCopied] = useState(false);
+  const dialogRef = useDialogBehavior<HTMLFormElement>(onClose);
 
   function validatePasswordStrength(value: string): boolean {
     return /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/.test(value);
@@ -2251,12 +2638,29 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
         });
       }
       const firstName = String(form.get('firstName')).trim();
-      setResult({ success: true, title: 'Account created', message: `${firstName} now has ${selectedRole.toLowerCase()} access. Temporary password: ${password}` });
+      const email = String(form.get('email')).trim();
+      // The credentials are shown once, in the handover panel, so the
+      // administrator can copy them. They are not kept in any storage.
+      setCreatedCredentials({
+        accountId: String(payload.data?.id ?? ''),
+        email,
+        name: firstName,
+        password,
+      });
     } catch (cause) {
       setResult({ success: false, title: 'Account not created', message: cause instanceof Error ? cause.message : 'Unable to create demo account.' });
     } finally {
       setSubmitting(false);
     }
+  }
+
+  if (createdCredentials) {
+    return (
+      <StaffCredentialsPanel
+        credentials={createdCredentials}
+        onClose={() => { setCreatedCredentials(null); window.location.reload(); }}
+      />
+    );
   }
 
   if (result) {
@@ -2268,48 +2672,44 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="modal-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="account-creation-title">
-      <form className="modal-card account-creation-modal" onSubmit={createAccount} onClick={(event) => event.stopPropagation()}>
+      <form ref={dialogRef} className="modal-card account-creation-modal" onSubmit={createAccount} onClick={(event) => event.stopPropagation()}>
         <div className="modal-header">
           <h3 id="account-creation-title">Create Staff / Manager Account</h3>
           <button type="button" className="close-button" aria-label="Close account modal" onClick={onClose}>×</button>
         </div>
-        <div className="modal-subtitle">Assign appropriate access rights in the hierarchy</div>
+        <div className="modal-subtitle">Enter the account details, choose a role, and set the weekly schedule.</div>
 
-        <div className="form-grid">
-          <label className="field-label" htmlFor="account-first-name">FIRST NAME<input id="account-first-name" name="firstName" className="modal-input" required maxLength={100} /></label>
-          <label className="field-label" htmlFor="account-last-name">LAST NAME<input id="account-last-name" name="lastName" className="modal-input" required maxLength={100} /></label>
+        <div className="form-section">
+          <h4 className="form-section-title">Account details</h4>
+          <div className="form-grid">
+            <label className="field-label" htmlFor="account-first-name">FIRST NAME<input id="account-first-name" name="firstName" className="modal-input" required maxLength={100} /></label>
+            <label className="field-label" htmlFor="account-last-name">LAST NAME<input id="account-last-name" name="lastName" className="modal-input" required maxLength={100} /></label>
+          </div>
+
+          <label className="field-label" htmlFor="account-email">EMAIL ADDRESS</label>
+          <input id="account-email" name="email" className="modal-input" type="email" required />
         </div>
 
-        <label className="field-label" htmlFor="account-email">EMAIL ADDRESS</label>
-        <input id="account-email" name="email" className="modal-input" type="email" required />
-
-        <label className="field-label" htmlFor="account-temp-password">TEMPORARY PASSWORD</label>
-        <div className="password-input-group">
-          <input id="account-temp-password" className="modal-input" type={showPassword ? 'text' : 'password'} value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} required />
-          <button type="button" className="password-toggle" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword} title={showPassword ? 'Hide password' : 'Show password'}>
-            {showPassword ? (
-              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-            ) : (
-              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2"/></svg>
-            )}
-          </button>
-          <button type="button" className="password-toggle" onClick={copyPassword} aria-label={copied ? 'Password copied' : 'Copy password'} title="Copy password">
-            {copied ? (
-              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20 6 9 17l-5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-            ) : (
-              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" stroke="currentColor" strokeWidth="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" stroke="currentColor" strokeWidth="2"/></svg>
-            )}
-          </button>
-          <button type="button" className="generate-password-button" onClick={generatePassword} title="Generate a secure password">
-            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-            Generate Password
-          </button>
-        </div>
-        <p className="form-hint">Use at least 8 characters with upper/lowercase, a number, and a special character.</p>
-
-        <label className="field-label" htmlFor="account-temp-password-confirm">CONFIRM PASSWORD</label>
-        <div className="password-input-group">
-          <input id="account-temp-password-confirm" className="modal-input" type={showConfirmPassword ? 'text' : 'password'} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} minLength={8} required />
+        <div className="form-section">
+          <h4 className="form-section-title">Credentials</h4>
+          <div className="password-field-grid">
+          <div>
+          <label className="field-label" htmlFor="account-temp-password">TEMPORARY PASSWORD</label>
+          <div className="password-input-group">
+            <input id="account-temp-password" className="modal-input" type={showPassword ? 'text' : 'password'} value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} required />
+            <button type="button" className="password-toggle" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword} title={showPassword ? 'Hide password' : 'Show password'}>
+              {showPassword ? (
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              ) : (
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2"/></svg>
+              )}
+            </button>
+          </div>
+          </div>
+          <div>
+          <label className="field-label" htmlFor="account-temp-password-confirm">CONFIRM PASSWORD</label>
+          <div className="password-input-group">
+            <input id="account-temp-password-confirm" className="modal-input" type={showConfirmPassword ? 'text' : 'password'} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} minLength={8} required />
           <button type="button" className="password-toggle" onClick={() => setShowConfirmPassword(!showConfirmPassword)} aria-label={showConfirmPassword ? 'Hide password' : 'Show password'} aria-pressed={showConfirmPassword} title={showConfirmPassword ? 'Hide password' : 'Show password'}>
             {showConfirmPassword ? (
               <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
@@ -2318,20 +2718,42 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
             )}
           </button>
         </div>
-
-        <label className="field-label">ASSIGN ROLE (HIERARCHY)</label>
-        <div className="role-grid">
-          <button type="button" className={`role-option${selectedRole === 'Manager' ? ' active' : ''}`} onClick={() => setSelectedRole('Manager')}>
-            <strong>Manager</strong>
-            <span>Can manage services &amp; bookings</span>
-          </button>
-          <button type="button" className={`role-option${selectedRole === 'Staff' ? ' active' : ''}`} onClick={() => setSelectedRole('Staff')}>
-            <strong>Staff</strong>
-            <span>Assigned to service schedules</span>
-          </button>
+          </div>
+          </div>
+          <div className="password-helper-row">
+            <p className="form-hint">Use at least 8 characters with upper/lowercase, a number, and a special character.</p>
+            <div className="password-helper-actions">
+              <button type="button" className="password-toggle standalone" onClick={copyPassword} aria-label={copied ? 'Password copied' : 'Copy password'} title="Copy password">
+                {copied ? (
+                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20 6 9 17l-5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" stroke="currentColor" strokeWidth="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" stroke="currentColor" strokeWidth="2"/></svg>
+                )}
+                <span>Copy</span>
+              </button>
+              <button type="button" className="generate-password-button" onClick={generatePassword} title="Generate a secure password">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                Generate Password
+              </button>
+            </div>
+          </div>
         </div>
 
-        <div className="staff-schedule-section">
+        <div className="form-section">
+          <h4 className="form-section-title">Access and schedule</h4>
+          <span className="field-label">ASSIGN ROLE (HIERARCHY)</span>
+          <div className="role-grid">
+            <button type="button" className={`role-option${selectedRole === 'Manager' ? ' active' : ''}`} onClick={() => setSelectedRole('Manager')} aria-pressed={selectedRole === 'Manager'}>
+              <strong>Manager</strong>
+              <span>Can manage services &amp; bookings</span>
+            </button>
+            <button type="button" className={`role-option${selectedRole === 'Staff' ? ' active' : ''}`} onClick={() => setSelectedRole('Staff')} aria-pressed={selectedRole === 'Staff'}>
+              <strong>Staff</strong>
+              <span>Assigned to service schedules</span>
+            </button>
+          </div>
+
+          <div className="staff-schedule-section">
           <span className="field-label">STAFF SCHEDULE (WEEKLY)</span>
           <div className="schedule-grid">
             {schedule.map((day) => (
@@ -2351,13 +2773,14 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
             ))}
           </div>
           {scheduleError && <p className="form-error" role="alert">{scheduleError}</p>}
+          </div>
         </div>
 
         {!mockApiEnabled && <p className="form-hint">This configured backend does not support administrator-created accounts.</p>}
 
         <div className="modal-actions">
           <button type="button" className="secondary-action" onClick={onClose}>Cancel</button>
-          <button type="submit" className="primary-action" disabled={!mockApiEnabled || submitting}>{submitting ? 'Creating…' : 'Save Account'}</button>
+          <button type="submit" className="primary-action" disabled={!mockApiEnabled || submitting}>{submitting ? 'Creating…' : 'Create Account'}</button>
         </div>
       </form>
     </div>
@@ -2365,7 +2788,7 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
 }
 
 
-function LoginPage({ onLogin }: { onLogin: () => void }) {
+function LoginPage({ onLogin }: { onLogin: (role: AccountRole | null) => void }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -2388,7 +2811,12 @@ function LoginPage({ onLogin }: { onLogin: () => void }) {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.message ?? 'Unable to sign in. Check your credentials and API connection.');
       storeAccessTokens(payload.data.accessToken, payload.data.refreshToken);
-      onLogin();
+      // The role decides which area the session opens. It is read from the
+      // sign-in response and used for navigation only; the API remains the
+      // authority on what the session may do.
+      const session = readLoginSession(payload);
+      if (session) storeAccountSession(session);
+      onLogin(session?.role ?? null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unable to sign in.');
       setSubmitting(false);
@@ -2397,32 +2825,22 @@ function LoginPage({ onLogin }: { onLogin: () => void }) {
 
   return (
     <div className="login-page">
-      <aside className="login-brand-panel">
-        <div className="login-brand-head">
-          <span className="login-monogram" aria-hidden="true">R</span>
-          <div className="login-wordmark-block">
-            <p className="login-wordmark">ROYALTY</p>
-            <p className="login-brand-studio">Hair &amp; Nails Studio</p>
-          </div>
-        </div>
-        <div className="login-brand-rule" aria-hidden="true" />
-        <div className="login-brand-copy">
-          <p className="login-brand-overline">Admin &amp; Staff Access</p>
-          <p className="login-brand-note">
-            Secure sign-in for the Royalty team platform — appointments,
-            services, staff, and payments, managed with care.
-          </p>
-        </div>
-        <p className="login-brand-foot">Management System</p>
-      </aside>
-
       <main className="login-form-panel">
         <div className="login-pane">
+          <div className="login-brand-head">
+            <span className="login-monogram" aria-hidden="true">R</span>
+            <div className="login-wordmark-block">
+              <p className="login-wordmark">ROYALTY</p>
+              <p className="login-brand-studio">Hair &amp; Nails Studio</p>
+            </div>
+          </div>
+
           <header className="login-pane-header">
             <p className="login-overline">Studio Access</p>
             <h1 className="login-title">Welcome back.</h1>
-            <p className="login-lede">Sign in to the Royalty team platform to manage appointments, services, staff, and payments.</p>
+            <p className="login-lede">Sign in to manage appointments, services, staff schedules and payments for the studio.</p>
           </header>
+
           <form onSubmit={handleSubmit} className="login-form">
             <div className="login-field">
               <label className="login-field-label" htmlFor="login-email">Email Address</label>
@@ -2456,6 +2874,7 @@ function LoginPage({ onLogin }: { onLogin: () => void }) {
                   onClick={() => setShowPassword(!showPassword)}
                   aria-label={showPassword ? 'Hide password' : 'Show password'}
                   aria-pressed={showPassword}
+                  title={showPassword ? 'Hide password' : 'Show password'}
                 >
                   {showPassword ? (
                     <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
@@ -2479,28 +2898,15 @@ function LoginPage({ onLogin }: { onLogin: () => void }) {
                 <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeDasharray="31.4 31.4"/></svg>
               </span>
             </button>
-            {mockApiEnabled && (
-              <aside className="login-demo" aria-label="Development demo account">
-                <p className="login-demo-title">Development demo account</p>
-                <dl className="login-demo-list">
-                  <div className="login-demo-row">
-                    <dt>Email</dt>
-                    <dd>admin@seed.royalty.local</dd>
-                  </div>
-                  <div className="login-demo-row">
-                    <dt>Password</dt>
-                    <dd>RoyaltyDemo2026!</dd>
-                  </div>
-                </dl>
-                <p className="login-demo-note">Fictional browser data for local Vite development only.</p>
-              </aside>
-            )}
+            {mockApiEnabled && <DemoCredentials />}
           </form>
           <footer className="login-footer">
             <p>Royalty Hair &amp; Nails Studio</p>
           </footer>
         </div>
       </main>
+
+      <BrandShowcase />
     </div>
   );
 }
@@ -2508,6 +2914,7 @@ function LoginPage({ onLogin }: { onLogin: () => void }) {
 function LoginModal({ onClose, onLogin }: { onClose: () => void; onLogin: () => void }) {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const dialogRef = useDialogBehavior<HTMLFormElement>(onClose);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();

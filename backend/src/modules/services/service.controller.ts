@@ -97,6 +97,16 @@ export const getStaffForServiceController = async (req: AuthenticatedRequest, re
   }
 };
 
+// GET /services/staff/me - Get services the authenticated staff member can perform
+export const getOwnServicesForStaffController = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    const services = await ServiceService.getServicesForOwnStaff(req.user!.userId);
+    res.json({ data: { services } });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // GET /staff/:id/services - Get services a staff member can perform
 export const getServicesForStaffController = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {

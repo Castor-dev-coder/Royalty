@@ -6,9 +6,10 @@ import type { NextFunction, Response } from 'express';
 process.env.JWT_SECRET ??= randomBytes(32).toString('hex');
 process.env.JWT_REFRESH_SECRET ??= randomBytes(32).toString('hex');
 
-const [{ staffRouter }, { schedulesRouter }, { StaffService }, { updateOwnStaffController }] = await Promise.all([
+const [{ staffRouter }, { schedulesRouter }, { servicesRouter }, { StaffService }, { updateOwnStaffController }] = await Promise.all([
   import('./staff.js'),
   import('./schedules.js'),
+  import('./services.js'),
   import('../modules/staff/staff.service.js'),
   import('../modules/staff/staff.controller.js'),
 ]);
@@ -33,6 +34,10 @@ test('staff self routes precede parameterized staff routes', () => {
 test('schedule self routes precede parameterized routes', () => {
   assert.ok(routeIndex(schedulesRouter, 'get', '/staff/me') < routeIndex(schedulesRouter, 'get', '/staff/:id'));
   assert.ok(routeIndex(schedulesRouter, 'get', '/requests/me') < routeIndex(schedulesRouter, 'get', '/requests/:id'));
+});
+
+test('service self route precedes the parameterized staff service route', () => {
+  assert.ok(routeIndex(servicesRouter, 'get', '/staff/me/services') < routeIndex(servicesRouter, 'get', '/staff/:id/services'));
 });
 
 test('PATCH /staff/me updates the authenticated account profile without a route ID', async (context) => {

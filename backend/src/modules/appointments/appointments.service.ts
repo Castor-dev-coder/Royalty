@@ -99,6 +99,18 @@ export interface CompletedAppointmentInfo extends AppointmentInfo {
   alreadyReviewed: boolean;
 }
 
+/**
+ * A staff member's own appointment, enriched with the client identity.
+ *
+ * This mirrors CompletedAppointmentInfo, which enriches the customer's own
+ * completed list with the staff identity. Without the client name a staff
+ * member cannot tell who is booked, and the appointment carries only a
+ * customer ID.
+ */
+export interface StaffAppointmentInfo extends AppointmentInfo {
+  customer: { id: string; firstName: string; lastName: string; phone: string | null } | null;
+}
+
 function toMinutes(value: string): number {
   const [hours, minutes] = value.split(':').map(Number);
   return hours * 60 + minutes;
@@ -361,7 +373,7 @@ export class AppointmentsService {
     requestingUserId: string,
     page: number,
     limit: number
-  ): Promise<{ appointments: AppointmentInfo[]; total: number }> {
+  ): Promise<{ appointments: StaffAppointmentInfo[]; total: number }> {
     const staff = await db.orm.public.Staff.where({ accountId: requestingUserId }).first();
     if (!staff) throw new NotFoundError('No staff profile found for this account');
 
@@ -375,7 +387,23 @@ export class AppointmentsService {
     const appointmentsRaw = await query.offset(skip).limit(limit).all();
     const appointments = await collect(appointmentsRaw as Iterable<AppointmentRecord> | AsyncIterable<AppointmentRecord>);
     return {
-      appointments: await Promise.all(appointments.map((appointment) => this.mapAppointment(toApplicationAppointment(appointment)))),
+      appointments: await Promise.all(appointments.map(async (appointment) => {
+        const [mapped, customer] = await Promise.all([
+          this.mapAppointment(toApplicationAppointment(appointment)),
+          db.orm.public.Customer.where({ id: appointment.customerId }).first(),
+        ]);
+        return {
+          ...mapped,
+          customer: customer
+            ? {
+                id: customer.id,
+                firstName: customer.firstName,
+                lastName: customer.lastName,
+                phone: customer.phone,
+              }
+            : null,
+        };
+      })),
       total,
     };
   }

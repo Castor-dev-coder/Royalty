@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { StaffService } from './staff.service.js';
 import { AuthenticatedRequest } from '../../middleware/auth.js';
-import { createStaffSchema, EligibleStaffQuery, updateOwnStaffProfileSchema, updateStaffEmploymentSchema } from './staff.schemas.js';
+import { createStaffSchema, EligibleStaffQuery, updateOwnStaffProfileSchema } from './staff.schemas.js';
 import { validateRequest } from '../../middleware/validator.js';
 
 export async function listEligibleStaffController(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {

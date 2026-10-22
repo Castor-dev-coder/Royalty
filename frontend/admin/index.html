@@ -3,8 +3,34 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#1f1d1f" />
+    <meta name="theme-color" content="#f1ede4" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1c1b1a" media="(prefers-color-scheme: dark)" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!--
+      The interface is designed in Jost, the same typeface the customer-facing
+      site uses. Without this the browser silently substitutes a fallback, so
+      headings and body text render in a different face than intended.
+    -->
+    <link href="https://fonts.googleapis.com/css2?family=Jost:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
     <title>Royalty Salon</title>
+    <script>
+      // Apply the stored theme before first paint so the interface never flashes
+      // the wrong surface. Mirrors resolveTheme()/applyTheme() in src/theme.tsx.
+      (function () {
+        try {
+          var stored = window.localStorage.getItem('royalty.admin.theme');
+          var preference = stored === 'light' || stored === 'dark' || stored === 'system' ? stored : 'system';
+          var resolved = preference === 'system'
+            ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+            : preference;
+          document.documentElement.dataset.theme = resolved;
+          document.documentElement.style.colorScheme = resolved;
+        } catch (error) {
+          document.documentElement.dataset.theme = 'light';
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -232,3 +232,31 @@ test('schedule request creation stores a Temporal date and returns normalized ti
   assert.equal(result.requestedStartTime, '09:00');
   assert.equal(result.requestedEndTime, '10:00');
 });
+
+test('schedule request creation keeps the calendar date a UTC-midnight timestamp names', async (context) => {
+  const requestInput: { staffId: string; requestedDate: Temporal.PlainDate }[] = [];
+  const staffWhere = mock.method(db.orm.public.Staff, 'where', () => ({ first: async () => ({ id: staffId }) }));
+  const requestCreate = mock.method(db.orm.public.ScheduleRequest, 'create', async (input: typeof requestInput[number]) => {
+    requestInput.push(input);
+    return {
+      id: 'request-id', ...input, requestType: 'TIME_OFF', reason: null, status: 'PENDING',
+      reviewedBy: null, reviewedAt: null, createdAt: new Date('2098-01-01T00:00:00.000Z'),
+    };
+  });
+  const auditCreate = mock.method(db.orm.public.AuditLog, 'create', async () => ({} as never));
+  context.after(() => {
+    staffWhere.mock.restore();
+    requestCreate.mock.restore();
+    auditCreate.mock.restore();
+  });
+
+  // A client that sends the chosen calendar date at UTC midnight must get that
+  // same calendar date back, and the API must return it at UTC midnight so the
+  // date does not shift when it is rendered in another timezone.
+  const result = await SchedulesService.createScheduleRequest({
+    requestedDate: '2099-01-05T00:00:00.000Z',
+    requestType: 'TIME_OFF',
+  }, staffAccountId);
+  assert.equal(requestInput[0]?.requestedDate.toString(), '2099-01-05');
+  assert.equal(result.requestedDate.toISOString(), '2099-01-05T00:00:00.000Z');
+});

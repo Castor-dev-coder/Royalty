@@ -11,6 +11,7 @@ interface MockAccount {
   role: AccountRole;
   status: AccountStatus;
   createdAt: string;
+  updatedAt?: string;
   passwordHash?: string;
   requiresPasswordChange?: boolean;
   passwordChangedAt?: string | null;
@@ -93,6 +94,26 @@ interface MockSchedule {
   isActive: boolean;
 }
 
+/** A service a staff member is assigned to perform. */
+interface MockStaffService {
+  staffId: string;
+  serviceId: string;
+}
+
+/** A staff member's request for a schedule change. */
+interface MockScheduleRequest {
+  id: string;
+  staffId: string;
+  requestedDate: string;
+  requestedStartTime: string | null;
+  requestedEndTime: string | null;
+  requestType: string;
+  reason: string | null;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  reviewedAt: string | null;
+  createdAt: string;
+}
+
 interface MockData {
   accounts: MockAccount[];
   customers: MockCustomer[];
@@ -103,9 +124,17 @@ interface MockData {
   payments: MockPayment[];
   reviews: MockReview[];
   schedules: MockSchedule[];
+  staffServices: MockStaffService[];
   timeOff: MockTimeOff[];
-  scheduleRequests: Array<{ id: string; status: string }>;
+  scheduleRequests: MockScheduleRequest[];
   paymentActivity: Array<{ id: string; message: string; createdAt: string }>;
+  /**
+   * The version of the demo fixtures this dataset was written by.
+   *
+   * It lets a one-time repair of an older dataset run exactly once, so a
+   * repair never repeats and undoes an administrator's later action.
+   */
+  fixtureVersion?: number;
 }
 
 interface MockTimeOff {
@@ -123,6 +152,51 @@ const STORAGE_KEY = 'royalty.admin.mock-data.v1';
 const MOCK_ACCESS_TOKEN_KEY = 'royalty.admin.mock-access-token.v1';
 const MOCK_REFRESH_TOKEN_KEY = 'royalty.admin.mock-refresh-token.v1';
 const MOCK_TOKEN = 'royalty-dev-mock-admin';
+/**
+ * A mock session token names the account it belongs to. The role is always
+ * re-read from the stored account rather than trusted from the token, so a
+ * client that edits its token gains nothing the account does not already have.
+ */
+const MOCK_SESSION_PREFIX = 'royalty-dev-mock-session.';
+
+const MOCK_ADMIN_ACCOUNT_ID = '11111111-0000-4000-8000-000000000001';
+
+/**
+ * Read paths that the live API reserves for administrators and managers.
+ *
+ * The live API applies the same split: /accounts, /staff, /appointments,
+ * /payments, /schedules/staff, /schedules/requests and /services are
+ * administrator resources, while the staff member's own records live under
+ * the /me paths.
+ */
+const ADMIN_ONLY_PATHS = new Set([
+  '/accounts',
+  '/staff',
+  '/appointments',
+  '/payments',
+  '/payments/activity',
+  '/schedules/staff',
+  '/schedules/requests',
+  '/services',
+  '/services/categories',
+]);
+
+/**
+ * Writes a staff member may perform on their own records.
+ *
+ * The live API allows these to any authenticated account and scopes them to
+ * the caller: the staff profile, the sign-in email, the password, the staff
+ * member's own schedule request, and the status of an appointment assigned to
+ * them. Each is checked against the session's own staff row.
+ */
+function isStaffSelfWrite(path: string, method: string): boolean {
+  if (path === '/staff/me' && method === 'PATCH') return true;
+  if (path === '/accounts/me' && method === 'PATCH') return true;
+  if (path === '/accounts/me/password' && method === 'POST') return true;
+  if (path === '/schedules/requests' && method === 'POST') return true;
+  if (/^\/appointments\/[^/]+\/status$/.test(path) && method === 'PATCH') return true;
+  return false;
+}
 
 export const mockApiEnabled = import.meta.env.DEV
   && (import.meta.env.VITE_USE_MOCK_API === 'true' || !import.meta.env.VITE_API_URL);
@@ -236,13 +310,66 @@ function isValidPassword(password: string): boolean {
   return /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/.test(password);
 }
 
+/**
+ * The credentials the browser mock adapter accepts at sign-in.
+ *
+ * These are the source of truth for the demo account list: the accounts
+ * below are created with this password's hash, and the mock sign-in handler
+ * compares the supplied password against it. The login screen reads the same
+ * constants, so the details it shows are the details that work.
+ *
+ * These are fictional local-development credentials for browser-only demo
+ * data. They are not real accounts and are never sent to a real API.
+ */
+export const DEMO_PASSWORD = 'RoyaltyDemo2026!';
+
+export const DEMO_ADMIN_ACCOUNT = {
+  email: 'admin@seed.royalty.local',
+  password: DEMO_PASSWORD,
+  label: 'Administrator',
+} as const;
+
+export const DEMO_STAFF_ACCOUNT = {
+  email: 'elena.morales@example.test',
+  password: DEMO_PASSWORD,
+  label: 'Staff member',
+} as const;
+
+/**
+ * The accounts whose credentials are printed on the sign-in page.
+ *
+ * They are development fixtures rather than ordinary accounts: the sign-in
+ * page promises that the details it shows will work, so the mock keeps
+ * these two accounts in step with the constants above.
+ *
+ * Their access status is not part of that promise. An administrator may
+ * deactivate one of them from Staff Management, and that decision belongs to
+ * the administrator — it is stored and honoured like any other account's.
+ */
+const PUBLISHED_DEMO_EMAILS = [DEMO_ADMIN_ACCOUNT.email, DEMO_STAFF_ACCOUNT.email] as const;
+
+function isPublishedDemoAccount(account: { email: string }): boolean {
+  return PUBLISHED_DEMO_EMAILS.includes(account.email.toLowerCase() as (typeof PUBLISHED_DEMO_EMAILS)[number]);
+}
+
+/**
+ * The version of the demo fixtures the mock writes.
+ *
+ * A dataset written by an earlier version is repaired once — its published
+ * demo accounts are given the published password — and the version is then
+ * recorded. Because the repair is tied to the version, it does not run again,
+ * so it can never undo an administrator's later deactivation.
+ */
+const MOCK_FIXTURE_VERSION = 2;
+
 function makeDemoData(): MockData {
+  const demoPasswordHash = hashString(DEMO_PASSWORD);
   const accounts: MockAccount[] = [
-    { id: '11111111-0000-4000-8000-000000000001', email: 'admin@seed.royalty.local', firstName: 'Morgan', lastName: 'Reyes', role: 'ADMIN', status: 'ACTIVE', createdAt: isoAtOffset(-180), passwordHash: hashString('RoyaltyDemo2026!'), requiresPasswordChange: false, passwordChangedAt: isoAtOffset(-180) },
+    { id: '11111111-0000-4000-8000-000000000001', email: DEMO_ADMIN_ACCOUNT.email, firstName: 'Morgan', lastName: 'Reyes', role: 'ADMIN', status: 'ACTIVE', createdAt: isoAtOffset(-180), passwordHash: demoPasswordHash, requiresPasswordChange: false, passwordChangedAt: isoAtOffset(-180) },
     { id: '11111111-0000-4000-8000-000000000002', email: 'manager@seed.royalty.local', firstName: 'Alex', lastName: 'Santos', role: 'MANAGER', status: 'ACTIVE', createdAt: isoAtOffset(-120), requiresPasswordChange: true },
-    { id: '11111111-0000-4000-8000-000000000003', email: 'elena.morales@example.test', firstName: 'Elena', lastName: 'Morales', role: 'STAFF', status: 'ACTIVE', createdAt: isoAtOffset(-100), requiresPasswordChange: true },
-    { id: '11111111-0000-4000-8000-000000000004', email: 'jules.navaro@example.test', firstName: 'Jules', lastName: 'Navarro', role: 'STAFF', status: 'ACTIVE', createdAt: isoAtOffset(-85), requiresPasswordChange: true },
-    { id: '11111111-0000-4000-8000-000000000005', email: 'mika.tan@example.test', firstName: 'Mika', lastName: 'Tan', role: 'STAFF', status: 'ACTIVE', createdAt: isoAtOffset(-75), requiresPasswordChange: true },
+    { id: '11111111-0000-4000-8000-000000000003', email: DEMO_STAFF_ACCOUNT.email, firstName: 'Elena', lastName: 'Morales', role: 'STAFF', status: 'ACTIVE', createdAt: isoAtOffset(-100), passwordHash: demoPasswordHash, requiresPasswordChange: true },
+    { id: '11111111-0000-4000-8000-000000000004', email: 'jules.navaro@example.test', firstName: 'Jules', lastName: 'Navarro', role: 'STAFF', status: 'ACTIVE', createdAt: isoAtOffset(-85), passwordHash: demoPasswordHash, requiresPasswordChange: true },
+    { id: '11111111-0000-4000-8000-000000000005', email: 'mika.tan@example.test', firstName: 'Mika', lastName: 'Tan', role: 'STAFF', status: 'ACTIVE', createdAt: isoAtOffset(-75), passwordHash: demoPasswordHash, requiresPasswordChange: true },
     { id: '11111111-0000-4000-8000-000000000006', email: 'bea.lim@example.test', firstName: 'Bea', lastName: 'Lim', role: 'STAFF', status: 'DEACTIVATED', createdAt: isoAtOffset(-60), requiresPasswordChange: true },
     { id: '11111111-0000-4000-8000-000000000007', email: 'camille.dizon@example.test', firstName: 'Camille', lastName: 'Dizon', role: 'CUSTOMER', status: 'ACTIVE', createdAt: isoAtOffset(-55), requiresPasswordChange: true },
     { id: '11111111-0000-4000-8000-000000000008', email: 'marco.villanueva@example.test', firstName: 'Marco', lastName: 'Villanueva', role: 'CUSTOMER', status: 'ACTIVE', createdAt: isoAtOffset(-45), requiresPasswordChange: true },
@@ -361,6 +488,13 @@ function makeDemoData(): MockData {
       isActive: member.workStatus !== 'UNAVAILABLE',
     })),
   );
+  // Each staff member performs a distinct set of services, so the staff
+  // dashboard shows a different assignment list per member.
+  const staffServices: MockStaffService[] = staff.flatMap((member, index) =>
+    services
+      .filter((_, serviceIndex) => (serviceIndex + index) % 2 === 0)
+      .map((service) => ({ staffId: member.id, serviceId: service.id })),
+  );
 
   return {
     accounts,
@@ -372,13 +506,28 @@ function makeDemoData(): MockData {
     payments,
     reviews,
     schedules,
+    staffServices,
     timeOff: [],
-    scheduleRequests: [{ id: 'bbbbbbbb-0000-4000-8000-000000000001', status: 'PENDING' }],
+    scheduleRequests: [
+      {
+        id: 'bbbbbbbb-0000-4000-8000-000000000001',
+        staffId: staff[0].id,
+        requestedDate: dateAtOffset(6),
+        requestedStartTime: null,
+        requestedEndTime: null,
+        requestType: 'Day off',
+        reason: 'A family commitment that morning.',
+        status: 'PENDING',
+        reviewedAt: null,
+        createdAt: isoAtOffset(-2),
+      },
+    ],
     paymentActivity: [
       { id: 'activity-1', message: 'RS-48212 payment confirmed at the counter.', createdAt: isoAtOffset(0) },
       { id: 'activity-2', message: 'RS-48213 payment rejected — please review the submission.', createdAt: isoAtOffset(-2) },
       { id: 'activity-3', message: 'RS-48214 booking created; payment is due at visit.', createdAt: isoAtOffset(-2) },
     ],
+    fixtureVersion: MOCK_FIXTURE_VERSION,
   };
 }
 
@@ -388,6 +537,59 @@ function readData(): MockData {
     try {
       const data = JSON.parse(saved) as MockData;
       if (!Array.isArray(data.timeOff)) data.timeOff = [];
+      // A dataset stored before staff service assignments existed gains them
+      // here, so an existing browser session keeps working.
+      if (!Array.isArray(data.staffServices)) {
+        data.staffServices = data.staff.flatMap((member, index) =>
+          data.services
+            .filter((_, serviceIndex) => (serviceIndex + index) % 2 === 0)
+            .map((service) => ({ staffId: member.id, serviceId: service.id })),
+        );
+      }
+      // A dataset stored before staff accounts had a demo password gains it
+      // here, so the staff dashboard can be signed into.
+      for (const account of data.accounts) {
+        if (account.role === 'STAFF' && account.status === 'ACTIVE' && !account.passwordHash) {
+          account.passwordHash = hashString('RoyaltyDemo2026!');
+        }
+      }
+      // A dataset written by an earlier version of the demo data is repaired
+      // once. The published demo accounts are given the published password so
+      // the credentials on the sign-in page work, and the fixture version is
+      // recorded. The repair is tied to that version, so it does not run
+      // again: an administrator's later deactivation is never undone.
+      //
+      // Only the password is repaired. The access status is the
+      // administrator's decision and is left exactly as it was stored.
+      const storedFixtureVersion = Number(data.fixtureVersion ?? 0);
+      if (storedFixtureVersion < MOCK_FIXTURE_VERSION) {
+        const expectedHash = hashString(DEMO_PASSWORD);
+        for (const account of data.accounts) {
+          if (!isPublishedDemoAccount(account)) continue;
+          if (account.passwordHash !== expectedHash) {
+            account.passwordHash = expectedHash;
+            account.requiresPasswordChange = false;
+          }
+        }
+        data.fixtureVersion = MOCK_FIXTURE_VERSION;
+        writeData(data);
+      }
+      // A dataset stored before schedule requests carried their details gains
+      // them here, so an existing browser session keeps working.
+      if (Array.isArray(data.scheduleRequests)) {
+        data.scheduleRequests = data.scheduleRequests.map((request, index) => ({
+          id: request.id ?? newId(),
+          staffId: request.staffId ?? data.staff[index % Math.max(1, data.staff.length)]?.id ?? '',
+          requestedDate: request.requestedDate ?? dateAtOffset(6),
+          requestedStartTime: request.requestedStartTime ?? null,
+          requestedEndTime: request.requestedEndTime ?? null,
+          requestType: request.requestType ?? 'Day off',
+          reason: request.reason ?? null,
+          status: request.status ?? 'PENDING',
+          reviewedAt: request.reviewedAt ?? null,
+          createdAt: request.createdAt ?? isoAtOffset(-2),
+        })) as MockScheduleRequest[];
+      }
       return data;
     } catch {
       localStorage.removeItem(STORAGE_KEY);
@@ -433,13 +635,55 @@ function paginated<T>(records: T[], url: URL): { items: T[]; total: number; page
   return { items: records.slice(start, start + limit), total: records.length, page, limit, totalPages: Math.ceil(records.length / limit) };
 }
 
-function requireMockAdmin(request: RequestInfo | URL, init?: RequestInit): Response | null {
-  const requestHeaders = request instanceof Request ? request.headers : undefined;
-  const headers = new Headers(init?.headers ?? requestHeaders);
-  if (headers.get('Authorization') !== `Bearer ${MOCK_TOKEN}`) {
-    return errorResponse('Sign in with the development demo administrator to make changes.', 401);
+/**
+ * The account a mock request is acting as.
+ *
+ * The role comes from the stored account record, never from the request, so
+ * editing a token in the browser cannot change what the session may do. This
+ * mirrors the live API, where the role is read from the account behind the
+ * verified token.
+ */
+function mockSession(init?: RequestInit): { accountId: string; role: AccountRole } | null {
+  const headers = new Headers(init?.headers);
+  const authorization = headers.get('Authorization') ?? '';
+  if (!authorization.startsWith('Bearer ')) return null;
+  const token = authorization.slice('Bearer '.length);
+  const data = readData();
+  if (token === MOCK_TOKEN) {
+    return { accountId: MOCK_ADMIN_ACCOUNT_ID, role: 'ADMIN' };
+  }
+  if (!token.startsWith(MOCK_SESSION_PREFIX)) return null;
+  const accountId = token.slice(MOCK_SESSION_PREFIX.length);
+  const account = data.accounts.find((item) => item.id === accountId);
+  if (!account) return null;
+  return { accountId: account.id, role: account.role };
+}
+
+/** Reject a mock request unless the session holds one of the given roles. */
+function requireMockRole(init: RequestInit | undefined, ...roles: AccountRole[]): Response | null {
+  const session = mockSession(init);
+  if (!session) return errorResponse('Sign in to continue.', 401);
+  if (!roles.includes(session.role)) {
+    return errorResponse(`Access denied. Required roles: ${roles.join(' or ')}`, 403);
   }
   return null;
+}
+
+/** Reject a mock request unless the session is a staff account. */
+function requireMockStaff(init: RequestInit | undefined): Response | null {
+  const session = mockSession(init);
+  if (!session) return errorResponse('Sign in to continue.', 401);
+  if (session.role !== 'STAFF') {
+    return errorResponse('Only staff members can use this resource.', 403);
+  }
+  return null;
+}
+
+/** The staff profile bound to the signed-in staff account. */
+function mockStaffForSession(data: MockData, init?: RequestInit): MockStaff | undefined {
+  const session = mockSession(init);
+  if (!session) return undefined;
+  return data.staff.find((member) => member.accountId === session.accountId);
 }
 
 function accountName(account: MockAccount | undefined): string {
@@ -478,6 +722,55 @@ function paymentInfo(data: MockData, payment: MockPayment) {
   };
 }
 
+/**
+ * Present a stored account the way the API presents it.
+ *
+ * The API never returns the password hash, so the mock does not either. The
+ * hash stays inside the browser's demo dataset.
+ */
+function toAccountInfo(account: MockAccount) {
+  const { passwordHash: _passwordHash, ...rest } = account;
+  return rest;
+}
+
+/**
+ * Build a temporary password that satisfies the API's password rule: at least
+ * eight characters with an upper-case letter, a lower-case letter, a digit
+ * and a symbol. Ambiguous characters are left out so it can be read aloud.
+ */
+export function generateTemporaryPassword(length = 14): string {
+  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const lower = 'abcdefghijkmnpqrstuvwxyz';
+  const digits = '23456789';
+  const symbols = '!@#$%^&*';
+  const all = upper + lower + digits + symbols;
+  const characters = [
+    upper[Math.floor(Math.random() * upper.length)],
+    lower[Math.floor(Math.random() * lower.length)],
+    digits[Math.floor(Math.random() * digits.length)],
+    symbols[Math.floor(Math.random() * symbols.length)],
+  ];
+  while (characters.length < length) {
+    characters.push(all[Math.floor(Math.random() * all.length)]);
+  }
+  return characters
+    .sort(() => Math.random() - 0.5)
+    .join('');
+}
+
+/**
+ * Present a stored schedule request the way the API presents it.
+ *
+ * The API returns the calendar date as a UTC-midnight timestamp, so the mock
+ * returns the same shape and the interface is exercised against it.
+ */
+function toScheduleRequestInfo(request: MockScheduleRequest) {
+  return {
+    ...request,
+    requestedDate: `${request.requestedDate}T00:00:00.000Z`,
+  };
+}
+
 function mockRequest(input: RequestInfo | URL, init?: RequestInit): Response {
   const requestUrl = input instanceof Request ? input.url : String(input);
   const url = new URL(requestUrl, window.location.origin);
@@ -489,21 +782,230 @@ function mockRequest(input: RequestInfo | URL, init?: RequestInit): Response {
     const account = readData().accounts.find((item) => item.email.toLowerCase() === String(body.email ?? '').toLowerCase());
     const suppliedPassword = String(body.password ?? '');
     const passwordHash = hashString(suppliedPassword);
-    if (!account || account.role !== 'ADMIN' || account.status !== 'ACTIVE' || account.passwordHash !== passwordHash) {
+    if (!account || !['ADMIN', 'STAFF'].includes(account.role) || account.status !== 'ACTIVE' || account.passwordHash !== passwordHash) {
+      // A deactivated account is reported on its own, because the fix is to
+      // restore its access rather than to retype the password.
+      if (account && account.status !== 'ACTIVE') {
+        return errorResponse('This account\'s access has been deactivated. Restore access to sign in again.', 401);
+      }
       return errorResponse('Invalid development demo credentials.', 401);
     }
-    return jsonResponse({ data: { accessToken: MOCK_TOKEN, refreshToken: 'royalty-dev-mock-refresh', account: { id: account.id, email: account.email, role: account.role } } });
+    // The session token names the account; the role is re-read from the stored
+    // account on every request, so the token itself grants no privilege.
+    const accessToken = account.role === 'ADMIN' ? MOCK_TOKEN : `${MOCK_SESSION_PREFIX}${account.id}`;
+    return jsonResponse({ data: { accessToken, refreshToken: 'royalty-dev-mock-refresh', id: account.id, email: account.email, role: account.role } });
   }
 
   const writeRequest = method !== 'GET' && method !== 'HEAD';
-  if (writeRequest) {
-    const unauthorized = requireMockAdmin(input, init);
-    if (unauthorized) return unauthorized;
+  const data = readData();
+
+  // ------------------------------------------------------------------
+  // Staff-scoped resources
+  //
+  // These resolve the signed-in staff member from the account behind the
+  // token, so no request names another staff member. The live API applies
+  // the same role rules to the same paths.
+  // ------------------------------------------------------------------
+
+  if (path === '/staff/me' && method === 'GET') {
+    const denied = requireMockStaff(init);
+    if (denied) return denied;
+    const member = mockStaffForSession(data, init);
+    if (!member) return errorResponse('No staff profile found for this account.', 404);
+    return jsonResponse({ data: member });
   }
 
-  const data = readData();
+  if (path === '/staff/me' && method === 'PATCH') {
+    const denied = requireMockStaff(init);
+    if (denied) return denied;
+    const member = mockStaffForSession(data, init);
+    if (!member) return errorResponse('No staff profile found for this account.', 404);
+    if (body.phone !== undefined) member.phone = String(body.phone).trim();
+    member.updatedAt = new Date().toISOString();
+    writeData(data);
+    return jsonResponse({ data: member });
+  }
+
+  if (path === '/accounts/me' && method === 'PATCH') {
+    const session = mockSession(init);
+    if (!session) return errorResponse('Sign in to continue.', 401);
+    const account = data.accounts.find((item) => item.id === session.accountId);
+    if (!account) return errorResponse('Account not found.', 404);
+    const email = String(body.email ?? '').trim().toLowerCase();
+    if (!email) return errorResponse('Enter an email address.', 400);
+    if (data.accounts.some((item) => item.email.toLowerCase() === email && item.id !== account.id)) {
+      return errorResponse('This email is already in use by another account.', 409);
+    }
+    account.email = email;
+    account.updatedAt = new Date().toISOString();
+    writeData(data);
+    return jsonResponse({ data: { id: account.id, email: account.email, role: account.role, status: account.status, createdAt: account.createdAt, updatedAt: account.updatedAt } });
+  }
+
+  if (path === '/accounts/me/password' && method === 'POST') {
+    const session = mockSession(init);
+    if (!session) return errorResponse('Sign in to continue.', 401);
+    const account = data.accounts.find((item) => item.id === session.accountId);
+    if (!account) return errorResponse('Account not found.', 404);
+    // The sign-in page prints the credentials of the published demo accounts,
+    // so changing one of their passwords would leave the page showing a
+    // credential that no longer works.
+    if (isPublishedDemoAccount(account)) {
+      return errorResponse('This is a published demo account. Its sign-in details are shown on the sign-in page and cannot be changed.', 400);
+    }
+    const currentPassword = String(body.currentPassword ?? '');
+    const newPassword = String(body.newPassword ?? '');
+    if (hashString(currentPassword) !== account.passwordHash) {
+      return errorResponse('Current password is incorrect', 400);
+    }
+    if (!isValidPassword(newPassword)) {
+      return errorResponse('Use a strong password with at least 8 characters, including upper/lowercase, a number, and a special character.', 400);
+    }
+    account.passwordHash = hashString(newPassword);
+    account.passwordChangedAt = new Date().toISOString();
+    writeData(data);
+    return jsonResponse({ message: 'Password changed successfully' });
+  }
+
+  // An administrator or manager may set another account's password without
+  // knowing its current one. The stored hash is never returned.
+  const adminPasswordMatch = path.match(/^\/accounts\/([^/]+)\/password$/);
+  if (adminPasswordMatch && method === 'POST') {
+    const session = mockSession(init);
+    if (!session) return errorResponse('Sign in to continue.', 401);
+    if (session.role !== 'ADMIN' && session.role !== 'MANAGER') {
+      return errorResponse('You do not have permission to change this account\'s password', 403);
+    }
+    const account = data.accounts.find((item) => item.id === adminPasswordMatch[1]);
+    if (!account) return errorResponse('Account not found.', 404);
+    // The sign-in page prints the credentials of the published demo accounts,
+    // so reissuing a password for one of them would contradict what the page
+    // shows. Those accounts keep the published password.
+    if (isPublishedDemoAccount(account)) {
+      return errorResponse('This is a published demo account. Its sign-in details are shown on the sign-in page and cannot be reissued.', 400);
+    }
+    const newPassword = String(body.newPassword ?? '');
+    if (!isValidPassword(newPassword)) {
+      return errorResponse('Use a strong password with at least 8 characters, including upper/lowercase, a number, and a special character.', 400);
+    }
+    account.passwordHash = hashString(newPassword);
+    account.passwordChangedAt = new Date().toISOString();
+    writeData(data);
+    return jsonResponse({ message: 'Password changed successfully' });
+  }
+
+  const accountByIdMatch = path.match(/^\/accounts\/([^/]+)$/);
+  if (accountByIdMatch && method === 'GET') {
+    const session = mockSession(init);
+    if (!session) return errorResponse('Sign in to continue.', 401);
+    const account = data.accounts.find((item) => item.id === accountByIdMatch[1]);
+    if (!account) return errorResponse('Account not found.', 404);
+    // A session may only read its own account unless it administers accounts.
+    if (session.role !== 'ADMIN' && session.role !== 'MANAGER' && account.id !== session.accountId) {
+      return errorResponse('You do not have permission to view this account', 403);
+    }
+    return jsonResponse({ data: { id: account.id, email: account.email, role: account.role, status: account.status, createdAt: account.createdAt, updatedAt: account.updatedAt } });
+  }
+
+  if (path === '/appointments/staff/me' && method === 'GET') {
+    const denied = requireMockStaff(init);
+    if (denied) return denied;
+    const member = mockStaffForSession(data, init);
+    if (!member) return errorResponse('No staff profile found for this account.', 404);
+    const records = data.appointments
+      .filter((appointment) => appointment.staffId === member.id)
+      .sort((left, right) => `${left.appointmentDate}T${left.startTime}`.localeCompare(`${right.appointmentDate}T${right.startTime}`))
+      .map((appointment) => appointmentInfo(data, appointment));
+    const result = paginated(records, url);
+    return jsonResponse({ data: { appointments: result.items, total: result.total, page: result.page, limit: result.limit, totalPages: result.totalPages } });
+  }
+
+  if (path === '/schedules/staff/me' && method === 'GET') {
+    const denied = requireMockStaff(init);
+    if (denied) return denied;
+    const member = mockStaffForSession(data, init);
+    if (!member) return errorResponse('No staff profile found for this account.', 404);
+    const schedules = data.schedules.filter((schedule) => schedule.staffId === member.id).sort((left, right) => left.dayOfWeek - right.dayOfWeek);
+    return jsonResponse({ data: { staffSchedules: schedules } });
+  }
+
+  if (path === '/schedules/requests/me' && method === 'GET') {
+    const denied = requireMockStaff(init);
+    if (denied) return denied;
+    const member = mockStaffForSession(data, init);
+    if (!member) return errorResponse('No staff profile found for this account.', 404);
+    const requests = data.scheduleRequests
+      .filter((request) => request.staffId === member.id)
+      .map(toScheduleRequestInfo);
+    return jsonResponse({ data: { scheduleRequests: requests } });
+  }
+
+  if (path === '/schedules/requests' && method === 'POST') {
+    const denied = requireMockStaff(init);
+    if (denied) return denied;
+    const member = mockStaffForSession(data, init);
+    if (!member) return errorResponse('No staff profile found for this account.', 404);
+    const requestType = String(body.requestType ?? '').trim();
+    const requestedDate = String(body.requestedDate ?? '');
+    if (!requestType || requestType.length > 20) return errorResponse('Describe the type of change you are requesting.', 400);
+    if (!requestedDate) return errorResponse('Choose a date for the request.', 400);
+    const requested = new Date(requestedDate);
+    if (Number.isNaN(requested.getTime()) || requested <= new Date()) {
+      return errorResponse('requestedDate must be in the future', 400);
+    }
+    // The calendar date is read from the leading YYYY-MM-DD, the same way the
+    // API normalizes the timestamp, so a timezone never shifts the date.
+    const datePart = /^(\d{4}-\d{2}-\d{2})(?:$|T)/.exec(requestedDate)?.[1];
+    if (!datePart) return errorResponse('requestedDate must be a date', 400);
+    const request = {
+      id: newId(),
+      staffId: member.id,
+      requestedDate: datePart,
+      requestedStartTime: body.requestedStartTime ? String(body.requestedStartTime) : null,
+      requestedEndTime: body.requestedEndTime ? String(body.requestedEndTime) : null,
+      requestType,
+      reason: body.reason ? String(body.reason) : null,
+      status: 'PENDING' as const,
+      reviewedAt: null,
+      createdAt: new Date().toISOString(),
+    };
+    data.scheduleRequests.unshift(request as never);
+    writeData(data);
+    return jsonResponse({ data: { scheduleRequest: toScheduleRequestInfo(request) } }, 201);
+  }
+
+  if (path === '/services/staff/me/services' && method === 'GET') {
+    const denied = requireMockStaff(init);
+    if (denied) return denied;
+    const member = mockStaffForSession(data, init);
+    if (!member) return errorResponse('No staff profile found for this account.', 404);
+    const assigned = data.staffServices.filter((assignment) => assignment.staffId === member.id);
+    const services = assigned
+      .map((assignment) => data.services.find((service) => service.id === assignment.serviceId))
+      .filter((service): service is MockService => Boolean(service))
+      .map((service) => ({
+        ...service,
+        categoryName: data.categories.find((category) => category.id === service.categoryId)?.name ?? 'Unknown',
+      }));
+    return jsonResponse({ data: { services } });
+  }
+
+  // ------------------------------------------------------------------
+  // Administrator-only resources
+  //
+  // The live API applies the same role rules to the same paths, so a staff
+  // session cannot reach them by calling the mock directly. The exceptions
+  // are the self-scoped writes handled above, which the live API also lets a
+  // staff member perform on their own records.
+  // ------------------------------------------------------------------
+
+  if ((writeRequest && !isStaffSelfWrite(path, method)) || ADMIN_ONLY_PATHS.has(path)) {
+    const denied = requireMockRole(init, 'ADMIN', 'MANAGER');
+    if (denied) return denied;
+  }
+
   if (path === '/accounts' && method === 'GET') {
-    const result = paginated(data.accounts, url);
+    const result = paginated(data.accounts.map(toAccountInfo), url);
     return jsonResponse({ data: { accounts: result.items, total: result.total, page: result.page, limit: result.limit, totalPages: result.totalPages } });
   }
   if (path === '/accounts' && method === 'POST') {
@@ -555,7 +1057,7 @@ function mockRequest(input: RequestInfo | URL, init?: RequestInit): Response {
       }
     }
     writeData(data);
-    return jsonResponse({ data: { ...account, staffId, schedule: scheduleData } }, 201);
+    return jsonResponse({ data: { ...toAccountInfo(account), staffId, schedule: scheduleData } }, 201);
   }
   const accountStatusMatch = path.match(/^\/accounts\/([^/]+)\/status$/);
   if (accountStatusMatch && method === 'PATCH') {
@@ -603,6 +1105,7 @@ function mockRequest(input: RequestInfo | URL, init?: RequestInit): Response {
   if (staffMatch && method === 'PATCH') {
     const member = data.staff.find((item) => item.id === staffMatch[1]);
     if (!member) return errorResponse('Staff profile not found.', 404);
+    if (body.firstName !== undefined) member.firstName = String(body.firstName).trim();
     if (body.lastName !== undefined) member.lastName = String(body.lastName).trim();
     if (body.phone !== undefined) member.phone = String(body.phone).trim();
     if (body.primaryRole !== undefined) member.primaryRole = String(body.primaryRole);
@@ -692,7 +1195,7 @@ function mockRequest(input: RequestInfo | URL, init?: RequestInit): Response {
     writeData(data);
     return jsonResponse({ data: { staffSchedules: updated } });
   }
-  if (path === '/schedules/requests' && method === 'GET') return jsonResponse({ data: { scheduleRequests: data.scheduleRequests } });
+  if (path === '/schedules/requests' && method === 'GET') return jsonResponse({ data: { scheduleRequests: data.scheduleRequests.map(toScheduleRequestInfo) } });
 
   if (path === '/appointments' && method === 'GET') {
     const records = [...data.appointments]
@@ -703,8 +1206,19 @@ function mockRequest(input: RequestInfo | URL, init?: RequestInit): Response {
   }
   const appointmentStatusMatch = path.match(/^\/appointments\/([^/]+)\/status$/);
   if (appointmentStatusMatch && method === 'PATCH') {
+    const session = mockSession(init);
+    if (!session) return errorResponse('Sign in to continue.', 401);
     const appointment = data.appointments.find((item) => item.id === appointmentStatusMatch[1]);
     if (!appointment) return errorResponse('Appointment not found.', 404);
+    // A staff member may only change the status of their own appointment.
+    if (session.role === 'STAFF') {
+      const member = mockStaffForSession(data, init);
+      if (!member || appointment.staffId !== member.id) {
+        return errorResponse('You can only access appointments assigned to you', 403);
+      }
+    } else if (session.role !== 'ADMIN' && session.role !== 'MANAGER') {
+      return errorResponse('You do not have permission to change this appointment', 403);
+    }
     const transitions: Record<AppointmentStatus, AppointmentStatus[]> = {
       RESERVED: ['CONFIRMED', 'CANCELLED'],
       CONFIRMED: ['COMPLETED', 'CANCELLED', 'NO_SHOW'],

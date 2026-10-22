@@ -399,6 +399,17 @@ export class ServiceService {
     return result;
   }
 
+  /** Get services the authenticated staff member can perform */
+  static async getServicesForOwnStaff(accountId: string): Promise<ServiceInfo[]> {
+    // The JWT subject is the account ID; the staff row is found through accountId.
+    const staff = await db.orm.public.Staff.where({ accountId }).first();
+    if (!staff) {
+      throw new NotFoundError('No staff profile found for this account');
+    }
+
+    return this.listServicesForStaffRow(staff.id);
+  }
+
   /** Get services a staff member can perform */
   static async getServicesForStaff(staffId: string, requestingRole: string): Promise<ServiceInfo[]> {
     if (requestingRole !== 'ADMIN' && requestingRole !== 'MANAGER') {
@@ -411,6 +422,11 @@ export class ServiceService {
       throw new NotFoundError('Staff member not found');
     }
 
+    return this.listServicesForStaffRow(staff.id);
+  }
+
+  /** List the services assigned to a known staff row */
+  private static async listServicesForStaffRow(staffId: string): Promise<ServiceInfo[]> {
     const assignments = await db.orm.public.StaffService.where({ staffId }).all();
 
     const result: ServiceInfo[] = [];
