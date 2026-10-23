@@ -28,6 +28,15 @@
   --review-panel: var(--color-review-panel);
   --review-card: var(--color-review-card);
   --review-border: var(--color-review-border);
+  --toast-success: #9dbb8f;
+  --toast-error: #e0917f;
+  --toast-warning: #d9b45c;
+  --toast-info: var(--color-gold);
+  --wave-gold: rgba(212, 180, 92, 0.72);
+  --skeleton-base: rgba(212, 180, 92, 0.08);
+  --skeleton-sheen: rgba(212, 180, 92, 0.16);
+  --atmosphere-a: rgba(212, 180, 92, 0.1);
+  --atmosphere-b: rgba(245, 242, 237, 0.05);
   --serif: var(--font-serif);
   --sans: var(--font-sans);
 }
@@ -101,7 +110,7 @@
 
   .type-brand-caption {
     font-family: var(--font-sans);
-    font-size: clamp(9.2px, 0.7986vw, 11.5px);
+    font-size: clamp(10.5px, 0.9vw, 12px);
     font-weight: 500;
     line-height: 1.2;
     letter-spacing: 1.6px;
@@ -199,7 +208,7 @@
 
   .type-card-title {
     font-family: var(--font-sans);
-    font-size: clamp(15px, 1.25vw, 18px);
+    font-size: clamp(20px, 1.8vw, 24px);
     font-weight: 600;
     font-style: italic;
     line-height: 1.2;
@@ -207,21 +216,21 @@
 
   .type-card-price {
     font-family: var(--font-sans);
-    font-size: clamp(12px, 0.9722vw, 14px);
+    font-size: clamp(14px, 1.1vw, 16px);
     font-weight: 700;
     line-height: 1.2;
   }
 
   .type-card-body {
     font-family: var(--font-sans);
-    font-size: clamp(11px, 0.9028vw, 13px);
+    font-size: clamp(14px, 1.11vw, 16px);
     font-weight: 400;
-    line-height: 1.9;
+    line-height: 1.7;
   }
 
   .type-caption {
     font-family: var(--font-sans);
-    font-size: clamp(10px, 0.7639vw, 11px);
+    font-size: clamp(12px, 0.9vw, 13px);
     font-weight: 500;
     line-height: 1.2;
     letter-spacing: 1px;
@@ -230,7 +239,7 @@
 
   .type-card-button {
     font-family: var(--font-sans);
-    font-size: clamp(10px, 0.7639vw, 11px);
+    font-size: clamp(12px, 0.97vw, 14px);
     font-weight: 700;
     line-height: 1.2;
     letter-spacing: 0.5px;
@@ -531,4 +540,871 @@ html[data-theme='light'] [class*='text-[#bcb5a9]'],
 html[data-theme='light'] [class*='text-[#aaa49a]'],
 html[data-theme='light'] [class*='text-[#918c82]'] {
   color: var(--muted);
+}
+
+/* Toast, skeleton, divider, and atmosphere tokens in light mode. */
+html[data-theme='light'] {
+  --toast-success: #5c7f52;
+  --toast-error: #b45741;
+  --toast-warning: #96702a;
+  --toast-info: #8a6a22;
+  --wave-gold: rgba(143, 108, 37, 0.68);
+  --skeleton-base: rgba(112, 87, 34, 0.1);
+  --skeleton-sheen: rgba(143, 108, 37, 0.18);
+  --atmosphere-a: rgba(212, 180, 92, 0.16);
+  --atmosphere-b: rgba(255, 255, 255, 0.65);
+}
+
+/* Toast viewport: bottom-right on desktop, above the mobile booking button
+   on small screens, and moved to the top while a dialog is open so modal
+   actions and controls stay unobstructed. */
+.toast-viewport {
+  position: fixed;
+  z-index: 120;
+  right: 24px;
+  bottom: 24px;
+  width: min(380px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.toast-viewport > ol > li {
+  pointer-events: auto;
+}
+
+.toast-card {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--toast-accent);
+  border-radius: 6px;
+  background: var(--surface);
+  padding: 12px 12px 12px 14px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.4);
+  animation: toast-in 220ms ease-out;
+}
+
+.toast-card[data-variant='success'] {
+  --toast-accent: var(--toast-success);
+}
+
+.toast-card[data-variant='error'] {
+  --toast-accent: var(--toast-error);
+}
+
+.toast-card[data-variant='warning'] {
+  --toast-accent: var(--toast-warning);
+}
+
+.toast-card[data-variant='info'] {
+  --toast-accent: var(--toast-info);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (max-width: 680px) {
+  .toast-viewport {
+    right: 12px;
+    left: 12px;
+    width: auto;
+    bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+.toast-viewport[data-dialog-open='true'] {
+  top: calc(88px + env(safe-area-inset-top, 0px));
+  bottom: auto;
+}
+
+@media (max-width: 680px) {
+  .toast-viewport[data-dialog-open='true'] {
+    right: auto;
+    left: 50%;
+    width: min(calc(100vw - 100px), 380px);
+    transform: translateX(-50%);
+    top: calc(72px + env(safe-area-inset-top, 0px));
+  }
+}
+
+/* Loading skeleton shimmer. The reduced-motion rules above flatten the
+   animation to a static block. */
+.skeleton-shimmer {
+  position: relative;
+  overflow: hidden;
+  background: var(--skeleton-base);
+  border-radius: 4px;
+}
+
+.skeleton-shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, var(--skeleton-sheen), transparent);
+  transform: translateX(-100%);
+  animation: skeleton-sheen 1.6s ease-in-out infinite;
+}
+
+@keyframes skeleton-sheen {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+/* Per-image loading placeholder (SafeImage.jsx): a shimmering surface behind
+   the image until its bytes arrive. */
+img.img-skeleton {
+  background-color: var(--skeleton-base);
+  background-image: linear-gradient(
+    100deg,
+    transparent 20%,
+    var(--skeleton-sheen) 50%,
+    transparent 80%
+  );
+  background-size: 200% 100%;
+  animation: img-sheen 1.6s ease-in-out infinite;
+}
+
+@keyframes img-sheen {
+  from {
+    background-position: 200% 0;
+  }
+
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* Thin gold wave line between sections: drawn once when it scrolls into
+   view, static afterwards (reduced motion draws it immediately). */
+.wave-divider {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* The complete line is the resting state, so the divider can never end up
+   partially drawn: the entrance animation only dresses the reveal. */
+.wave-divider svg path {
+  stroke-dasharray: none;
+  opacity: 0;
+  transition: opacity 550ms ease-out;
+}
+
+.wave-divider[data-visible='true'] svg path {
+  opacity: 1;
+}
+
+/* Soft salon atmosphere behind selected sections: warm blurred glows plus a
+   very faint flowing line texture. Decorative and low contrast by design. */
+.salon-atmosphere {
+  position: relative;
+  isolation: isolate;
+}
+
+.salon-atmosphere::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background:
+    radial-gradient(58% 68% at 12% 18%, var(--atmosphere-a), transparent 70%),
+    radial-gradient(52% 62% at 88% 82%, var(--atmosphere-b), transparent 72%),
+    radial-gradient(38% 48% at 72% 10%, var(--atmosphere-a), transparent 75%);
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.salon-lines {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='360' viewBox='0 0 1440 360' preserveAspectRatio='none'%3E%3Cpath d='M0 60 C 140 20 360 88 520 52 S 820 -8 1020 44 S 1240 78 1440 34' fill='none' stroke='%23d4b45c' stroke-width='1.2' opacity='0.3'/%3E%3Cpath d='M0 96 C 210 40 330 150 560 118 S 900 30 1180 96 S 1330 130 1440 84' fill='none' stroke='%23d4b45c' stroke-width='1' opacity='0.34'/%3E%3Cpath d='M0 168 C 180 128 420 210 640 172 S 980 108 1220 168 S 1360 190 1440 152' fill='none' stroke='%23d4b45c' stroke-width='0.9' opacity='0.24'/%3E%3Cpath d='M0 240 C 240 200 380 286 620 248 S 1020 190 1260 244 S 1380 262 1440 232' fill='none' stroke='%23d4b45c' stroke-width='0.8' opacity='0.15'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='360' viewBox='0 0 1440 360' preserveAspectRatio='none'%3E%3Cpath d='M0 74 C 190 26 380 118 620 82 S 980 18 1180 74 S 1350 104 1440 66' fill='none' stroke='%23d4b45c' stroke-width='0.9' opacity='0.3'/%3E%3Cpath d='M0 196 C 240 150 420 240 660 198 S 1040 142 1260 194 S 1380 214 1440 188' fill='none' stroke='%232f2a22' stroke-width='0.8' opacity='0.55'/%3E%3Cpath d='M0 300 C 200 258 460 336 700 296 S 1100 240 1300 292 S 1400 308 1440 286' fill='none' stroke='%23d4b45c' stroke-width='0.6' opacity='0.18'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+html[data-theme='light'] .salon-lines {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='360' viewBox='0 0 1440 360' preserveAspectRatio='none'%3E%3Cpath d='M0 60 C 140 20 360 88 520 52 S 820 -8 1020 44 S 1240 78 1440 34' fill='none' stroke='%238f6c25' stroke-width='1.2' opacity='0.26'/%3E%3Cpath d='M0 96 C 210 40 330 150 560 118 S 900 30 1180 96 S 1330 130 1440 84' fill='none' stroke='%238f6c25' stroke-width='1' opacity='0.3'/%3E%3Cpath d='M0 168 C 180 128 420 210 640 172 S 980 108 1220 168 S 1360 190 1440 152' fill='none' stroke='%238f6c25' stroke-width='0.9' opacity='0.2'/%3E%3Cpath d='M0 240 C 240 200 380 286 620 248 S 1020 190 1260 244 S 1380 262 1440 232' fill='none' stroke='%238f6c25' stroke-width='0.8' opacity='0.13'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='360' viewBox='0 0 1440 360' preserveAspectRatio='none'%3E%3Cpath d='M0 74 C 190 26 380 118 620 82 S 980 18 1180 74 S 1350 104 1440 66' fill='none' stroke='%238f6c25' stroke-width='0.9' opacity='0.26'/%3E%3Cpath d='M0 196 C 240 150 420 240 660 198 S 1040 142 1260 194 S 1380 214 1440 188' fill='none' stroke='%23c9bfa8' stroke-width='0.8' opacity='0.5'/%3E%3Cpath d='M0 300 C 200 258 460 336 700 296 S 1100 240 1300 292 S 1400 308 1440 286' fill='none' stroke='%238f6c25' stroke-width='0.6' opacity='0.14'/%3E%3C/svg%3E");
+}
+
+/* Gold text links inside the auth dialogs. The brand gold is calibrated for
+   the dark theme, so in light mode these fall back to a darker gold that
+   keeps WCAG AA contrast on the warm surface. */
+.auth-link {
+  color: var(--gold);
+}
+
+.auth-link:hover {
+  color: var(--gold-bright);
+}
+
+.auth-note {
+  color: var(--gold-bright);
+}
+
+html[data-theme='light'] .auth-link,
+html[data-theme='light'] .auth-note {
+  color: var(--toast-info);
+}
+
+html[data-theme='light'] .auth-link:hover {
+  color: var(--toast-warning);
+}
+
+/* The development helper stays deliberately muted next to real actions. */
+.auth-helper {
+  color: var(--muted);
+}
+
+.auth-helper:hover {
+  color: var(--gold);
+}
+
+/* Appointment status badges: semantic tints tuned per theme so the text
+   stays legible on the dark cards and the light-mode card surface. */
+.appt-status--confirmed {
+  border-color: #2f6b45;
+  color: #8fd6a8;
+}
+
+.appt-status--pending {
+  border-color: #6b5b2e;
+  color: #e0c07a;
+}
+
+.appt-status--completed {
+  border-color: #3a4a6b;
+  color: #9db8e8;
+}
+
+.appt-status--cancelled {
+  border-color: #6b3a3a;
+  color: #e09a9a;
+}
+
+html[data-theme='light'] .appt-status--confirmed {
+  border-color: #2f6b45;
+  color: #215c39;
+}
+
+html[data-theme='light'] .appt-status--pending {
+  border-color: #8a6f2e;
+  color: #6f5718;
+}
+
+html[data-theme='light'] .appt-status--completed {
+  border-color: #3a4a6b;
+  color: #2d3f63;
+}
+
+html[data-theme='light'] .appt-status--cancelled {
+  border-color: #8c4a4a;
+  color: #7a3535;
+}
+
+/* Wave accent behind the login/registration dialog: one flowing silk contour
+   family shared with the page backdrop. Purely decorative (pseudo-element),
+   never above the fields, and it cannot intercept clicks. */
+.auth-panel {
+  position: relative;
+  isolation: isolate;
+}
+
+.auth-panel::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='220' viewBox='0 0 600 220'%3E%3Cpath d='M0 60 C 110 18 230 96 350 58 S 520 12 600 70' fill='none' stroke='%23d4b45c' stroke-width='1.1' opacity='0.5'/%3E%3Cpath d='M0 112 C 130 72 250 148 380 108 S 540 58 600 122' fill='none' stroke='%23d4b45c' stroke-width='1' opacity='0.32'/%3E%3Cpath d='M0 168 C 150 128 290 202 430 160 S 560 118 600 178' fill='none' stroke='%23d4b45c' stroke-width='1' opacity='0.2'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='220' viewBox='0 0 600 220'%3E%3Cpath d='M0 56 C 130 16 250 96 380 56 S 560 8 600 62' fill='none' stroke='%23d4b45c' stroke-width='0.8' opacity='0.42'/%3E%3Cpath d='M0 132 C 150 92 280 172 420 130 S 560 84 600 140' fill='none' stroke='%23d4b45c' stroke-width='0.6' opacity='0.22'/%3E%3C/svg%3E");
+  background-size: 100% 210px;
+  background-position: top center;
+  background-repeat: no-repeat;
+  opacity: 0.55;
+}
+
+html[data-theme='light'] .auth-panel::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='220' viewBox='0 0 600 220'%3E%3Cpath d='M0 60 C 110 18 230 96 350 58 S 520 12 600 70' fill='none' stroke='%238f6c25' stroke-width='1.1' opacity='0.42'/%3E%3Cpath d='M0 112 C 130 72 250 148 380 108 S 540 58 600 122' fill='none' stroke='%238f6c25' stroke-width='1' opacity='0.26'/%3E%3Cpath d='M0 168 C 150 128 290 202 430 160 S 560 118 600 178' fill='none' stroke='%238f6c25' stroke-width='1' opacity='0.16'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='220' viewBox='0 0 600 220'%3E%3Cpath d='M0 56 C 130 16 250 96 380 56 S 560 8 600 62' fill='none' stroke='%238f6c25' stroke-width='0.8' opacity='0.36'/%3E%3Cpath d='M0 132 C 150 92 280 172 420 130 S 560 84 600 140' fill='none' stroke='%238f6c25' stroke-width='0.6' opacity='0.18'/%3E%3C/svg%3E");
+  opacity: 0.5;
+}
+
+/* --- Service cards: premium lift + two circling gold glows (P3) --- */
+
+@property --glow-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+/* --- Booking step swipe (in-modal horizontal transition) --- */
+
+/* The viewport clips the horizontal movement and sizes to the taller of the
+   two steps during a swipe, so the modal never shows gaps or spills. */
+.booking-step-viewport {
+  display: grid;
+  overflow: hidden;
+}
+
+.booking-step {
+  grid-area: 1 / 1;
+  min-width: 0;
+}
+
+@keyframes booking-slide-in-right {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes booking-slide-in-left {
+  from {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes booking-slide-out-left {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+
+  to {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+}
+
+@keyframes booking-slide-out-right {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+
+  to {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
+
+.booking-step--in-right {
+  animation: booking-slide-in-right var(--booking-swipe-ms, 260ms) cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+.booking-step--in-left {
+  animation: booking-slide-in-left var(--booking-swipe-ms, 260ms) cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+.booking-step--out-left {
+  animation: booking-slide-out-left var(--booking-swipe-ms, 260ms) cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+.booking-step--out-right {
+  animation: booking-slide-out-right var(--booking-swipe-ms, 260ms) cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .booking-step--in-right,
+  .booking-step--in-left,
+  .booking-step--out-left,
+  .booking-step--out-right {
+    animation: none;
+  }
+}
+
+.service-card {
+  position: relative;
+  border-radius: 16px;
+  transition: transform 220ms ease, box-shadow 220ms ease, border-color 220ms ease;
+}
+
+.service-card:hover,
+.service-card:focus-within {
+  transform: translateY(-6px);
+  border-color: rgba(229, 198, 108, 0.75);
+  box-shadow:
+    0 22px 44px rgba(0, 0, 0, 0.35),
+    0 10px 24px rgba(212, 180, 92, 0.14);
+}
+
+/* Masked conic rings: only a 2px band around the card edge shows the glow,
+   so the title, image, and price stay clear. Paused until hover/focus. */
+.service-card::before,
+.service-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  padding: 2px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 260ms ease;
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+}
+
+.service-card::before {
+  background: conic-gradient(
+    from var(--glow-angle),
+    transparent 0 58%,
+    rgba(229, 198, 108, 0.85) 72%,
+    rgba(212, 180, 92, 0.15) 82%,
+    transparent 92%
+  );
+  animation: service-glow-spin 6s linear infinite;
+  animation-play-state: paused;
+}
+
+.service-card::after {
+  background: conic-gradient(
+    from calc(180deg - var(--glow-angle)),
+    transparent 0 62%,
+    rgba(212, 180, 92, 0.55) 76%,
+    transparent 90%
+  );
+  animation: service-glow-spin 8.5s linear infinite;
+  animation-play-state: paused;
+}
+
+.service-card:hover::before,
+.service-card:hover::after,
+.service-card:focus-within::before,
+.service-card:focus-within::after {
+  opacity: 1;
+  animation-play-state: running;
+}
+
+.service-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Description area: fixed height per breakpoint with internal scrolling so
+   long descriptions never grow the card. The region is focusable
+   (tabIndex + role=region in ServiceCard) so keyboard users can scroll it. */
+.service-description {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(212, 180, 92, 0.55) transparent;
+}
+
+.service-description::-webkit-scrollbar {
+  width: 6px;
+}
+
+.service-description::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.service-description::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(212, 180, 92, 0.55);
+}
+
+html[data-theme='light'] .service-description {
+  scrollbar-color: rgba(143, 108, 37, 0.6) transparent;
+}
+
+html[data-theme='light'] .service-description::-webkit-scrollbar-thumb {
+  background: rgba(143, 108, 37, 0.6);
+}
+
+@keyframes service-glow-spin {
+  to {
+    --glow-angle: 360deg;
+  }
+}
+
+/* The price is the scan anchor of the card: gold, bold serif, deliberately
+   the largest text so pricing reads at a glance. */
+.service-price {
+  margin: 8px 0 0;
+  font-family: var(--serif);
+  font-size: clamp(22px, 2.4vw, 28px);
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  color: var(--gold);
+}
+
+/* --- Welcome / next-appointment panel (signed-in Services page) --- */
+
+.welcome-panel {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border: 1px solid rgba(212, 180, 92, 0.55);
+  border-radius: 10px;
+  background:
+    linear-gradient(115deg, rgba(212, 180, 92, 0.09), rgba(212, 180, 92, 0) 42%),
+    linear-gradient(160deg, #16130e, #121009 55%, #16130e);
+}
+
+/* One faint contour in the shared wave language — static, behind content,
+   non-interactive. */
+.welcome-panel::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='900' height='160' viewBox='0 0 900 160' preserveAspectRatio='none'%3E%3Cpath d='M0 118 C 180 78 340 148 520 112 S 800 62 900 104' fill='none' stroke='%23d4b45c' stroke-width='1' opacity='0.28'/%3E%3C/svg%3E");
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+}
+
+.welcome-gold {
+  color: var(--gold);
+}
+
+html[data-theme='light'] .welcome-gold {
+  color: #6f5216;
+}
+
+html[data-theme='light'] .welcome-panel {
+  border-color: rgba(143, 108, 37, 0.45);
+  background:
+    linear-gradient(115deg, rgba(143, 108, 37, 0.08), rgba(143, 108, 37, 0) 42%),
+    linear-gradient(160deg, #fffdf8, #f6eeda 55%, #fffdf8);
+}
+
+html[data-theme='light'] .welcome-panel::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='900' height='160' viewBox='0 0 900 160' preserveAspectRatio='none'%3E%3Cpath d='M0 118 C 180 78 340 148 520 112 S 800 62 900 104' fill='none' stroke='%238f6c25' stroke-width='1' opacity='0.24'/%3E%3C/svg%3E");
+}
+
+/* --- Accidental text-drag / selection fix (P3) --- */
+
+/* Interface furniture is not content: keep drag gestures from producing
+   selection highlights or native image-drag ghosts on cards, labels, and
+   controls. Inputs, textareas, and readable content (review text, booking
+   summaries) keep normal selection because copying them is meaningful. */
+img,
+svg {
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+button,
+[role='button'],
+[role='tab'],
+header a,
+.btn-pill,
+.type-section-eyebrow,
+.type-caption,
+.appt-status,
+.service-card {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Light theme: the brand gold is calibrated for dark surfaces. On the cream
+   card it fell under 2:1, so the price and pill buttons use the darker
+   light-theme gold (same family as the auth links and wave contours). */
+html[data-theme='light'] .service-price {
+  color: #6f5216;
+}
+
+/* Outline pills carry gold text on cream (5.95:1). Gold-fill pills keep the
+   brand fill with near-black text (9.43:1); only outline text needs the
+   darker gold. Borders land at 3.97:1, above the 3:1 UI-component floor. */
+html[data-theme='light'] .btn-pill[class~='text-[var(--gold)]'],
+html[data-theme='light'] .btn-pill[class~='text-(--gold)'] {
+  color: #6f5216;
+}
+
+html[data-theme='light'] .btn-pill {
+  --gold: #8f6c25;
+  --gold-bright: #b08c2d;
+}
+
+html[data-theme='light'] .btn-pill[class~='bg-(--gold)'],
+html[data-theme='light'] .btn-pill[class~='bg-[var(--gold)]'] {
+  --gold: #d4b45c;
+  --gold-bright: #e5c66c;
+}
+
+/* --- Shared pill buttons (P4) --- */
+
+.btn-pill {
+  border-radius: 999px;
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    background-color 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease;
+}
+
+.btn-pill:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 26px rgba(212, 180, 92, 0.16);
+}
+
+.btn-pill:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 4px 10px rgba(212, 180, 92, 0.1);
+}
+
+.btn-pill:disabled {
+  cursor: default;
+  transform: none;
+  box-shadow: none;
+  opacity: 0.55;
+}
+
+/* --- Booking progress + gold wipe transitions (P5) --- */
+
+.booking-progress {
+  height: 4px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(212, 180, 92, 0.18);
+}
+
+.booking-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--gold), var(--gold-bright));
+  transition: width 320ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .service-card::before,
+  .service-card::after {
+    animation: none !important;
+  }
+
+  .service-card:hover,
+  .service-card:focus-within {
+    transform: none;
+    border-color: var(--gold);
+    box-shadow: 0 14px 30px rgba(212, 180, 92, 0.18);
+  }
+
+  .btn-pill:hover:not(:disabled) {
+    transform: none;
+  }
+
+}
+
+html[data-theme='light'] .auth-helper:hover {
+  color: var(--toast-warning);
+}
+
+/* Mobile floating booking action. */
+.mobile-book-cta {
+  position: fixed;
+  right: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  z-index: 30;
+  display: none;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 18px;
+  border: 1px solid var(--gold);
+  border-radius: 999px;
+  background: var(--gold);
+  color: #111;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-decoration: none;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.42);
+  transition: opacity 180ms ease, transform 180ms ease, background-color 180ms ease;
+}
+
+.mobile-book-cta:hover {
+  background: var(--gold-bright);
+}
+
+.mobile-book-cta:active {
+  transform: scale(0.97);
+}
+
+@media (max-width: 680px) {
+  .mobile-book-cta {
+    display: inline-flex;
+  }
+}
+
+.mobile-book-cta-hidden {
+  opacity: 0;
+  transform: translateY(12px);
+  pointer-events: none;
+}
+
+/* Gallery marquee: three continuously drifting rows built from the salon's
+   own photos. The track holds two identical groups and translates exactly one
+   group width per loop, so the seam is never visible as a jump or gap. */
+.gallery-marquee {
+  overflow: hidden;
+}
+
+.gallery-marquee-track {
+  display: flex;
+  width: max-content;
+  animation: gallery-drift-left var(--marquee-duration, 80s) linear infinite;
+}
+
+.gallery-marquee-track[data-move='right'] {
+  animation-name: gallery-drift-right;
+}
+
+.gallery-marquee-group {
+  display: flex;
+  flex-shrink: 0;
+  gap: 12px;
+  padding-right: 12px;
+}
+
+@keyframes gallery-drift-left {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes gallery-drift-right {
+  from {
+    transform: translateX(-50%);
+  }
+
+  to {
+    transform: translateX(0);
+  }
+}
+
+/* Pause conditions: user pause, off-screen section, hover, or keyboard focus
+   inside the row. User pause persists until explicitly resumed. */
+.gallery-marquee[data-paused='true'] .gallery-marquee-track,
+.gallery-marquee[data-inview='false'] .gallery-marquee-track,
+.gallery-marquee-row:hover .gallery-marquee-track,
+.gallery-marquee-row:focus-within .gallery-marquee-track {
+  animation-play-state: paused;
+}
+
+/* Restrained gold hover/focus treatment: gold edge, soft gold shadow, one
+   quiet shine sweep, and a slight image lift. */
+.gallery-tile {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  flex-shrink: 0;
+  padding: 0;
+  cursor: zoom-in;
+  border: 1px solid rgba(212, 180, 92, 0.2);
+  border-radius: 5px;
+  background: linear-gradient(135deg, #29241a, #151515 55%, #2b2518);
+  transition: border-color 220ms ease, box-shadow 220ms ease;
+}
+
+.gallery-tile:hover,
+.gallery-tile:focus-visible {
+  border-color: var(--gold);
+  box-shadow: 0 12px 28px rgba(212, 180, 92, 0.16);
+}
+
+.gallery-tile::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 42%,
+    rgba(229, 198, 108, 0.3) 50%,
+    transparent 58%
+  );
+  opacity: 0;
+  transform: translateX(-70%);
+  pointer-events: none;
+}
+
+.gallery-tile:hover::after,
+.gallery-tile:focus-visible::after {
+  animation: gallery-shine 900ms ease;
+}
+
+@keyframes gallery-shine {
+  from {
+    opacity: 0;
+    transform: translateX(-70%);
+  }
+
+  30% {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+    transform: translateX(70%);
+  }
+}
+
+.gallery-tile img {
+  transition: transform 320ms ease;
+}
+
+.gallery-tile:hover img,
+.gallery-tile:focus-visible img {
+  transform: scale(1.03);
+}
+
+/* Reduced motion: no drifting and no shine. The rows become horizontally
+   scrollable so every photo stays reachable, and the pause control hides. */
+@media (prefers-reduced-motion: reduce) {
+  .gallery-marquee {
+    overflow-x: auto;
+  }
+
+  .gallery-marquee-track,
+  .gallery-marquee-track[data-move] {
+    animation: none;
+  }
+
+  .gallery-tile::after {
+    display: none;
+  }
+
+  .gallery-tile:hover img,
+  .gallery-tile:focus-visible img {
+    transform: none;
+  }
+
+  .gallery-pause-control {
+    display: none;
+  }
 }

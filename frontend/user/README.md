@@ -22,3 +22,10 @@ gallery row repeats its five configured images to fill ten tiles.
 Login and Signin are UI previews only; authentication and Google sign-in are not
 connected to a backend. The appointment and service booking buttons open the
 Login overlay.
+
+## Empty-state illustrations
+
+Empty states load replaceable placeholder art from `public/images/empty-states/`
+by stable filename — replace the file, keep the name, and the new artwork is
+picked up automatically. See `public/images/empty-states/ASSET-INDEX.md` for the
+filename-to-state map and recommended dimensions.

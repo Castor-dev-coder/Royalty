@@ -1,5 +1,6 @@
 import BrandMark from './BrandMark.jsx'
 import { Link } from 'react-router-dom'
+import { useToast } from '../context/useToast.jsx'
 
 const signedOutLinks = [
   { label: 'Home', to: '/' }, { label: 'Services', to: '/services' },
@@ -18,12 +19,14 @@ const contactDetails = [
     value: 'royaltysalon@gmail.com',
     href: 'mailto:royaltysalon@gmail.com',
     icon: 'email',
+    copyable: true,
   },
   {
     label: 'PHONE',
     value: '+63 9XX XXX XXXX',
     href: 'tel:+639XXXXXXXXX',
     icon: 'phone',
+    copyable: true,
   },
   {
     label: 'ADDRESS',
@@ -61,9 +64,37 @@ function ContactIcon({ type }) {
  // eslint-disable-next-line no-unused-vars
  function Footer({ onLoginClick, user }) {
   const quickLinks = user ? signedInLinks : signedOutLinks
+  const { showToast } = useToast()
+
+  // Copying real contact details is one of the few genuinely useful one-tap
+  // actions in the footer, so it reports success or failure honestly.
+  async function copyValue(value, label) {
+    const name = `${label.charAt(0)}${label.slice(1).toLowerCase()}`
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value)
+      } else {
+        // Fallback for non-secure origins where the async clipboard API is
+        // unavailable.
+        const helper = document.createElement('textarea')
+        helper.value = value
+        helper.setAttribute('readonly', '')
+        helper.style.position = 'fixed'
+        helper.style.opacity = '0'
+        document.body.appendChild(helper)
+        helper.select()
+        const copied = document.execCommand('copy')
+        helper.remove()
+        if (!copied) throw new Error('copy command rejected')
+      }
+      showToast('success', `${name} copied to clipboard.`)
+    } catch {
+      showToast('error', `Could not copy the ${label.toLowerCase()}.`)
+    }
+  }
   return (
     <footer className="site-footer border-t border-[rgba(212,180,92,0.18)] bg-[#080808] pt-13.75">
-      <div className="mx-auto grid w-[min(100%-48px,1180px)] grid-cols-[1.35fr_0.7fr_1fr] gap-[clamp(40px,8vw,120px)] pb-11 max-[680px]:grid-cols-2 max-[680px]:gap-x-6 max-[680px]:gap-y-9.5 max-[600px]:w-[min(100%-36px,1180px)]">
+      <div className="mx-auto grid w-[min(100%-48px,1180px)] grid-cols-[minmax(0,1.35fr)_minmax(0,0.7fr)_minmax(0,1fr)] gap-[clamp(40px,8vw,120px)] pb-11 max-[680px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] max-[680px]:gap-x-6 max-[680px]:gap-y-9.5 max-[600px]:w-[min(100%-36px,1180px)]">
         <div className="max-[680px]:col-span-full">
           <a className="flex items-center gap-2 text-(--text) no-underline" href="#home">
             <BrandMark className="size-9.25" />
@@ -125,7 +156,7 @@ function ContactIcon({ type }) {
             CONTACT US
           </h2>
           <ul className="m-0 flex list-none flex-col gap-3.25 p-0">
-            {contactDetails.map(({ label, value, href, icon }) => (
+            {contactDetails.map(({ label, value, href, icon, copyable }) => (
               <li
                 className="type-footer-text flex items-start gap-3 text-[#c0bbb2]"
                 key={label}
@@ -133,17 +164,32 @@ function ContactIcon({ type }) {
                 <span className="grid h-4.5 w-4 shrink-0 place-items-center text-center text-(--gold)">
                   <ContactIcon type={icon} />
                 </span>
-                <span className="flex flex-col">
+                <span className="flex min-w-0 flex-col">
                   <small className="type-footer-caption text-[#a79f8e]">
                     {label}
                   </small>
-                  {href ? (
-                    <a className="text-inherit no-underline" href={href}>
-                      {value}
-                    </a>
-                  ) : (
-                    <span>{value}</span>
-                  )}
+                  <span className="flex min-w-0 items-start gap-1.5 [overflow-wrap:anywhere]">
+                    {href ? (
+                      <a className="text-inherit no-underline" href={href}>
+                        {value}
+                      </a>
+                    ) : (
+                      <span>{value}</span>
+                    )}
+                    {copyable && (
+                      <button
+                        aria-label={`Copy ${label.toLowerCase()}`}
+                        className="mt-0.5 grid size-5 shrink-0 cursor-pointer place-items-center rounded-full text-[var(--gold)] transition-colors hover:bg-[rgba(212,180,92,0.14)]"
+                        onClick={() => copyValue(value, label)}
+                        type="button"
+                      >
+                        <svg className="size-3 fill-none stroke-current [stroke-linecap:round] [stroke-linejoin:round] [stroke-width:1.6]" viewBox="0 0 24 24" aria-hidden="true">
+                          <rect height="13" rx="2" width="13" x="9" y="9" />
+                          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                        </svg>
+                      </button>
+                    )}
+                  </span>
                 </span>
               </li>
             ))}

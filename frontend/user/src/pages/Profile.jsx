@@ -1,34 +1,28 @@
 import { useCallback, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
-import Footer from '../components/Footer.jsx'
-import Navbar from '../components/Navbar.jsx'
+import { useAuth } from '../context/useAuth.jsx'
+import { useToast } from '../context/useToast.jsx'
 
 function Profile() {
   const navigate = useNavigate()
-  const [user, setUser] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('royalty-user')) } catch { return null }
-  })
+  const { user, login } = useAuth()
+  const { showToast } = useToast()
   const [saved, setSaved] = useState(false)
-
-  const logout = useCallback(() => {
-    localStorage.removeItem('royalty-user')
-    setUser(null)
-  }, [])
 
   const updateProfile = useCallback((event) => {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
     const nextUser = { ...user, name: `${form.get('firstName')} ${form.get('lastName')}`.trim(), email: form.get('email') }
     localStorage.setItem('royalty-user', JSON.stringify(nextUser))
-    setUser(nextUser)
+    login(nextUser)
     setSaved(true)
-  }, [user])
+    showToast('success', 'Your profile has been updated.')
+  }, [login, showToast, user])
 
   if (!user) return <Navigate to="/services" replace />
 
   return (
     <>
-      <Navbar user={user} onLogout={logout} onLoginClick={() => navigate('/services')} />
       <main className="min-h-[calc(100vh-76px)] bg-black py-16">
         <div className="mx-auto w-[min(100%-48px,980px)] max-[680px]:w-[min(100%-36px,980px)]">
           <div className="mb-10 text-center">
@@ -71,15 +65,14 @@ function Profile() {
               </div>
             </div>
             <div className="mt-8 flex justify-end gap-4 border-t border-[rgba(212,180,92,0.15)] pt-6">
-              <button type="button" onClick={() => navigate(-1)} className="rounded-md border border-[rgba(212,180,92,0.4)] px-6 py-3 text-sm text-[#918c82] transition-colors hover:border-[rgba(212,180,92,0.6)] hover:text-[#f4f1eb]">Cancel</button>
-              <button type="submit" className="rounded-md bg-(--gold) px-8 py-3 text-sm font-semibold text-black transition-colors hover:bg-(--gold-bright)">
+              <button type="button" onClick={() => navigate(-1)} className="btn-pill rounded-full border border-[rgba(212,180,92,0.4)] px-6 py-3 text-sm text-[#918c82] transition-colors hover:border-[rgba(212,180,92,0.6)] hover:text-[#f4f1eb]">Cancel</button>
+              <button type="submit" className="btn-pill rounded-full bg-(--gold) px-8 py-3 text-sm font-semibold text-black transition-colors hover:bg-(--gold-bright)">
                 {saved ? '✓ Saved' : 'Save Changes'}
               </button>
             </div>
           </form>
         </div>
       </main>
-      <Footer user={user} onLoginClick={() => navigate('/services')} />
     </>
   )
 }

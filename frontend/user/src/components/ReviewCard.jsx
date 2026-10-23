@@ -48,11 +48,12 @@ function RatingStars({ value }) {
   )
 }
 
-function ReviewCard({ name, avatar, date, rating, category, text, images }) {
+function ReviewCard({ name, avatar, date, rating, category, text, images = [] }) {
   const [zoomedImage, setZoomedImage] = useState(null)
 
   return (
     <article className="overflow-hidden rounded-2xl border border-(--line) bg-(--review-panel) shadow-[0_0_0_1px_rgba(212,180,92,0.06)]">
+      {images.length > 0 && (
       <div className="grid grid-cols-3 gap-2 border-b border-[rgba(212,180,92,0.2)] p-2.5">
         {images.map((image, index) => (
           <button
@@ -64,12 +65,13 @@ function ReviewCard({ name, avatar, date, rating, category, text, images }) {
           >
             <SafeImage
               alt={`${name} review image ${index + 1}`}
-              className="aspec-{4/3} w-full object-cover transition-transform duration-300 hover:scale-[1.06]"
+              className="aspect-[4/3] w-full object-cover transition-transform duration-300 hover:scale-[1.06]"
               src={image}
             />
           </button>
         ))}
       </div>
+      )}
 
       <div className="p-[18px_18px_16px]">
         <div className="flex items-start justify-between gap-3">
@@ -81,20 +83,24 @@ function ReviewCard({ name, avatar, date, rating, category, text, images }) {
             />
             <div>
               <div className="text-lg font-semibold text-(--text)">{name}</div>
-              <div className="mt-1 text-xs uppercase tracking-[0.06em] text-(--muted)">{date}</div>
+              {date && (
+                <div className="mt-1 text-[13px] uppercase tracking-[0.06em] text-(--muted)">{date}</div>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-2 pt-0.5">
             <RatingStars value={rating} />
-            <span className="text-sm font-semibold text-(--gold)">{Number(rating).toFixed(1)}</span>
+            <span className="text-[15px] font-semibold text-(--gold)">{Number(rating).toFixed(1)}</span>
           </div>
         </div>
 
-        <div className="mt-4.5 inline-flex rounded-full border border-(--gold) bg-[rgba(212,180,92,0.08)] px-2.5 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-(--gold)">
-          {category}
-        </div>
+        {category && (
+          <div className="mt-4.5 inline-flex rounded-full border border-(--gold) bg-[rgba(212,180,92,0.08)] px-3 py-1.5 text-[13px] font-semibold uppercase tracking-[0.08em] text-(--gold)">
+            {category}
+          </div>
+        )}
 
-        <p className="mt-4 text-sm leading-[1.8] text-[#d5d0c8]">{text}</p>
+        <p className="mt-4 text-[16px] leading-[1.75] text-[#d5d0c8]">{text}</p>
       </div>
 
       {zoomedImage && (

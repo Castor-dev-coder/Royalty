@@ -1,32 +1,12 @@
-import { useCallback, useState } from 'react'
 import EmployeeCard from '../components/EmployeeCard.jsx'
-import Footer from '../components/Footer.jsx'
-import Login from '../components/Login.jsx'
-import Navbar from '../components/Navbar.jsx'
-import Signin from '../components/Signin.jsx'
 import SafeImage from '../components/SafeImage.jsx'
+import WaveDivider from '../components/WaveDivider.jsx'
 import aboutStats from '../data/about.js'
 import employees from '../data/employees.js'
 
 function About() {
-  const [user, setUser] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('royalty-user')) } catch { return null }
-  })
-  const [authView, setAuthView] = useState(null)
-  const openLogin = useCallback(() => setAuthView('login'), [])
-  const closeAuth = useCallback(() => setAuthView(null), [])
-  const switchAuth = useCallback(() => {
-    setAuthView((view) => (view === 'login' ? 'signin' : 'login'))
-  }, [])
-  const handleLogout = useCallback(() => {
-    localStorage.removeItem('royalty-user')
-    setUser(null)
-  }, [])
-
   return (
-    <>
-      <Navbar onLoginClick={openLogin} onLogout={handleLogout} user={user} />
-      <main className="min-h-[calc(100vh-76px)] bg-black" id="home">
+    <main className="min-h-[calc(100vh-76px)] bg-black" id="home">
         <section
           aria-labelledby="about-heading"
           className="mx-auto mb-14 grid w-[calc(100%-48px)] max-w-341 grid-cols-1 items-start gap-8 pt-21.5 pb-0 lg:grid-cols-[minmax(0,0.82fr)_minmax(0,1fr)] lg:gap-15 max-[680px]:w-[calc(100%-36px)] max-[680px]:gap-7 max-[680px]:pt-9.5 min-[1400px]:!grid-cols-[540px_700px]"
@@ -86,10 +66,12 @@ function About() {
           </div>
         </section>
 
+        <WaveDivider />
         <section
           aria-labelledby="team-heading"
-          className="pb-16.5 max-[680px]:pb-12"
+          className="salon-atmosphere pb-16.5 max-[680px]:pb-12"
         >
+          <div aria-hidden="true" className="salon-lines" />
           <header className="text-center">
             <span className="mb-0.75 inline-block font-salon text-[17.5px] leading-tight font-semibold tracking-[1.3px] text-(--gold) uppercase">
               OUR TEAM
@@ -111,15 +93,7 @@ function About() {
             ))}
           </div>
         </section>
-      </main>
-      <Footer user={user} onLoginClick={openLogin} />
-      {authView === 'login' && (
-        <Login onClose={closeAuth} onSwitch={switchAuth} onLogin={setUser} />
-      )}
-      {authView === 'signin' && (
-        <Signin onClose={closeAuth} onSwitch={switchAuth} onLogin={setUser} />
-      )}
-    </>
+    </main>
   )
 }
 

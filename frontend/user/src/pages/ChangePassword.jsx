@@ -1,20 +1,12 @@
 import { useCallback, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
-import Footer from '../components/Footer.jsx'
-import Navbar from '../components/Navbar.jsx'
+import { useAuth } from '../context/useAuth.jsx'
 
 function ChangePassword() {
   const navigate = useNavigate()
-  const [user, setUser] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('royalty-user')) } catch { return null }
-  })
+  const { user } = useAuth()
   const [visible, setVisible] = useState({ current: false, next: false, confirm: false })
   const [message, setMessage] = useState('')
-
-  const logout = useCallback(() => {
-    localStorage.removeItem('royalty-user')
-    setUser(null)
-  }, [])
 
   const updatePassword = useCallback((event) => {
     event.preventDefault()
@@ -37,7 +29,6 @@ function ChangePassword() {
 
   return (
     <>
-      <Navbar user={user} onLogout={logout} onLoginClick={() => navigate('/services')} />
       <main className="min-h-[calc(100vh-76px)] bg-black py-16">
         <div className="mx-auto w-[min(100%-48px,470px)] max-[520px]:w-[min(100%-36px,470px)]">
           <form onSubmit={updatePassword} className="rounded-lg border border-[rgba(212,180,92,0.22)] bg-[#11100e] p-8 shadow-[0_8px_32px_rgba(0,0,0,0.4)] max-[520px]:p-6">
@@ -67,16 +58,15 @@ function ChangePassword() {
                 </div>
               ))}
             </div>
-            {message && <p className={`mt-4 rounded-md border px-4 py-3 text-center text-sm ${message.includes('success') ? 'border-[rgba(212,180,92,0.4)] bg-[rgba(212,180,92,0.1)] text-(--gold)' : 'border-red-900 bg-red-950/50 text-red-400'}`}>{message}</p>}
+            {message && <p aria-live="polite" className={`mt-4 rounded-md border px-4 py-3 text-center text-sm ${message.includes('success') ? 'border-[rgba(212,180,92,0.4)] bg-[rgba(212,180,92,0.1)] text-(--gold)' : 'border-red-900 bg-red-950/50 text-red-400'}`} role="status">{message}</p>}
             <div className="mt-7 flex items-center justify-center gap-4">
-              <button type="button" onClick={() => navigate('/profile')} className="rounded-md border border-[rgba(212,180,92,0.4)] px-6 py-3 text-sm text-[#918c82] transition-colors hover:border-[rgba(212,180,92,0.6)] hover:text-[#f4f1eb]">Cancel</button>
-              <button className="rounded-md bg-(--gold) px-6 py-3 text-sm font-semibold text-black transition-colors hover:bg-(--gold-bright)" type="submit">Update Password</button>
+              <button type="button" onClick={() => navigate('/profile')} className="btn-pill rounded-full border border-[rgba(212,180,92,0.4)] px-6 py-3 text-sm text-[#918c82] transition-colors hover:border-[rgba(212,180,92,0.6)] hover:text-[#f4f1eb]">Cancel</button>
+              <button className="btn-pill rounded-full bg-(--gold) px-6 py-3 text-sm font-semibold text-black transition-colors hover:bg-(--gold-bright)" type="submit">Update Password</button>
             </div>
             <button type="button" onClick={() => setMessage('Please contact the salon to reset your current password.')} className="mx-auto mt-4 block text-sm text-[#918c82] underline transition-colors hover:text-(--gold)">Forgot Current Password?</button>
           </form>
         </div>
       </main>
-      <Footer user={user} onLoginClick={() => navigate('/services')} />
     </>
   )
 }
