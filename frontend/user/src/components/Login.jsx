@@ -2,13 +2,19 @@ import { useState } from 'react'
 import AuthModal from './AuthModal.jsx'
 import BrandMark from './BrandMark.jsx'
 
-function Login({ onClose, onSwitch }) {
+function Login({ onClose, onSwitch, onLogin = () => {} }) {
   const [showPassword, setShowPassword] = useState(false)
   const [message, setMessage] = useState('')
 
   function handleSubmit(event) {
     event.preventDefault()
-    setMessage('This preview form is ready to connect to salon authentication.')
+    const formData = new FormData(event.currentTarget)
+    const email = String(formData.get('email')).trim()
+    const name = email.split('@')[0].replace(/[._-]/g, ' ') || 'Maria'
+    const user = { name: name.replace(/\b\w/g, (letter) => letter.toUpperCase()), email }
+    localStorage.setItem('royalty-user', JSON.stringify(user))
+    onLogin(user)
+    onClose()
   }
 
   return (

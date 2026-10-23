@@ -1,7 +1,9 @@
+import SafeImage from './SafeImage.jsx'
+
 function EmployeeCard({ name, role, image, alt, bio, specialties }) {
   return (
     <article className="grid grid-cols-1 gap-5 rounded-[10px] border border-[var(--gold)] bg-[#0b0b0b] p-5 sm:grid-cols-[180px_minmax(0,1fr)] sm:gap-6 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-[30px] lg:p-[26px] xl:grid-cols-[230px_minmax(0,1fr)] min-[1400px]:!grid-cols-[265px_minmax(0,1fr)]">
-      <img
+      <SafeImage
         alt={alt}
         className="h-[300px] w-full rounded-[16px] object-cover object-center sm:h-full sm:min-h-[300px] lg:h-auto lg:w-[265px] lg:min-h-0 lg:max-w-full"
         src={image}

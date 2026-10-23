@@ -6,6 +6,7 @@ import Navbar from '../components/Navbar.jsx'
 import OurStory from '../components/OurStory.jsx'
 import ServiceCard from '../components/ServiceCard.jsx'
 import Signin from '../components/Signin.jsx'
+import SafeImage from '../components/SafeImage.jsx'
 import { images, serviceDetails } from '../data/sample-data'
 
 const galleryRows = [
@@ -127,7 +128,7 @@ function GalleryRow({ row }) {
             className="aspect-[3/4] flex-[0_0_calc((100%-48px)/5)] snap-start cursor-grab overflow-hidden rounded-[5px] border border-[rgba(212,180,92,0.2)] bg-[linear-gradient(135deg,#29241a,#151515_55%,#2b2518)] max-[900px]:flex-[0_0_calc((100%-24px)/3)] max-[600px]:flex-[0_0_calc((100%-12px)/2)]"
             key={`${row.id}-${index}`}
           >
-            <img className="pointer-events-none block size-full object-cover transition-transform duration-[320ms] hover:scale-[1.04]" src={image} alt={`${row.label} salon result ${index + 1}`} />
+            <SafeImage className="pointer-events-none block size-full object-cover transition-transform duration-[320ms] hover:scale-[1.04]" src={image} alt={`${row.label} salon result ${index + 1}`} />
           </div>
         ))}
       </div>
@@ -136,6 +137,9 @@ function GalleryRow({ row }) {
 }
 
 function Homepage() {
+  const [user, setUser] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('royalty-user')) } catch { return null }
+  })
   const [authView, setAuthView] = useState(null)
   const openLogin = useCallback(() => setAuthView('login'), [])
   const closeAuth = useCallback(() => setAuthView(null), [])
@@ -143,17 +147,21 @@ function Homepage() {
   const switchAuth = useCallback(() => {
     setAuthView((view) => (view === 'login' ? 'signin' : 'login'))
   }, [])
+  const handleLogout = useCallback(() => {
+    localStorage.removeItem('royalty-user')
+    setUser(null)
+  }, [])
 
   return (
     <>
-      <Navbar onLoginClick={openLogin} />
+      <Navbar onLoginClick={openLogin} onLogout={handleLogout} user={user} />
       <main>
         <section
-          className="relative flex min-h-[min(690px,calc(100svh-76px))] items-center overflow-hidden bg-[#090909] max-[900px]:min-h-[610px] max-[680px]:min-h-[630px] max-[680px]:items-end"
+          className="home-hero relative flex min-h-[min(690px,calc(100svh-76px))] items-center overflow-hidden bg-[#090909] max-[900px]:min-h-[610px] max-[680px]:min-h-[630px] max-[680px]:items-end"
           id="home"
         >
           <div className="absolute inset-y-0 right-0 w-[min(70%,920px)] overflow-hidden max-[900px]:w-[78%] max-[680px]:inset-0 max-[680px]:w-full after:absolute after:inset-0 after:bg-[linear-gradient(90deg,#090909_0%,rgba(9,9,9,0.88)_10%,rgba(9,9,9,0.05)_72%),linear-gradient(0deg,rgba(9,9,9,0.75),transparent_34%,rgba(9,9,9,0.18))] after:content-[''] max-[680px]:after:bg-[linear-gradient(0deg,#090909_0%,rgba(9,9,9,0.9)_10%,rgba(9,9,9,0.2)_76%),linear-gradient(90deg,rgba(9,9,9,0.65),transparent)]">
-            <img className="block size-full object-cover object-[center_40%] opacity-[0.78] max-[680px]:object-[62%_center]" src={images.hero} alt="" />
+            <SafeImage className="block size-full object-cover object-[center_40%] opacity-[0.78] max-[680px]:object-[62%_center]" src={images.hero} alt="" />
           </div>
           <div className="relative z-[1] mx-auto flex min-h-[inherit] w-[min(100%-48px,1180px)] items-center justify-between py-[70px] max-[600px]:w-[min(100%-36px,1180px)] max-[680px]:min-h-[610px] max-[680px]:items-end max-[680px]:py-[50px]">
             <div className="max-w-[550px]">
@@ -248,12 +256,12 @@ function Homepage() {
 
         <OurStory image={images.story} />
       </main>
-      <Footer onLoginClick={openLogin} />
+      <Footer user={user} onLoginClick={openLogin} />
       {authView === 'login' && (
-        <Login onClose={closeAuth} onSwitch={switchAuth} />
+        <Login onClose={closeAuth} onSwitch={switchAuth} onLogin={setUser} />
       )}
       {authView === 'signin' && (
-        <Signin onClose={closeAuth} onSwitch={switchAuth} />
+        <Signin onClose={closeAuth} onSwitch={switchAuth} onLogin={setUser} />
       )}
     </>
   )
