@@ -245,6 +245,22 @@ export class AppointmentsService {
       throw new ConflictError('The requested staff member is not available for this appointment');
     }
 
+    // Server-side re-validation (never trust the client's recommendation):
+    // the chosen staff must cover every category the selected services need.
+    if (data.staffId) {
+      const neededCategories = new Set<string>();
+      for (const serviceId of data.serviceIds) {
+        const service = await db.orm.public.Service.where({ id: serviceId }).first();
+        if (service) neededCategories.add(String(service.categoryId));
+      }
+      const links = await db.orm.public.StaffCategory.where({ staffId: data.staffId }).all();
+      const covered = links.map((link) => String(link.categoryId));
+      const missing = [...neededCategories].filter((categoryId) => !covered.includes(categoryId));
+      if (missing.length > 0) {
+        throw new ConflictError('The chosen stylist does not cover every selected service category');
+      }
+    }
+
     let appointmentId = '';
     await db.transaction(async (tx: TransactionContext) => {
       const appointment = await tx.orm.public.Appointment.create(withStaffAssignment({

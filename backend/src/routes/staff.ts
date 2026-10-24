@@ -3,6 +3,7 @@ import { getStaffController, getMyStaffController, listStaffController, createSt
 import { authenticate, requireRole } from '../middleware/auth.js';
 import { validateQuery, validateRequest } from '../middleware/validator.js';
 import { createStaffSchema, eligibleStaffQuerySchema, updateOwnStaffProfileSchema, updateStaffDetailsSchema } from '../modules/staff/staff.schemas.js';
+import { listTeamController } from '../modules/staff/team.controller.js';
 import express from 'express';
 import { rateLimit } from '../middleware/rateLimit.js';
 import { uploadStaffPhotoController } from '../modules/images/images.controller.js';
@@ -10,6 +11,9 @@ import { uploadStaffPhotoController } from '../modules/images/images.controller.
 export const staffRouter = Router();
 
 // All routes require authentication
+// Public team listing for "Meet Our Team" — no sign-in, display fields only.
+staffRouter.get('/team', listTeamController);
+
 staffRouter.use(authenticate);
 
 // Customer-facing booking discovery; appointment creation rechecks eligibility.

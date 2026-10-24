@@ -31,14 +31,18 @@ import {
 export const servicesRouter = Router();
 
 // All routes require authentication
+// Public browsing: the catalogue and categories need no sign-in.
+servicesRouter.get('/categories', listCategoriesController);
+servicesRouter.get('/categories/:id', getCategoryController);
+servicesRouter.get('/', listServicesController);
+servicesRouter.get('/:id', getServiceController);
+
 servicesRouter.use(authenticate);
 
 // ============================================================
 // Service Categories
 // ============================================================
 
-servicesRouter.get('/categories', requireRole('ADMIN', 'MANAGER', 'CUSTOMER'), listCategoriesController);
-servicesRouter.get('/categories/:id', requireRole('ADMIN', 'MANAGER', 'CUSTOMER'), getCategoryController);
 servicesRouter.post('/categories', requireRole('ADMIN', 'MANAGER'), validateRequest(createServiceCategorySchema), createCategoryController);
 servicesRouter.patch('/categories/:id', requireRole('ADMIN', 'MANAGER'), validateRequest(updateServiceCategorySchema), updateCategoryController);
 
@@ -46,8 +50,6 @@ servicesRouter.patch('/categories/:id', requireRole('ADMIN', 'MANAGER'), validat
 // Services
 // ============================================================
 
-servicesRouter.get('/', requireRole('ADMIN', 'MANAGER', 'CUSTOMER'), listServicesController);
-servicesRouter.get('/:id', requireRole('ADMIN', 'MANAGER', 'CUSTOMER'), getServiceController);
 servicesRouter.post('/', requireRole('ADMIN', 'MANAGER'), validateRequest(createServiceSchema), createServiceController);
 servicesRouter.patch('/:id', requireRole('ADMIN', 'MANAGER'), validateRequest(updateServiceSchema), updateServiceController);
 

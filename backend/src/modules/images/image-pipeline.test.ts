@@ -14,22 +14,28 @@ async function pngFixture(width = 200, height = 120): Promise<Buffer> {
 }
 
 async function jpegFixture(bytes?: number): Promise<Buffer> {
-  if (bytes === undefined) {
-    return sharp({ create: { width: 200, height: 120, channels: 3, background: '#222222' } }).jpeg({ quality: 80 }).toBuffer();
+  const base = await sharp({ create: { width: 200, height: 120, channels: 3, background: '#222222' } }).jpeg({ quality: 80 }).toBuffer();
+  if (bytes === undefined) return base;
+  // A genuinely large-but-valid JPEG: pad with legal COM segments before the
+  // EOI marker until the file reaches the requested size. Decoders skip COM
+  // data, so this stays a real JPEG while hitting the size exactly.
+  const target = Math.max(bytes, 1024 * 1024);
+  const eoi = base.subarray(base.length - 2);
+  const head = base.subarray(0, base.length - 2);
+  const parts: Buffer[] = [head];
+  let size = head.length + 2;
+  const chunk = 65533; // COM payload size (segment length field is 16-bit)
+  while (size < target) {
+    const payload = Math.min(chunk, target - size - 4);
+    const segment = Buffer.alloc(4 + payload);
+    segment[0] = 0xff;
+    segment[1] = 0xfe;
+    segment.writeUInt16BE(payload + 2, 2);
+    parts.push(segment);
+    size += segment.length;
   }
-  // A large-but-valid JPEG: a noisy image holds very little compression.
-  const width = 1800;
-  const height = 1400;
-  const noise = Buffer.alloc(width * height * 3);
-  for (let i = 0; i < noise.length; i += 1) noise[i] = (i * 2654435761) % 251;
-  let quality = 95;
-  let out = await sharp(noise, { raw: { width, height, channels: 3 } }).jpeg({ quality }).toBuffer();
-  while (out.length < bytes && quality < 100) {
-    quality += 1;
-    out = await sharp(noise, { raw: { width, height, channels: 3 } }).jpeg({ quality }).toBuffer();
-    if (out.length > bytes * 1.35) break;
-  }
-  return out;
+  parts.push(eoi);
+  return Buffer.concat(parts);
 }
 
 test('valid PNG is accepted and stays PNG', async () => {
