@@ -79,6 +79,14 @@ namespace public {
     @@map("staff_work_status")
   }
 
+  native_enum ReviewRatingCategory {
+    SERVICE = "SERVICE"
+    PRODUCTS = "PRODUCTS"
+    STAFF = "STAFF"
+    TIME_MANAGEMENT = "TIME_MANAGEMENT"
+    @@map("review_rating_category")
+  }
+
   model Account {
     id               Uuid                   @id(map: "accounts_pkey") @default(sql`gen_random_uuid()`)
     email            VarChar(255)           @unique(map: "accounts_email_key")
@@ -193,6 +201,7 @@ namespace public {
 
     @@unique([appointmentId, serviceId], map: "unique_appointment_service")
     @@index([appointmentId], map: "idx_appointment_services_appointment_id")
+    @@index([serviceId], map: "idx_appointment_services_service_id")
     @@check(expression: "(duration_minutes > 0)", map: "appointment_service_duration_positive")
     @@check(expression: "(price >= (0)::numeric)", map: "appointment_service_price_positive")
     @@rls
@@ -247,6 +256,7 @@ namespace public {
 
     @@index([createdAt], map: "idx_payments_created_at")
     @@index([status], map: "idx_payments_status")
+    @@index([verifiedBy], map: "idx_payments_verified_by")
     @@check(expression: "(amount >= (0)::numeric)", map: "payment_amount_positive")
     @@check(expression: "((status <> 'VERIFIED'::payment_status) OR ((verified_by IS NOT NULL) AND (verified_at IS NOT NULL)))", map: "valid_verified_payment")
     @@rls
@@ -314,17 +324,34 @@ namespace public {
     id            Uuid         @id(map: "reviews_pkey") @default(sql`gen_random_uuid()`)
     appointmentId Uuid         @unique(map: "reviews_appointment_id_key") @map("appointment_id")
     customerId    Uuid         @map("customer_id")
+    // DEPRECATED (G-07): legacy overall rating. Kept, never dropped — grandfathered
+    // rows display it as overall-only. New reviews store category ratings in
+    // review_ratings; the overall value is computed in read queries.
     rating        SmallInt
     comment       String?
     createdAt     Timestamptz  @default(now()) @map("created_at")
     updatedAt     Timestamptz  @default(now()) @map("updated_at")
     appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Restrict, map: "fk_review_appointment")
     customer      Customer    @relation(fields: [customerId], references: [id], onDelete: Restrict, map: "fk_review_customer")
+    reviewRatings ReviewRating[]
 
     @@index([customerId], map: "idx_reviews_customer_id")
     @@check(expression: "((rating >= 1) AND (rating <= 5))", map: "valid_rating")
     @@rls
     @@map("reviews")
+  }
+
+  model ReviewRating {
+    id       Uuid                      @id(map: "review_ratings_pkey") @default(sql`gen_random_uuid()`)
+    reviewId Uuid                      @map("review_id")
+    category pg.enum(ReviewRatingCategory)
+    rating   SmallInt
+    review   Review                    @relation(fields: [reviewId], references: [id], onDelete: Cascade, map: "fk_review_rating_review", index: false)
+
+    @@unique([reviewId, category], map: "review_ratings_review_category_key")
+    @@check(expression: "((rating >= 1) AND (rating <= 5))", map: "valid_review_rating")
+    @@rls
+    @@map("review_ratings")
   }
 
   model Staff {
@@ -367,6 +394,7 @@ namespace public {
 
     @@index([staffId], map: "idx_schedule_requests_staff_id")
     @@index([status], map: "idx_schedule_requests_status")
+    @@index([reviewedBy], map: "idx_schedule_requests_reviewed_by")
     @@check(expression: "(((requested_start_time IS NULL) AND (requested_end_time IS NULL)) OR ((requested_start_time IS NOT NULL) AND (requested_end_time IS NOT NULL) AND (requested_start_time < requested_end_time)))", map: "valid_requested_time")
     @@rls
     @@map("schedule_requests")

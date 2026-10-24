@@ -105,6 +105,9 @@
  * SEED_VERSION; anything unexpected is refused rather than deleted.
  */
 
+import { randomBytes } from 'node:crypto';
+import { writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import bcrypt from 'bcryptjs';
 import { db } from '../src/prisma/db.js';
 import { env } from '../src/config/env.js';
@@ -138,6 +141,7 @@ const ID = {
   adminAccount: '11111111-0000-4000-8000-000000000001',
   customerAccount: '11111111-0000-4000-8000-000000000002',
   staffAccount: '11111111-0000-4000-8000-000000000003',
+  managerAccount: '11111111-0000-4000-8000-000000000004',
   customer: '22222222-0000-4000-8000-000000000001',
   staff: '33333333-0000-4000-8000-000000000001',
   categoryHair: '44444444-0000-4000-8000-000000000001',
@@ -163,6 +167,7 @@ const ID = {
   apptPastConfirmed: '99999999-0000-4000-8000-000000000002',
   apptFutureReserved: '99999999-0000-4000-8000-000000000003',
   apptFutureReserved2: '99999999-0000-4000-8000-000000000004',
+  apptPastCompleted2: '99999999-0000-4000-8000-000000000005',
 } as const;
 
 /** `appointment_services` has no `id`; it is keyed by its appointment pair. */
@@ -178,8 +183,12 @@ const APPOINTMENT_SERVICES: ReadonlyArray<{
   { appointmentId: ID.apptFutureReserved, serviceId: ID.serviceHairColor, serviceName: 'Hair Color', price: '1800.00', durationMinutes: 120 },
   // APT-SEED-0002 — Gel Manicure (60 min, 600.00)
   { appointmentId: ID.apptPastConfirmed, serviceId: ID.serviceGelManicure, serviceName: 'Gel Manicure', price: '600.00', durationMinutes: 60 },
-  // APT-SEED-0003 — Gel Manicure (60 min, 600.00) — enables reviews
+  // APT-SEED-0003 — Gel Manicure + Spa Pedicure (135 min, 1550.00) — enables reviews
   { appointmentId: ID.apptPastCompleted, serviceId: ID.serviceGelManicure, serviceName: 'Gel Manicure', price: '600.00', durationMinutes: 60 },
+  { appointmentId: ID.apptPastCompleted, serviceId: ID.serviceSpaPedicure, serviceName: 'Spa Pedicure', price: '950.00', durationMinutes: 75 },
+  // APT-SEED-0005 — Gel Manicure + Spa Pedicure (135 min, 1550.00) — second reviewable visit
+  { appointmentId: ID.apptPastCompleted2, serviceId: ID.serviceGelManicure, serviceName: 'Gel Manicure', price: '600.00', durationMinutes: 60 },
+  { appointmentId: ID.apptPastCompleted2, serviceId: ID.serviceSpaPedicure, serviceName: 'Spa Pedicure', price: '950.00', durationMinutes: 75 },
   // APT-SEED-0004 — Gel Manicure + Spa Pedicure (135 min, 1900.00)
   { appointmentId: ID.apptFutureReserved2, serviceId: ID.serviceGelManicure, serviceName: 'Gel Manicure', price: '600.00', durationMinutes: 60 },
   { appointmentId: ID.apptFutureReserved2, serviceId: ID.serviceSpaPedicure, serviceName: 'Spa Pedicure', price: '950.00', durationMinutes: 75 },
@@ -188,8 +197,9 @@ const APPOINTMENT_SERVICES: ReadonlyArray<{
 const APPOINTMENT_CODES = {
   apptFutureReserved: 'APT-SEED-0001',   // next Monday, 2 services, RESERVED
   apptPastConfirmed: 'APT-SEED-0002',    // past Tuesday, 1 service, CONFIRMED
-  apptPastCompleted: 'APT-SEED-0003',    // past Tuesday, 1 service, COMPLETED
+  apptPastCompleted: 'APT-SEED-0003',    // past Tuesday, 2 services, COMPLETED
   apptFutureReserved2: 'APT-SEED-0004', // next Tuesday, 2 services, RESERVED
+  apptPastCompleted2: 'APT-SEED-0005',  // past Tuesday, 2 services, COMPLETED
 } as const;
 
 /** Flat list of every seeded appointment code (used for conflict detection). */
@@ -285,10 +295,10 @@ const APPOINTMENTS: AppointmentDef[] = [
     dateStrategy: 'pastWeekday',
     daysAgo: 30,
     startTime: '09:00',
-    endTime: '10:00', // 60 minutes
-    totalAmount: '600.00',
+    endTime: '11:15', // 60 + 75 = 135 minutes
+    totalAmount: '1550.00',
     status: 'COMPLETED',
-    serviceIds: [ID.serviceGelManicure],
+    serviceIds: [ID.serviceGelManicure, ID.serviceSpaPedicure],
   },
   {
     id: ID.apptFutureReserved2,
@@ -301,11 +311,23 @@ const APPOINTMENTS: AppointmentDef[] = [
     status: 'RESERVED',
     serviceIds: [ID.serviceGelManicure, ID.serviceSpaPedicure],
   },
+  {
+    id: ID.apptPastCompleted2,
+    code: APPOINTMENT_CODES.apptPastCompleted2,
+    isoWeekday: 2, // Tuesday
+    dateStrategy: 'pastWeekday',
+    daysAgo: 14,
+    startTime: '13:00',
+    endTime: '15:15', // 60 + 75 = 135 minutes
+    totalAmount: '1550.00',
+    status: 'COMPLETED',
+    serviceIds: [ID.serviceGelManicure, ID.serviceSpaPedicure],
+  },
 ];
 
 /** Exact number of rows the seed inserts, derived so it cannot drift. */
 const SEED_ROW_COUNT =
-  3 +                                    // accounts
+  4 +                                    // accounts
   1 +                                    // customers
   1 +                                    // staff
   2 +                                    // service_categories
@@ -646,28 +668,51 @@ function resolveAppointmentDate(appointment: AppointmentDef, today: string): str
 }
 
 // ===========================================================================
-// PASSWORD RESOLUTION
+// PASSWORD GENERATION — random per seeding run, written to a gitignored file
 // ===========================================================================
 
-type SeedPasswords = { admin: string; customer: string; staff: string };
+type SeedPasswords = { admin: string; customer: string; staff: string; manager: string };
 
-function readSeedPasswords(): SeedPasswords {
-  const read = (name: string): string => {
-    const value = process.env[name];
-    if (value === undefined || value.trim() === '') {
-      throw new Error(
-        `Missing ${name}. Seed passwords must be supplied via environment variables; ` +
-          `never hardcode them. Add the variable name to backend/.env.example.`
-      );
-    }
-    return value;
-  };
+function generatePassword(): string {
+  const lowers = 'abcdefghijkmnopqrstuvwxyz';
+  const uppers = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const digits = '23456789';
+  const pick = (alphabet: string, count: number): string =>
+    Array.from({ length: count }, () => alphabet[randomBytes(1)[0] % alphabet.length]).join('');
+  // Guaranteed composition (16+ chars, mixed case + digits), then a shuffle.
+  const chars = (pick(lowers, 6) + pick(uppers, 5) + pick(digits, 5) + pick(lowers + uppers + digits, 4)).split('');
+  for (let i = chars.length - 1; i > 0; i -= 1) {
+    const j = randomBytes(1)[0] % (i + 1);
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+  return chars.join('');
+}
 
-  return {
-    admin: read('SEED_ADMIN_PASSWORD'),
-    customer: read('SEED_CUSTOMER_PASSWORD'),
-    staff: read('SEED_STAFF_PASSWORD'),
+/**
+ * Generates the seed passwords once per seeding/upgrade run and writes them to
+ * the gitignored backend/.seed-credentials.local — the only place the
+ * plaintexts ever live.
+ */
+function generateSeedPasswords(): SeedPasswords {
+  const passwords: SeedPasswords = {
+    admin: generatePassword(),
+    customer: generatePassword(),
+    staff: generatePassword(),
+    manager: generatePassword(),
   };
+  const lines = [
+    '# Royalty seed TEST credentials — TEST DATA ONLY (domain @seed.royalty.local).',
+    `# Generated ${new Date().toISOString()} by scripts/seed.ts. Gitignored.`,
+    '# Run `npm run db:seed:remove` or rotate these before real customers use this database.',
+    `admin${SEED_EMAIL_DOMAIN}\tADMIN\t${passwords.admin}`,
+    `customer${SEED_EMAIL_DOMAIN}\tCUSTOMER\t${passwords.customer}`,
+    `staff${SEED_EMAIL_DOMAIN}\tSTAFF\t${passwords.staff}`,
+    `manager${SEED_EMAIL_DOMAIN}\tMANAGER\t${passwords.manager}`,
+    '',
+  ];
+  writeFileSync(fileURLToPath(new URL('../.seed-credentials.local', import.meta.url)), lines.join('\n'), { mode: 0o600 });
+  console.log('Generated seed passwords (crypto.randomBytes) -> backend/.seed-credentials.local (gitignored).');
+  return passwords;
 }
 
 // ===========================================================================
@@ -677,6 +722,7 @@ function readSeedPasswords(): SeedPasswords {
 type Preflight =
   | { state: 'clean' }
   | { state: 'seeded' }
+  | { state: 'upgrade' }
   | { state: 'conflict'; detail: string };
 
 async function preflight(): Promise<Preflight> {
@@ -736,7 +782,95 @@ async function preflight(): Promise<Preflight> {
     };
   }
 
+  // SEED_VERSION 1 additions: the MANAGER account and the second completed
+  // appointment. If either is missing, the dataset needs the one-time upgrade.
+  const manager = await db.orm.public.Account.where({ id: ID.managerAccount }).first();
+  const secondCompleted = await db.orm.public.Appointment.where({ id: ID.apptPastCompleted2 }).first();
+  if (manager === null || secondCompleted === null) return { state: 'upgrade' };
+
   return { state: 'seeded' };
+}
+
+/**
+ * Applies the seed additions to an existing dataset (MANAGER account, the
+ * second completed appointment, APT-SEED-0003's second service) and rotates
+ * the seed account passwords to freshly generated ones. Runs at most once:
+ * afterwards every deterministic ID is present, so the next run is a no-op and
+ * passwords are not rotated again.
+ */
+async function upgradeDataset(today: string): Promise<void> {
+  console.log('Preflight: base dataset present, upgrade rows missing — upgrading once.');
+  const passwords = generateSeedPasswords();
+  console.log('Hashing fresh seed passwords (bcrypt cost 12)...');
+  const [adminHash, customerHash, staffHash, managerHash] = await Promise.all([
+    bcrypt.hash(passwords.admin, 12),
+    bcrypt.hash(passwords.customer, 12),
+    bcrypt.hash(passwords.staff, 12),
+    bcrypt.hash(passwords.manager, 12),
+  ]);
+  await db.transaction(async (tx: Tx) => {
+    // One-time password rotation for the pre-existing seed accounts.
+    await tx.orm.public.Account.where({ id: ID.adminAccount }).update({ passwordHash: adminHash });
+    await tx.orm.public.Account.where({ id: ID.customerAccount }).update({ passwordHash: customerHash });
+    await tx.orm.public.Account.where({ id: ID.staffAccount }).update({ passwordHash: staffHash });
+
+    const managerAccount = await tx.orm.public.Account.where({ id: ID.managerAccount }).first();
+    if (managerAccount === null) {
+      await tx.orm.public.Account.create({
+        id: ID.managerAccount,
+        email: pgVarchar<255>(`manager${SEED_EMAIL_DOMAIN}`),
+        passwordHash: managerHash,
+        role: 'MANAGER',
+        status: 'ACTIVE',
+      });
+    }
+
+    // APT-SEED-0003 gains its second service; totals stay consistent.
+    const thirdServices = await tx.orm.public.AppointmentService.where({ appointmentId: ID.apptPastCompleted }).all();
+    if (thirdServices.length === 1) {
+      await tx.orm.public.AppointmentService.create({
+        appointmentId: ID.apptPastCompleted,
+        serviceId: ID.serviceSpaPedicure,
+        serviceName: pgVarchar<200>('Spa Pedicure'),
+        price: pgNumeric('950.00'),
+        durationMinutes: 75,
+      });
+      await tx.orm.public.Appointment.where({ id: ID.apptPastCompleted }).update({
+        endTime: plainTime('11:15'),
+        totalAmount: pgNumeric('1550.00'),
+      });
+    }
+
+    // APT-SEED-0005 — the second reviewable visit (no review is seeded).
+    const fifth = await tx.orm.public.Appointment.where({ id: ID.apptPastCompleted2 }).first();
+    if (fifth === null) {
+      const def = APPOINTMENTS.find((appointment) => appointment.id === ID.apptPastCompleted2);
+      if (def === undefined) throw new Error('Seed fixture error: APT-SEED-0005 definition missing.');
+      const appointmentDate = resolveAppointmentDate(def, today);
+      await tx.orm.public.Appointment.create({
+        id: def.id,
+        appointmentCode: pgVarchar<40>(def.code),
+        customerId: ID.customer,
+        staffId: ID.staff,
+        appointmentDate: plainDate(appointmentDate),
+        startTime: plainTime(def.startTime),
+        endTime: plainTime(def.endTime),
+        totalAmount: pgNumeric(def.totalAmount),
+        status: def.status,
+      });
+      for (const row of APPOINTMENT_SERVICES.filter((r) => r.appointmentId === def.id)) {
+        await tx.orm.public.AppointmentService.create({
+          appointmentId: row.appointmentId,
+          serviceId: row.serviceId,
+          serviceName: pgVarchar<200>(row.serviceName),
+          price: pgNumeric(row.price),
+          durationMinutes: row.durationMinutes,
+        });
+      }
+      console.log(`  ${def.code}  ${appointmentDate}  ${def.startTime}-${def.endTime}  ${def.status}`);
+    }
+  });
+  console.log('Upgrade complete: MANAGER added, APT-SEED-0003 extended, APT-SEED-0005 created, passwords rotated.');
 }
 
 // ===========================================================================
@@ -755,10 +889,14 @@ async function seed(): Promise<void> {
   // 1. Validate the fixture BEFORE any database write.
   validateFixtures(today, local.time);
 
-  // 2. Preflight: clean / already seeded / conflict.
+  // 2. Preflight: clean / upgrade / already seeded / conflict.
   const state = await preflight();
   if (state.state === 'seeded') {
     console.log(`Seed data (SEED_VERSION ${SEED_VERSION}) is already present. Nothing to do.`);
+    return;
+  }
+  if (state.state === 'upgrade') {
+    await upgradeDataset(today);
     return;
   }
   if (state.state === 'conflict') {
@@ -771,12 +909,13 @@ async function seed(): Promise<void> {
   // 3. Hash passwords BEFORE opening the transaction. bcrypt cost 12 is
   //    deliberately slow; keeping it outside the transaction avoids holding a
   //    database transaction open across CPU-bound work.
-  const passwords = readSeedPasswords();
+  const passwords = generateSeedPasswords();
   console.log('Hashing seed passwords (bcrypt cost 12)...');
-  const [adminHash, customerHash, staffHash] = await Promise.all([
+  const [adminHash, customerHash, staffHash, managerHash] = await Promise.all([
     bcrypt.hash(passwords.admin, 12),
     bcrypt.hash(passwords.customer, 12),
     bcrypt.hash(passwords.staff, 12),
+    bcrypt.hash(passwords.manager, 12),
   ]);
   console.log('Password hashing complete.');
 
@@ -802,6 +941,13 @@ async function seed(): Promise<void> {
       email: pgVarchar<255>(`staff${SEED_EMAIL_DOMAIN}`),
       passwordHash: staffHash,
       role: 'STAFF',
+      status: 'ACTIVE',
+    });
+    await tx.orm.public.Account.create({
+      id: ID.managerAccount,
+      email: pgVarchar<255>(`manager${SEED_EMAIL_DOMAIN}`),
+      passwordHash: managerHash,
+      role: 'MANAGER',
       status: 'ACTIVE',
     });
 
@@ -954,12 +1100,18 @@ async function remove(): Promise<void> {
 
   await db.transaction(async (tx: Tx) => {
     // 1. appointment_services — deleted by explicit appointment id
-    for (const id of [ID.apptFutureReserved, ID.apptPastConfirmed, ID.apptPastCompleted, ID.apptFutureReserved2]) {
+    for (const id of [ID.apptFutureReserved, ID.apptPastConfirmed, ID.apptPastCompleted, ID.apptFutureReserved2, ID.apptPastCompleted2]) {
       await tx.orm.public.AppointmentService.where({ appointmentId: id }).delete();
     }
 
-    // 2. appointments — fixed ids only
-    for (const id of [ID.apptFutureReserved, ID.apptPastConfirmed, ID.apptPastCompleted, ID.apptFutureReserved2]) {
+    // 2. reviews — MUST precede appointments: reviews.appointment_id is
+    //    ON DELETE RESTRICT. review_ratings follow via ON DELETE CASCADE.
+    for (const id of [ID.apptFutureReserved, ID.apptPastConfirmed, ID.apptPastCompleted, ID.apptFutureReserved2, ID.apptPastCompleted2]) {
+      await tx.orm.public.Review.where({ appointmentId: id }).delete();
+    }
+
+    // 3. appointments — fixed ids only
+    for (const id of [ID.apptFutureReserved, ID.apptPastConfirmed, ID.apptPastCompleted, ID.apptFutureReserved2, ID.apptPastCompleted2]) {
       await tx.orm.public.Appointment.where({ id }).delete();
     }
 
@@ -992,7 +1144,7 @@ async function remove(): Promise<void> {
     await tx.orm.public.Customer.where({ id: ID.customer }).delete();
 
     // 10. accounts — fixed ids only
-    for (const id of [ID.adminAccount, ID.customerAccount, ID.staffAccount]) {
+    for (const id of [ID.adminAccount, ID.customerAccount, ID.staffAccount, ID.managerAccount]) {
       await tx.orm.public.Account.where({ id }).delete();
     }
   });

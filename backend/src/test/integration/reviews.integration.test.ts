@@ -174,7 +174,7 @@ test('owner can review a completed appointment', async () => {
     data: { review: { id: string; rating: number; comment: string | null; appointment: { id: string } } };
   }>(server.baseUrl, '/reviews', {
     method: 'POST',
-    body: { appointmentId: completedAppointmentId, rating: 5, comment: 'Excellent service' },
+    body: { appointmentId: completedAppointmentId, ratings: { service: 5, products: 5, staff: 5, timeManagement: 5 }, comment: 'Excellent service' },
     token: testCustomerToken,
   });
 
@@ -197,7 +197,7 @@ test('created review is persisted and publicly listable', async () => {
 test('duplicate review for the same appointment returns 409', async () => {
   const response = await request(server.baseUrl, '/reviews', {
     method: 'POST',
-    body: { appointmentId: completedAppointmentId, rating: 4, comment: 'second attempt' },
+    body: { appointmentId: completedAppointmentId, ratings: { service: 4, products: 4, staff: 4, timeManagement: 4 }, comment: 'second attempt' },
     token: testCustomerToken,
   });
   assert.equal(response.status, 409);
@@ -210,7 +210,7 @@ test('duplicate review for the same appointment returns 409', async () => {
 test('non-owner cannot review another customer\'s appointment', async () => {
   const response = await request(server.baseUrl, '/reviews', {
     method: 'POST',
-    body: { appointmentId: completedAppointmentId, rating: 5 },
+    body: { appointmentId: completedAppointmentId, ratings: { service: 5, products: 5, staff: 5, timeManagement: 5 } },
     token: seedCustomerToken,
   });
   assert.equal(response.status, 403);
@@ -219,7 +219,7 @@ test('non-owner cannot review another customer\'s appointment', async () => {
 test('owner cannot review a non-completed appointment', async () => {
   const response = await request(server.baseUrl, '/reviews', {
     method: 'POST',
-    body: { appointmentId: reservedAppointmentId, rating: 5 },
+    body: { appointmentId: reservedAppointmentId, ratings: { service: 5, products: 5, staff: 5, timeManagement: 5 } },
     token: testCustomerToken,
   });
   assert.equal(response.status, 409);
@@ -232,7 +232,7 @@ test('owner cannot review a non-completed appointment', async () => {
 test('rating 0 is rejected', async () => {
   const response = await request(server.baseUrl, '/reviews', {
     method: 'POST',
-    body: { appointmentId: completedAppointmentId, rating: 0 },
+    body: { appointmentId: completedAppointmentId, ratings: { service: 0, products: 5, staff: 5, timeManagement: 5 } },
     token: testCustomerToken,
   });
   assert.equal(response.status, 400);
@@ -241,7 +241,7 @@ test('rating 0 is rejected', async () => {
 test('rating 6 is rejected', async () => {
   const response = await request(server.baseUrl, '/reviews', {
     method: 'POST',
-    body: { appointmentId: completedAppointmentId, rating: 6 },
+    body: { appointmentId: completedAppointmentId, ratings: { service: 6, products: 5, staff: 5, timeManagement: 5 } },
     token: testCustomerToken,
   });
   assert.equal(response.status, 400);
@@ -250,7 +250,7 @@ test('rating 6 is rejected', async () => {
 test('fractional rating is rejected', async () => {
   const response = await request(server.baseUrl, '/reviews', {
     method: 'POST',
-    body: { appointmentId: completedAppointmentId, rating: 4.5 },
+    body: { appointmentId: completedAppointmentId, ratings: { service: 4.5, products: 5, staff: 5, timeManagement: 5 } },
     token: testCustomerToken,
   });
   assert.equal(response.status, 400);
@@ -259,7 +259,7 @@ test('fractional rating is rejected', async () => {
 test('missing appointmentId is rejected', async () => {
   const response = await request(server.baseUrl, '/reviews', {
     method: 'POST',
-    body: { rating: 5 },
+    body: { ratings: { service: 5, products: 5, staff: 5, timeManagement: 5 } },
     token: testCustomerToken,
   });
   assert.equal(response.status, 400);
@@ -291,7 +291,7 @@ test('invalid rating filter is rejected', async () => {
 test('staff cannot create a review', async () => {
   const response = await request(server.baseUrl, '/reviews', {
     method: 'POST',
-    body: { appointmentId: completedAppointmentId, rating: 5 },
+    body: { appointmentId: completedAppointmentId, ratings: { service: 5, products: 5, staff: 5, timeManagement: 5 } },
     token: staffToken,
   });
   assert.equal(response.status, 401);
@@ -300,7 +300,7 @@ test('staff cannot create a review', async () => {
 test('admin cannot create a review', async () => {
   const response = await request(server.baseUrl, '/reviews', {
     method: 'POST',
-    body: { appointmentId: completedAppointmentId, rating: 5 },
+    body: { appointmentId: completedAppointmentId, ratings: { service: 5, products: 5, staff: 5, timeManagement: 5 } },
     token: adminToken,
   });
   assert.equal(response.status, 401);
@@ -309,7 +309,7 @@ test('admin cannot create a review', async () => {
 test('unauthenticated review creation returns 401', async () => {
   const response = await request(server.baseUrl, '/reviews', {
     method: 'POST',
-    body: { appointmentId: completedAppointmentId, rating: 5 },
+    body: { appointmentId: completedAppointmentId, ratings: { service: 5, products: 5, staff: 5, timeManagement: 5 } },
   });
   assert.equal(response.status, 401);
 });

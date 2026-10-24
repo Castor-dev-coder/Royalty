@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { db } from '../../prisma/db.js';
+import { categoryRatingsFromRows, computeOverallRating, type CategoryRatings } from '../reviews/reviews.rules.js';
 import {
   pgNumeric,
   pgVarchar,
@@ -97,6 +98,23 @@ export interface CompletedAppointmentInfo extends AppointmentInfo {
   staff: { id: string; firstName: string; lastName: string; primaryRole: string } | null;
   reviewEligible: boolean;
   alreadyReviewed: boolean;
+}
+
+/**
+ * The caller's own appointment with its review status — the read side of the
+ * review flow: which visits are reviewed and which are still reviewable.
+ */
+export interface MineAppointmentInfo extends AppointmentInfo {
+  alreadyReviewed: boolean;
+  /** Assigned staff identity for display; null when unassigned. */
+  staff: { id: string; firstName: string; lastName: string } | null;
+  review: {
+    /** Computed category average (1 dp), or the grandfathered legacy rating. */
+    overallRating: number;
+    /** Four category ratings, or null for grandfathered reviews (overall-only). */
+    ratings: CategoryRatings | null;
+    comment: string | null;
+  } | null;
 }
 
 /**
@@ -325,6 +343,66 @@ export class AppointmentsService {
     const appointments = await collect(appointmentsRaw as Iterable<AppointmentRecord> | AsyncIterable<AppointmentRecord>);
     return {
       appointments: await Promise.all(appointments.map((appointment) => this.mapAppointment(toApplicationAppointment(appointment)))),
+      total,
+    };
+  }
+
+  /**
+   * The caller's appointments with services and review status. Read-only;
+   * the review flag mirrors the one-review-per-appointment unique constraint.
+   */
+  static async listMineWithReviewStatus(
+    requestingUserId: string,
+    role: string,
+    page: number,
+    limit: number
+  ): Promise<{ appointments: MineAppointmentInfo[]; total: number }> {
+    const customer = await db.orm.public.Customer.where({ accountId: requestingUserId }).first();
+    if (!customer) {
+      // Staff-side roles have no customer profile. They must never see other
+      // customers' appointments, so they get their own (empty) list.
+      if (role === 'ADMIN' || role === 'MANAGER') return { appointments: [], total: 0 };
+      throw new NotFoundError('No customer profile found for this account');
+    }
+    if (role !== 'CUSTOMER' && role !== 'ADMIN' && role !== 'MANAGER') {
+      throw new ForbiddenError('Only customers and administrators can view customer appointments');
+    }
+
+    const totalResult = await db.orm.public.Appointment
+      .where({ customerId: customer.id })
+      .aggregate((aggregate) => ({ total: aggregate.count() }));
+    const total = typeof totalResult.total === 'number' ? totalResult.total : 0;
+    const skip = (page - 1) * limit;
+    const query = db.orm.public.Appointment.where({ customerId: customer.id })
+      .orderBy((appointment) => appointment.appointmentDate.desc());
+    const appointmentsRaw = await query.offset(skip).limit(limit).all();
+    const mineRecords = await collect(appointmentsRaw as Iterable<AppointmentRecord> | AsyncIterable<AppointmentRecord>);
+    return {
+      appointments: await Promise.all(mineRecords.map(async (appointment): Promise<MineAppointmentInfo> => {
+        const [mapped, review, staffRecord] = await Promise.all([
+          this.mapAppointment(toApplicationAppointment(appointment)),
+          db.orm.public.Review.where({ appointmentId: appointment.id }).first(),
+          appointment.staffId
+            ? db.orm.public.Staff.where({ id: appointment.staffId }).first()
+            : Promise.resolve(null),
+        ]);
+        const staff = staffRecord
+          ? { id: staffRecord.id, firstName: staffRecord.firstName, lastName: staffRecord.lastName }
+          : null;
+        if (!review) return { ...mapped, alreadyReviewed: false, staff, review: null };
+        const ratingRows = await db.orm.public.ReviewRating.where({ reviewId: review.id }).all();
+        const ratings = categoryRatingsFromRows(ratingRows.map((row) => ({ category: row.category, rating: row.rating })));
+        return {
+          ...mapped,
+          alreadyReviewed: true,
+          staff,
+          review: {
+            overallRating: ratings ? computeOverallRating(ratings) : review.rating,
+            ratings,
+            comment: review.comment,
+          },
+        };
+      })),
       total,
     };
   }

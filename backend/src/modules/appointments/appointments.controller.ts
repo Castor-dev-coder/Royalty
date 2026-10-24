@@ -33,6 +33,16 @@ export async function listMyAppointmentsController(req: AuthenticatedRequest, re
   }
 }
 
+export async function listMyAppointmentsWithReviewController(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { page, limit } = validated<AppointmentListQuery>(req, 'validatedQuery');
+    const result = await AppointmentsService.listMineWithReviewStatus(req.user!.userId, req.user!.role, page, limit);
+    res.json({ data: { ...result, page, limit, totalPages: Math.ceil(result.total / limit) } });
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function listCompletedMyAppointmentsController(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
   try {
     const { page, limit } = validated<AppointmentListQuery>(req, 'validatedQuery');

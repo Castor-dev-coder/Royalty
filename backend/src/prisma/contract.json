@@ -40,6 +40,10 @@
       "model": "ExternalPosts",
       "namespace": "public"
     },
+    "review_ratings": {
+      "model": "ReviewRating",
+      "namespace": "public"
+    },
     "reviews": {
       "model": "Review",
       "namespace": "public"
@@ -1539,6 +1543,21 @@
                   "model": "Customer",
                   "namespace": "public"
                 }
+              },
+              "reviewRatings": {
+                "cardinality": "1:N",
+                "on": {
+                  "localFields": [
+                    "id"
+                  ],
+                  "targetFields": [
+                    "reviewId"
+                  ]
+                },
+                "to": {
+                  "model": "ReviewRating",
+                  "namespace": "public"
+                }
               }
             },
             "storage": {
@@ -1567,6 +1586,77 @@
               },
               "namespaceId": "public",
               "table": "reviews"
+            }
+          },
+          "ReviewRating": {
+            "fields": {
+              "category": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/enum@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "typeName": "review_rating_category"
+                  }
+                }
+              },
+              "id": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/uuid@1",
+                  "kind": "scalar"
+                }
+              },
+              "rating": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/int2@1",
+                  "kind": "scalar"
+                }
+              },
+              "reviewId": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/uuid@1",
+                  "kind": "scalar"
+                }
+              }
+            },
+            "relations": {
+              "review": {
+                "cardinality": "N:1",
+                "nullable": false,
+                "on": {
+                  "localFields": [
+                    "reviewId"
+                  ],
+                  "targetFields": [
+                    "id"
+                  ]
+                },
+                "to": {
+                  "model": "Review",
+                  "namespace": "public"
+                }
+              }
+            },
+            "storage": {
+              "fields": {
+                "category": {
+                  "column": "category"
+                },
+                "id": {
+                  "column": "id"
+                },
+                "rating": {
+                  "column": "rating"
+                },
+                "reviewId": {
+                  "column": "review_id"
+                }
+              },
+              "namespaceId": "public",
+              "table": "review_ratings"
             }
           },
           "ScheduleRequest": {
@@ -2435,6 +2525,16 @@
               ],
               "typeName": "payment_status"
             },
+            "review_rating_category": {
+              "kind": "postgres-enum",
+              "members": [
+                "SERVICE",
+                "PRODUCTS",
+                "STAFF",
+                "TIME_MANAGEMENT"
+              ],
+              "typeName": "review_rating_category"
+            },
             "schedule_request_status": {
               "kind": "postgres-enum",
               "members": [
@@ -2494,6 +2594,11 @@
               "kind": "rls",
               "namespaceId": "public",
               "tableName": "posts"
+            },
+            "review_ratings": {
+              "kind": "rls",
+              "namespaceId": "public",
+              "tableName": "review_ratings"
             },
             "reviews": {
               "kind": "rls",
@@ -2755,6 +2860,13 @@
                     "appointment_id"
                   ],
                   "name": "idx_appointment_services_appointment_id",
+                  "unique": false
+                },
+                {
+                  "columns": [
+                    "service_id"
+                  ],
+                  "name": "idx_appointment_services_service_id",
                   "unique": false
                 }
               ],
@@ -3420,6 +3532,13 @@
                   ],
                   "name": "idx_payments_status",
                   "unique": false
+                },
+                {
+                  "columns": [
+                    "verified_by"
+                  ],
+                  "name": "idx_payments_verified_by",
+                  "unique": false
                 }
               ],
               "primaryKey": {
@@ -3589,6 +3708,85 @@
                 "name": "posts_pkey"
               },
               "uniques": []
+            },
+            "review_ratings": {
+              "checks": [
+                {
+                  "expression": "((rating >= 1) AND (rating <= 5))",
+                  "name": "valid_review_rating"
+                }
+              ],
+              "columns": {
+                "category": {
+                  "codecId": "pg/enum@1",
+                  "nativeType": "review_rating_category",
+                  "nullable": false,
+                  "typeParams": {
+                    "typeName": "review_rating_category"
+                  },
+                  "valueSet": {
+                    "entityKind": "valueSet",
+                    "entityName": "ReviewRatingCategory",
+                    "namespaceId": "public",
+                    "plane": "storage"
+                  }
+                },
+                "id": {
+                  "codecId": "pg/uuid@1",
+                  "default": {
+                    "expression": "gen_random_uuid()",
+                    "kind": "function"
+                  },
+                  "nativeType": "uuid",
+                  "nullable": false
+                },
+                "rating": {
+                  "codecId": "pg/int2@1",
+                  "nativeType": "int2",
+                  "nullable": false
+                },
+                "review_id": {
+                  "codecId": "pg/uuid@1",
+                  "nativeType": "uuid",
+                  "nullable": false
+                }
+              },
+              "foreignKeys": [
+                {
+                  "name": "fk_review_rating_review",
+                  "onDelete": "cascade",
+                  "source": {
+                    "columns": [
+                      "review_id"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "review_ratings"
+                  },
+                  "target": {
+                    "columns": [
+                      "id"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "reviews"
+                  }
+                }
+              ],
+              "indexes": [],
+              "primaryKey": {
+                "columns": [
+                  "id"
+                ],
+                "name": "review_ratings_pkey"
+              },
+              "uniques": [
+                {
+                  "columns": [
+                    "review_id",
+                    "category"
+                  ],
+                  "name": "review_ratings_review_category_key"
+                }
+              ]
             },
             "reviews": {
               "checks": [
@@ -3835,6 +4033,13 @@
                 }
               ],
               "indexes": [
+                {
+                  "columns": [
+                    "reviewed_by"
+                  ],
+                  "name": "idx_schedule_requests_reviewed_by",
+                  "unique": false
+                },
                 {
                   "columns": [
                     "staff_id"
@@ -4595,6 +4800,15 @@
                 "REJECTED"
               ]
             },
+            "ReviewRatingCategory": {
+              "kind": "valueSet",
+              "values": [
+                "SERVICE",
+                "PRODUCTS",
+                "STAFF",
+                "TIME_MANAGEMENT"
+              ]
+            },
             "ScheduleRequestStatus": {
               "kind": "valueSet",
               "values": [
@@ -4617,7 +4831,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "0c3dbaac8680a443c48be4d605176b7ce9922a781b076a7cd073d78cd884ce5d"
+    "storageHash": "c0b37f8fd791644c9851d39c03935f0581a6d54850c7feb0991da2817f83fa4a"
   },
   "capabilities": {
     "postgres": {

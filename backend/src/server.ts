@@ -2,6 +2,7 @@ import express from 'express';
 import 'dotenv/config';
 import { db } from './prisma/db.js';
 import { errorHandler, notFoundHandler } from './middleware/error.js';
+import { corsMiddleware } from './middleware/cors.js';
 import { authenticate, AuthenticatedRequest } from './middleware/auth.js';
 import { authRouter } from './routes/auth.js';
 import { accountsRouter } from './routes/accounts.js';
@@ -17,6 +18,7 @@ export function createApp() {
 
   // Middleware
   app.use(express.json());
+  app.use(corsMiddleware);
 
   // Routes
   app.get('/health', async (_req, res) => {
