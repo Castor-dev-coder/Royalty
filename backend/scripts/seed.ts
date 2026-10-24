@@ -122,7 +122,7 @@ import { localDateAndTime } from '../src/modules/appointments/appointments.rules
  * Bump this when the expected fixture content changes. Teardown refuses to
  * delete rows that do not match the version it was written for.
  */
-const SEED_VERSION = '1';
+const SEED_VERSION = '2';
 
 /** Reserved email domain for seeded accounts. */
 const SEED_EMAIL_DOMAIN = '@seed.royalty.local';
@@ -146,6 +146,8 @@ const ID = {
   staff: '33333333-0000-4000-8000-000000000001',
   categoryHair: '44444444-0000-4000-8000-000000000001',
   categoryNails: '44444444-0000-4000-8000-000000000002',
+  categoryHairCutting: '44444444-0000-4000-8000-000000000003',
+  categoryHairColoring: '44444444-0000-4000-8000-000000000004',
   serviceHaircut: '55555555-0000-4000-8000-000000000001',
   serviceHairColor: '55555555-0000-4000-8000-000000000002',
   serviceGelManicure: '55555555-0000-4000-8000-000000000003',
@@ -256,10 +258,17 @@ type AppointmentDef = {
 };
 
 const SERVICES: ServiceDef[] = [
-  { id: ID.serviceHaircut, categoryId: ID.categoryHair, name: 'Signature Haircut', price: '450.00', durationMinutes: 45 },
-  { id: ID.serviceHairColor, categoryId: ID.categoryHair, name: 'Hair Color', price: '1800.00', durationMinutes: 120 },
+  { id: ID.serviceHaircut, categoryId: ID.categoryHairCutting, name: 'Signature Haircut', price: '450.00', durationMinutes: 45 },
+  { id: ID.serviceHairColor, categoryId: ID.categoryHairColoring, name: 'Hair Color', price: '1800.00', durationMinutes: 120 },
   { id: ID.serviceGelManicure, categoryId: ID.categoryNails, name: 'Gel Manicure', price: '600.00', durationMinutes: 60 },
   { id: ID.serviceSpaPedicure, categoryId: ID.categoryNails, name: 'Spa Pedicure', price: '950.00', durationMinutes: 75 },
+];
+
+/** Genre coverage for the team page and matching (staff_categories). */
+const STAFF_CATEGORIES: ReadonlyArray<{ staffId: string; categoryId: string }> = [
+  { staffId: ID.staff, categoryId: ID.categoryHairCutting },
+  { staffId: ID.staff, categoryId: ID.categoryHairColoring },
+  { staffId: ID.staff, categoryId: ID.categoryNails },
 ];
 
 const APPOINTMENTS: AppointmentDef[] = [
@@ -330,9 +339,10 @@ const SEED_ROW_COUNT =
   4 +                                    // accounts
   1 +                                    // customers
   1 +                                    // staff
-  2 +                                    // service_categories
+  4 +                                    // service_categories
   SERVICES.length +                      // services
   SERVICES.length +                      // staff_services (one per service)
+  STAFF_CATEGORIES.length +              // staff_categories (Maria's genres)
   ID.businessHours.length +              // business_hours (7)
   SCHEDULES.length +                     // staff_schedules
   APPOINTMENTS.length +                  // appointments
@@ -481,7 +491,7 @@ function validateFixtures(today: string, nowTime = '00:00'): void {
   if (new Set(emails.map(([, e]) => e)).size !== emails.length) fail('seed account emails are not unique');
 
   // --- service categories (varchar(100)) ---------------------------------
-  const categoryNames = ['Hair', 'Nails'];
+  const categoryNames = ['Hair', 'Nails', 'Hair Cutting', 'Hair Coloring'];
   for (const name of categoryNames) {
     if (name.length < 1 || name.length > 100) fail(`category name "${name}" exceeds varchar(100)`);
   }
@@ -976,6 +986,8 @@ async function seed(): Promise<void> {
     // service_categories
     await tx.orm.public.ServiceCategory.create({ id: ID.categoryHair, name: pgVarchar<100>('Hair'), isActive: true });
     await tx.orm.public.ServiceCategory.create({ id: ID.categoryNails, name: pgVarchar<100>('Nails'), isActive: true });
+    await tx.orm.public.ServiceCategory.create({ id: ID.categoryHairCutting, name: pgVarchar<100>('Hair Cutting'), isActive: true });
+    await tx.orm.public.ServiceCategory.create({ id: ID.categoryHairColoring, name: pgVarchar<100>('Hair Coloring'), isActive: true });
 
     // services
     for (const service of SERVICES) {
@@ -994,6 +1006,11 @@ async function seed(): Promise<void> {
     // is what StaffService.listEligibleForServices reads.
     for (const service of SERVICES) {
       await tx.orm.public.StaffService.create({ staffId: ID.staff, serviceId: service.id });
+    }
+
+    // staff_categories — Maria covers Hair Cutting, Hair Coloring and Nails.
+    for (const pair of STAFF_CATEGORIES) {
+      await tx.orm.public.StaffCategory.create({ staffId: pair.staffId, categoryId: pair.categoryId });
     }
 
     // business_hours — PostgreSQL weekday 0-6, 0 = Sunday. Sunday closed.
@@ -1122,6 +1139,7 @@ async function remove(): Promise<void> {
 
     // 4. staff_services — fixed staff id only
     await tx.orm.public.StaffService.where({ staffId: ID.staff }).delete();
+    await tx.orm.public.StaffCategory.where({ staffId: ID.staff }).delete();
 
     // 5. services — fixed ids only
     for (const service of SERVICES) {
@@ -1143,9 +1161,10 @@ async function remove(): Promise<void> {
     // 9. customers — fixed id
     await tx.orm.public.Customer.where({ id: ID.customer }).delete();
 
-    // 10. accounts — fixed ids only
+    // 10. accounts — fixed ids only, and NEVER a system-flagged account:
+    // the is_system admin is not seed data and must survive teardown.
     for (const id of [ID.adminAccount, ID.customerAccount, ID.staffAccount, ID.managerAccount]) {
-      await tx.orm.public.Account.where({ id }).delete();
+      await tx.orm.public.Account.where({ id, isSystem: false }).delete();
     }
   });
 

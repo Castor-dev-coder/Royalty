@@ -64,6 +64,14 @@
       "model": "Staff",
       "namespace": "public"
     },
+    "staff_attendance": {
+      "model": "StaffAttendance",
+      "namespace": "public"
+    },
+    "staff_categories": {
+      "model": "StaffCategory",
+      "namespace": "public"
+    },
     "staff_schedules": {
       "model": "StaffSchedule",
       "namespace": "public"
@@ -108,6 +116,13 @@
                 "nullable": false,
                 "type": {
                   "codecId": "pg/uuid@1",
+                  "kind": "scalar"
+                }
+              },
+              "isSystem": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/bool@1",
                   "kind": "scalar"
                 }
               },
@@ -235,6 +250,9 @@
                 },
                 "id": {
                   "column": "id"
+                },
+                "isSystem": {
+                  "column": "is_system"
                 },
                 "passwordHash": {
                   "column": "password_hash"
@@ -1856,6 +1874,13 @@
                   "kind": "scalar"
                 }
               },
+              "imageUrl": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
               "isActive": {
                 "nullable": false,
                 "type": {
@@ -1957,6 +1982,9 @@
                 "id": {
                   "column": "id"
                 },
+                "imageUrl": {
+                  "column": "image_url"
+                },
                 "isActive": {
                   "column": "is_active"
                 },
@@ -2030,6 +2058,21 @@
                   "model": "Service",
                   "namespace": "public"
                 }
+              },
+              "staffCategories": {
+                "cardinality": "1:N",
+                "on": {
+                  "localFields": [
+                    "id"
+                  ],
+                  "targetFields": [
+                    "categoryId"
+                  ]
+                },
+                "to": {
+                  "model": "StaffCategory",
+                  "namespace": "public"
+                }
               }
             },
             "storage": {
@@ -2060,6 +2103,21 @@
                 "nullable": false,
                 "type": {
                   "codecId": "pg/uuid@1",
+                  "kind": "scalar"
+                }
+              },
+              "bio": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "coveredRoles": {
+                "many": true,
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
                   "kind": "scalar"
                 }
               },
@@ -2117,6 +2175,26 @@
                   }
                 }
               },
+              "photoUrl": {
+                "nullable": true,
+                "type": {
+                  "codecId": "sql/varchar@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "length": 500
+                  }
+                }
+              },
+              "position": {
+                "nullable": true,
+                "type": {
+                  "codecId": "sql/varchar@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "length": 100
+                  }
+                }
+              },
               "primaryRole": {
                 "nullable": false,
                 "type": {
@@ -2125,6 +2203,13 @@
                   "typeParams": {
                     "length": 100
                   }
+                }
+              },
+              "showOnTeam": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/bool@1",
+                  "kind": "scalar"
                 }
               },
               "updatedAt": {
@@ -2192,6 +2277,36 @@
                   "namespace": "public"
                 }
               },
+              "staffAttendance": {
+                "cardinality": "1:N",
+                "on": {
+                  "localFields": [
+                    "id"
+                  ],
+                  "targetFields": [
+                    "staffId"
+                  ]
+                },
+                "to": {
+                  "model": "StaffAttendance",
+                  "namespace": "public"
+                }
+              },
+              "staffCategories": {
+                "cardinality": "1:N",
+                "on": {
+                  "localFields": [
+                    "id"
+                  ],
+                  "targetFields": [
+                    "staffId"
+                  ]
+                },
+                "to": {
+                  "model": "StaffCategory",
+                  "namespace": "public"
+                }
+              },
               "staffSchedules": {
                 "cardinality": "1:N",
                 "on": {
@@ -2228,6 +2343,12 @@
                 "accountId": {
                   "column": "account_id"
                 },
+                "bio": {
+                  "column": "bio"
+                },
+                "coveredRoles": {
+                  "column": "covered_roles"
+                },
                 "createdAt": {
                   "column": "created_at"
                 },
@@ -2246,8 +2367,17 @@
                 "phone": {
                   "column": "phone"
                 },
+                "photoUrl": {
+                  "column": "photo_url"
+                },
+                "position": {
+                  "column": "position"
+                },
                 "primaryRole": {
                   "column": "primary_role"
+                },
+                "showOnTeam": {
+                  "column": "show_on_team"
                 },
                 "updatedAt": {
                   "column": "updated_at"
@@ -2258,6 +2388,158 @@
               },
               "namespaceId": "public",
               "table": "staff"
+            }
+          },
+          "StaffAttendance": {
+            "fields": {
+              "createdAt": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "kind": "scalar"
+                }
+              },
+              "id": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/uuid@1",
+                  "kind": "scalar"
+                }
+              },
+              "staffId": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/uuid@1",
+                  "kind": "scalar"
+                }
+              },
+              "timeIn": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "kind": "scalar"
+                }
+              },
+              "timeOut": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "kind": "scalar"
+                }
+              }
+            },
+            "relations": {
+              "staff": {
+                "cardinality": "N:1",
+                "nullable": false,
+                "on": {
+                  "localFields": [
+                    "staffId"
+                  ],
+                  "targetFields": [
+                    "id"
+                  ]
+                },
+                "to": {
+                  "model": "Staff",
+                  "namespace": "public"
+                }
+              }
+            },
+            "storage": {
+              "fields": {
+                "createdAt": {
+                  "column": "created_at"
+                },
+                "id": {
+                  "column": "id"
+                },
+                "staffId": {
+                  "column": "staff_id"
+                },
+                "timeIn": {
+                  "column": "time_in"
+                },
+                "timeOut": {
+                  "column": "time_out"
+                }
+              },
+              "namespaceId": "public",
+              "table": "staff_attendance"
+            }
+          },
+          "StaffCategory": {
+            "fields": {
+              "categoryId": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/uuid@1",
+                  "kind": "scalar"
+                }
+              },
+              "createdAt": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "kind": "scalar"
+                }
+              },
+              "staffId": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/uuid@1",
+                  "kind": "scalar"
+                }
+              }
+            },
+            "relations": {
+              "category": {
+                "cardinality": "N:1",
+                "nullable": false,
+                "on": {
+                  "localFields": [
+                    "categoryId"
+                  ],
+                  "targetFields": [
+                    "id"
+                  ]
+                },
+                "to": {
+                  "model": "ServiceCategory",
+                  "namespace": "public"
+                }
+              },
+              "staff": {
+                "cardinality": "N:1",
+                "nullable": false,
+                "on": {
+                  "localFields": [
+                    "staffId"
+                  ],
+                  "targetFields": [
+                    "id"
+                  ]
+                },
+                "to": {
+                  "model": "Staff",
+                  "namespace": "public"
+                }
+              }
+            },
+            "storage": {
+              "fields": {
+                "categoryId": {
+                  "column": "category_id"
+                },
+                "createdAt": {
+                  "column": "created_at"
+                },
+                "staffId": {
+                  "column": "staff_id"
+                }
+              },
+              "namespaceId": "public",
+              "table": "staff_categories"
             }
           },
           "StaffSchedule": {
@@ -2625,6 +2907,16 @@
               "namespaceId": "public",
               "tableName": "staff"
             },
+            "staff_attendance": {
+              "kind": "rls",
+              "namespaceId": "public",
+              "tableName": "staff_attendance"
+            },
+            "staff_categories": {
+              "kind": "rls",
+              "namespaceId": "public",
+              "tableName": "staff_categories"
+            },
             "staff_schedules": {
               "kind": "rls",
               "namespaceId": "public",
@@ -2668,6 +2960,15 @@
                     "kind": "function"
                   },
                   "nativeType": "uuid",
+                  "nullable": false
+                },
+                "is_system": {
+                  "codecId": "pg/bool@1",
+                  "default": {
+                    "kind": "literal",
+                    "value": false
+                  },
+                  "nativeType": "bool",
                   "nullable": false
                 },
                 "password_hash": {
@@ -2723,6 +3024,14 @@
               },
               "foreignKeys": [],
               "indexes": [
+                {
+                  "columns": [
+                    "is_system"
+                  ],
+                  "name": "accounts_single_system_key",
+                  "unique": true,
+                  "where": "is_system"
+                },
                 {
                   "columns": [
                     "role"
@@ -4172,6 +4481,11 @@
                   "nativeType": "uuid",
                   "nullable": false
                 },
+                "image_url": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": true
+                },
                 "is_active": {
                   "codecId": "pg/bool@1",
                   "default": {
@@ -4253,11 +4567,29 @@
               "uniques": []
             },
             "staff": {
+              "checks": [
+                {
+                  "expression": "array_position(\"covered_roles\", NULL) IS NULL",
+                  "name": "staff_covered_roles_elem_not_null_c7c50f7d",
+                  "prefix": "staff_covered_roles_elem_not_null"
+                }
+              ],
               "columns": {
                 "account_id": {
                   "codecId": "pg/uuid@1",
                   "nativeType": "uuid",
                   "nullable": false
+                },
+                "bio": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": true
+                },
+                "covered_roles": {
+                  "codecId": "pg/text@1",
+                  "many": true,
+                  "nativeType": "text",
+                  "nullable": true
                 },
                 "created_at": {
                   "codecId": "pg/timestamptz-temporal@1",
@@ -4315,6 +4647,22 @@
                     "length": 30
                   }
                 },
+                "photo_url": {
+                  "codecId": "sql/varchar@1",
+                  "nativeType": "character varying",
+                  "nullable": true,
+                  "typeParams": {
+                    "length": 500
+                  }
+                },
+                "position": {
+                  "codecId": "sql/varchar@1",
+                  "nativeType": "character varying",
+                  "nullable": true,
+                  "typeParams": {
+                    "length": 100
+                  }
+                },
                 "primary_role": {
                   "codecId": "sql/varchar@1",
                   "nativeType": "character varying",
@@ -4322,6 +4670,15 @@
                   "typeParams": {
                     "length": 100
                   }
+                },
+                "show_on_team": {
+                  "codecId": "pg/bool@1",
+                  "default": {
+                    "kind": "literal",
+                    "value": false
+                  },
+                  "nativeType": "bool",
+                  "nullable": false
                 },
                 "updated_at": {
                   "codecId": "pg/timestamptz-temporal@1",
@@ -4401,6 +4758,176 @@
                   "name": "staff_account_id_key"
                 }
               ]
+            },
+            "staff_attendance": {
+              "checks": [
+                {
+                  "expression": "((time_out IS NULL) OR (time_out > time_in))",
+                  "name": "valid_attendance_time"
+                }
+              ],
+              "columns": {
+                "created_at": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "default": {
+                    "expression": "now()",
+                    "kind": "function"
+                  },
+                  "nativeType": "timestamptz",
+                  "nullable": false
+                },
+                "id": {
+                  "codecId": "pg/uuid@1",
+                  "default": {
+                    "expression": "gen_random_uuid()",
+                    "kind": "function"
+                  },
+                  "nativeType": "uuid",
+                  "nullable": false
+                },
+                "staff_id": {
+                  "codecId": "pg/uuid@1",
+                  "nativeType": "uuid",
+                  "nullable": false
+                },
+                "time_in": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "default": {
+                    "expression": "now()",
+                    "kind": "function"
+                  },
+                  "nativeType": "timestamptz",
+                  "nullable": false
+                },
+                "time_out": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
+                  "nullable": true
+                }
+              },
+              "foreignKeys": [
+                {
+                  "name": "fk_staff_attendance_staff",
+                  "onDelete": "restrict",
+                  "source": {
+                    "columns": [
+                      "staff_id"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "staff_attendance"
+                  },
+                  "target": {
+                    "columns": [
+                      "id"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "staff"
+                  }
+                }
+              ],
+              "indexes": [
+                {
+                  "columns": [
+                    "staff_id",
+                    "time_in"
+                  ],
+                  "name": "idx_staff_attendance_staff_id_time",
+                  "unique": false
+                },
+                {
+                  "columns": [
+                    "staff_id"
+                  ],
+                  "name": "staff_attendance_open_shift_key",
+                  "unique": true,
+                  "where": "(time_out IS NULL)"
+                }
+              ],
+              "primaryKey": {
+                "columns": [
+                  "id"
+                ],
+                "name": "staff_attendance_pkey"
+              },
+              "uniques": []
+            },
+            "staff_categories": {
+              "columns": {
+                "category_id": {
+                  "codecId": "pg/uuid@1",
+                  "nativeType": "uuid",
+                  "nullable": false
+                },
+                "created_at": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "default": {
+                    "expression": "now()",
+                    "kind": "function"
+                  },
+                  "nativeType": "timestamptz",
+                  "nullable": false
+                },
+                "staff_id": {
+                  "codecId": "pg/uuid@1",
+                  "nativeType": "uuid",
+                  "nullable": false
+                }
+              },
+              "foreignKeys": [
+                {
+                  "name": "fk_staff_categories_staff",
+                  "onDelete": "cascade",
+                  "source": {
+                    "columns": [
+                      "staff_id"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "staff_categories"
+                  },
+                  "target": {
+                    "columns": [
+                      "id"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "staff"
+                  }
+                },
+                {
+                  "name": "fk_staff_categories_category",
+                  "onDelete": "restrict",
+                  "source": {
+                    "columns": [
+                      "category_id"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "staff_categories"
+                  },
+                  "target": {
+                    "columns": [
+                      "id"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "service_categories"
+                  }
+                }
+              ],
+              "indexes": [
+                {
+                  "columns": [
+                    "category_id"
+                  ],
+                  "name": "idx_staff_categories_category_id",
+                  "unique": false
+                }
+              ],
+              "primaryKey": {
+                "columns": [
+                  "staff_id",
+                  "category_id"
+                ],
+                "name": "staff_categories_pkey"
+              },
+              "uniques": []
             },
             "staff_schedules": {
               "checks": [
@@ -4831,7 +5358,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "c0b37f8fd791644c9851d39c03935f0581a6d54850c7feb0991da2817f83fa4a"
+    "storageHash": "73ae5ac9b05cadbe897ba58c2743688db1f0afd5ff19ece5a838a0327a9516fe"
   },
   "capabilities": {
     "postgres": {

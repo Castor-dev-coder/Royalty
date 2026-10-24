@@ -25,6 +25,11 @@ export class AccountService {
     if (!account) {
       throw new NotFoundError('Account not found');
     }
+    // Hidden system account: 404 for everyone, including other admins. It
+    // still signs in and uses /api/me — it simply has no fetchable ID.
+    if (account.isSystem) {
+      throw new NotFoundError('Account not found');
+    }
 
     // Users can only view their own account unless they are admin/manager
     if (requestingRole !== 'ADMIN' && requestingRole !== 'MANAGER' && accountId !== requestingUserId) {
@@ -57,12 +62,13 @@ export class AccountService {
 
     // Get total count
     const totalResult = await db.orm.public.Account
-      .where({})
+      .where({ isSystem: false })
       .aggregate((aggregate) => ({ total: aggregate.count() }));
     const total = typeof totalResult.total === 'number' ? totalResult.total : 0;
 
     // Get paginated results using database-level pagination.
     const accountsRaw = db.orm.public.Account
+      .where({ isSystem: false })
       .orderBy((a) => a.createdAt.desc())
       .offset(skip)
       .limit(clampedLimit)
@@ -115,11 +121,15 @@ export class AccountService {
     if (!account) {
       throw new NotFoundError('Account not found');
     }
+    // Hidden system account: no by-ID status change for anyone.
+    if (account.isSystem) {
+      throw new NotFoundError('Account not found');
+    }
 
     // Cannot deactivate yourself if you're the only admin
     if (accountId === requestingUserId && newStatus === 'DEACTIVATED' && account.role === 'ADMIN') {
       const adminCountResult = await db.orm.public.Account
-        .where({ role: 'ADMIN', status: 'ACTIVE' })
+        .where({ role: 'ADMIN', status: 'ACTIVE', isSystem: false })
         .aggregate((aggregate) => ({ total: aggregate.count() }));
       const adminCount = typeof adminCountResult.total === 'number' ? adminCountResult.total : 0;
       if (adminCount <= 1) {
@@ -219,6 +229,11 @@ export class AccountService {
   ): Promise<void> {
     const account = await db.orm.public.Account.where({ id: accountId }).first();
     if (!account) {
+      throw new NotFoundError('Account not found');
+    }
+    // By-ID password reset on the hidden system account: 404 for everyone.
+    // (The system admin can still rotate its own password through /accounts/me.)
+    if (account.isSystem && accountId !== requestingUserId) {
       throw new NotFoundError('Account not found');
     }
 

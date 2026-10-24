@@ -16,6 +16,7 @@
     "db:verify": "prisma db verify",
     "db:migrate": "prisma db migrate",
     "db:seed": "tsx scripts/seed.ts seed",
+    "db:system-admin": "tsx scripts/create-system-admin.ts",
     "db:seed:remove": "tsx scripts/seed.ts remove"
   },
   "keywords": [],
@@ -28,6 +29,7 @@
     "dotenv": "^18.0.0",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
+    "sharp": "^0.35.5",
     "zod": "^4.6.5"
   },
   "devDependencies": {

@@ -3,6 +3,9 @@ import { getStaffController, getMyStaffController, listStaffController, createSt
 import { authenticate, requireRole } from '../middleware/auth.js';
 import { validateQuery, validateRequest } from '../middleware/validator.js';
 import { createStaffSchema, eligibleStaffQuerySchema, updateOwnStaffProfileSchema, updateStaffDetailsSchema } from '../modules/staff/staff.schemas.js';
+import express from 'express';
+import { rateLimit } from '../middleware/rateLimit.js';
+import { uploadStaffPhotoController } from '../modules/images/images.controller.js';
 
 export const staffRouter = Router();
 
@@ -14,6 +17,11 @@ staffRouter.get('/eligible', requireRole('CUSTOMER'), validateQuery(eligibleStaf
 
 // GET /staff - List all staff (admin/manager only)
 staffRouter.get('/', requireRole('ADMIN', 'MANAGER'), listStaffController);
+
+// POST /staff/:id/photo - replace a staff photo (ADMIN/MANAGER, rate-limited,
+// raw PNG/JPG body; magic bytes are checked server-side).
+staffRouter.post('/:id/photo', requireRole('ADMIN', 'MANAGER'), rateLimit({ max: 10 }),
+  express.raw({ type: ['image/png', 'image/jpeg'], limit: '10mb' }), uploadStaffPhotoController);
 
 // GET /staff/me - Get own staff profile
 staffRouter.get('/me', getMyStaffController);

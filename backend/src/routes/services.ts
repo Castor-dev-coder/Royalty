@@ -16,6 +16,9 @@ import {
   assignStaffToServiceController,
   removeStaffFromServiceController,
 } from '../modules/services/service.controller.js';
+import express from 'express';
+import { rateLimit } from '../middleware/rateLimit.js';
+import { uploadServiceImageController } from '../modules/images/images.controller.js';
 import {
   createServiceCategorySchema,
   updateServiceCategorySchema,
@@ -47,6 +50,11 @@ servicesRouter.get('/', requireRole('ADMIN', 'MANAGER', 'CUSTOMER'), listService
 servicesRouter.get('/:id', requireRole('ADMIN', 'MANAGER', 'CUSTOMER'), getServiceController);
 servicesRouter.post('/', requireRole('ADMIN', 'MANAGER'), validateRequest(createServiceSchema), createServiceController);
 servicesRouter.patch('/:id', requireRole('ADMIN', 'MANAGER'), validateRequest(updateServiceSchema), updateServiceController);
+
+// POST /services/:id/image - replace the service image (ADMIN/MANAGER,
+// rate-limited, raw PNG/JPG body; magic bytes are checked server-side).
+servicesRouter.post('/:id/image', requireRole('ADMIN', 'MANAGER'), rateLimit({ max: 10 }),
+  express.raw({ type: ['image/png', 'image/jpeg'], limit: '10mb' }), uploadServiceImageController);
 
 // ============================================================
 // Staff-Service Assignments

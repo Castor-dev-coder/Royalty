@@ -8,6 +8,8 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(32),
   JWT_REFRESH_SECRET: z.string().min(32),
   CORS_ORIGINS: z.string().optional(),
+  SUPABASE_URL: z.string().url().optional(),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1).optional(),
   STUDIO_TIME_ZONE: z.string().default('Asia/Manila').refine((timeZone) => {
     try {
       new Intl.DateTimeFormat('en-US', { timeZone });

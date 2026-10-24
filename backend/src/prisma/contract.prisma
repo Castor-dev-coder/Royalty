@@ -93,6 +93,7 @@ namespace public {
     passwordHash     String                 @map("password_hash")
     role             pg.enum(AccountRole)   @default("CUSTOMER")
     status           pg.enum(AccountStatus) @default("ACTIVE")
+    isSystem         Boolean                @default(false) @map("is_system")
     createdAt        Timestamptz            @default(now()) @map("created_at")
     updatedAt        Timestamptz            @default(now()) @map("updated_at")
     auditLogs        AuditLog[]
@@ -103,6 +104,7 @@ namespace public {
 
     @@index([role], map: "idx_accounts_role")
     @@index([status], map: "idx_accounts_status")
+    @@index([isSystem], map: "accounts_single_system_key", unique: true, where: "is_system")
     @@rls
     @@map("accounts")
   }
@@ -161,6 +163,7 @@ namespace public {
     createdAt Timestamptz  @default(now()) @map("created_at")
     updatedAt Timestamptz  @default(now()) @map("updated_at")
     services  Service[]
+    staffCategories StaffCategory[]
 
     @@rls
     @@map("service_categories")
@@ -171,6 +174,7 @@ namespace public {
     categoryId          Uuid                  @map("category_id")
     name                VarChar(200)
     description         String?
+    imageUrl            String?                @map("image_url")
     price               Numeric(10, 2)
     durationMinutes     Int                   @map("duration_minutes")
     isActive            Boolean               @default(true) @map("is_active")
@@ -363,12 +367,19 @@ namespace public {
     primaryRole      VarChar(100)             @map("primary_role")
     employmentType   pg.enum(EmploymentType)  @map("employment_type")
     workStatus       pg.enum(StaffWorkStatus) @default("DAY_OFF") @map("work_status")
+    photoUrl         VarChar(500)?            @map("photo_url")
+    position         VarChar(100)?
+    bio              String?
+    coveredRoles     String[]?                @map("covered_roles")
+    showOnTeam       Boolean                  @default(false) @map("show_on_team")
     createdAt        Timestamptz              @default(now()) @map("created_at")
     updatedAt        Timestamptz              @default(now()) @map("updated_at")
     appointments    Appointment[]
     scheduleRequests ScheduleRequest[]
     staffSchedules   StaffSchedule[]
     staffServices    StaffService[]
+    staffCategories  StaffCategory[]
+    staffAttendance  StaffAttendance[]
     account          Account                 @relation(fields: [accountId], references: [id], onDelete: Restrict, map: "fk_staff_account")
 
     @@index([accountId], map: "idx_staff_account_id")
@@ -432,6 +443,34 @@ namespace public {
     @@index([serviceId], map: "idx_staff_services_service_id")
     @@rls
     @@map("staff_services")
+  }
+
+  model StaffCategory {
+    staffId    Uuid            @map("staff_id")
+    categoryId Uuid            @map("category_id")
+    createdAt  Timestamptz     @default(now()) @map("created_at")
+    staff      Staff           @relation(fields: [staffId], references: [id], onDelete: Cascade, map: "fk_staff_categories_staff", index: false)
+    category   ServiceCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict, map: "fk_staff_categories_category")
+
+    @@id([staffId, categoryId], map: "staff_categories_pkey")
+    @@index([categoryId], map: "idx_staff_categories_category_id")
+    @@rls
+    @@map("staff_categories")
+  }
+
+  model StaffAttendance {
+    id        Uuid        @id(map: "staff_attendance_pkey") @default(sql`gen_random_uuid()`)
+    staffId   Uuid        @map("staff_id")
+    timeIn    Timestamptz @default(now()) @map("time_in")
+    timeOut   Timestamptz? @map("time_out")
+    createdAt Timestamptz @default(now()) @map("created_at")
+    staff     Staff       @relation(fields: [staffId], references: [id], onDelete: Restrict, map: "fk_staff_attendance_staff")
+
+    @@index([staffId, timeIn], map: "idx_staff_attendance_staff_id_time")
+    @@check(expression: "((time_out IS NULL) OR (time_out > time_in))", map: "valid_attendance_time")
+    @@index([staffId], map: "staff_attendance_open_shift_key", unique: true, where: "(time_out IS NULL)")
+    @@rls
+    @@map("staff_attendance")
   }
 
 

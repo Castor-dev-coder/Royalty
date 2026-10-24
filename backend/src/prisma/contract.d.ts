@@ -34,7 +34,7 @@ import type {
 } from '@prisma/orm-postgres/contract/types';
 
 export type StorageHash =
-  StorageHashBase<'c0b37f8fd791644c9851d39c03935f0581a6d54850c7feb0991da2817f83fa4a'>;
+  StorageHashBase<'73ae5ac9b05cadbe897ba58c2743688db1f0afd5ff19ece5a838a0327a9516fe'>;
 export type ExecutionHash = ExecutionHashBase<string>;
 export type ProfileHash =
   ProfileHashBase<'3916f444a8a17ad749191acf9e08dad97d1a327b88c2f1d45d12f240296aa8b2'>;
@@ -253,6 +253,7 @@ export type FieldOutputTypes = {
       readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
       readonly email: Varchar<255>;
       readonly id: CodecTypes['pg/uuid@1']['output'];
+      readonly isSystem: CodecTypes['pg/bool@1']['output'];
       readonly passwordHash: CodecTypes['pg/text@1']['output'];
       readonly role: 'ADMIN' | 'MANAGER' | 'STAFF' | 'CUSTOMER';
       readonly status: 'ACTIVE' | 'DEACTIVATED';
@@ -388,6 +389,7 @@ export type FieldOutputTypes = {
       readonly description: CodecTypes['pg/text@1']['output'] | null;
       readonly durationMinutes: CodecTypes['pg/int4@1']['output'];
       readonly id: CodecTypes['pg/uuid@1']['output'];
+      readonly imageUrl: CodecTypes['pg/text@1']['output'] | null;
       readonly isActive: CodecTypes['pg/bool@1']['output'];
       readonly name: Varchar<200>;
       readonly price: Numeric<10, 2>;
@@ -402,15 +404,32 @@ export type FieldOutputTypes = {
     };
     readonly Staff: {
       readonly accountId: CodecTypes['pg/uuid@1']['output'];
+      readonly bio: CodecTypes['pg/text@1']['output'] | null;
+      readonly coveredRoles: ReadonlyArray<CodecTypes['pg/text@1']['output']> | null;
       readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
       readonly employmentType: 'FULL_TIME' | 'PART_TIME';
       readonly firstName: Varchar<100>;
       readonly id: CodecTypes['pg/uuid@1']['output'];
       readonly lastName: Varchar<100>;
       readonly phone: Varchar<30> | null;
+      readonly photoUrl: Varchar<500> | null;
+      readonly position: Varchar<100> | null;
       readonly primaryRole: Varchar<100>;
+      readonly showOnTeam: CodecTypes['pg/bool@1']['output'];
       readonly updatedAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
       readonly workStatus: 'ON_DUTY' | 'DAY_OFF' | 'UNAVAILABLE';
+    };
+    readonly StaffAttendance: {
+      readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
+      readonly id: CodecTypes['pg/uuid@1']['output'];
+      readonly staffId: CodecTypes['pg/uuid@1']['output'];
+      readonly timeIn: CodecTypes['pg/timestamptz-temporal@1']['output'];
+      readonly timeOut: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
+    };
+    readonly StaffCategory: {
+      readonly categoryId: CodecTypes['pg/uuid@1']['output'];
+      readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
+      readonly staffId: CodecTypes['pg/uuid@1']['output'];
     };
     readonly StaffSchedule: {
       readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
@@ -437,6 +456,7 @@ export type FieldInputTypes = {
       readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['input'];
       readonly email: CodecTypes['sql/varchar@1']['input'];
       readonly id: CodecTypes['pg/uuid@1']['input'];
+      readonly isSystem: CodecTypes['pg/bool@1']['input'];
       readonly passwordHash: CodecTypes['pg/text@1']['input'];
       readonly role: 'ADMIN' | 'MANAGER' | 'STAFF' | 'CUSTOMER';
       readonly status: 'ACTIVE' | 'DEACTIVATED';
@@ -572,6 +592,7 @@ export type FieldInputTypes = {
       readonly description: CodecTypes['pg/text@1']['input'] | null;
       readonly durationMinutes: CodecTypes['pg/int4@1']['input'];
       readonly id: CodecTypes['pg/uuid@1']['input'];
+      readonly imageUrl: CodecTypes['pg/text@1']['input'] | null;
       readonly isActive: CodecTypes['pg/bool@1']['input'];
       readonly name: CodecTypes['sql/varchar@1']['input'];
       readonly price: CodecTypes['pg/numeric@1']['input'];
@@ -586,15 +607,32 @@ export type FieldInputTypes = {
     };
     readonly Staff: {
       readonly accountId: CodecTypes['pg/uuid@1']['input'];
+      readonly bio: CodecTypes['pg/text@1']['input'] | null;
+      readonly coveredRoles: ReadonlyArray<CodecTypes['pg/text@1']['input']> | null;
       readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['input'];
       readonly employmentType: 'FULL_TIME' | 'PART_TIME';
       readonly firstName: CodecTypes['sql/varchar@1']['input'];
       readonly id: CodecTypes['pg/uuid@1']['input'];
       readonly lastName: CodecTypes['sql/varchar@1']['input'];
       readonly phone: CodecTypes['sql/varchar@1']['input'] | null;
+      readonly photoUrl: CodecTypes['sql/varchar@1']['input'] | null;
+      readonly position: CodecTypes['sql/varchar@1']['input'] | null;
       readonly primaryRole: CodecTypes['sql/varchar@1']['input'];
+      readonly showOnTeam: CodecTypes['pg/bool@1']['input'];
       readonly updatedAt: CodecTypes['pg/timestamptz-temporal@1']['input'];
       readonly workStatus: 'ON_DUTY' | 'DAY_OFF' | 'UNAVAILABLE';
+    };
+    readonly StaffAttendance: {
+      readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['input'];
+      readonly id: CodecTypes['pg/uuid@1']['input'];
+      readonly staffId: CodecTypes['pg/uuid@1']['input'];
+      readonly timeIn: CodecTypes['pg/timestamptz-temporal@1']['input'];
+      readonly timeOut: CodecTypes['pg/timestamptz-temporal@1']['input'] | null;
+    };
+    readonly StaffCategory: {
+      readonly categoryId: CodecTypes['pg/uuid@1']['input'];
+      readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['input'];
+      readonly staffId: CodecTypes['pg/uuid@1']['input'];
     };
     readonly StaffSchedule: {
       readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['input'];
@@ -621,6 +659,7 @@ export type StorageColumnTypes = {
       readonly created_at: CodecTypes['pg/timestamptz-temporal@1']['output'];
       readonly email: Varchar<255>;
       readonly id: CodecTypes['pg/uuid@1']['output'];
+      readonly is_system: CodecTypes['pg/bool@1']['output'];
       readonly password_hash: CodecTypes['pg/text@1']['output'];
       readonly role: 'ADMIN' | 'MANAGER' | 'STAFF' | 'CUSTOMER';
       readonly status: 'ACTIVE' | 'DEACTIVATED';
@@ -745,6 +784,7 @@ export type StorageColumnTypes = {
       readonly description: CodecTypes['pg/text@1']['output'] | null;
       readonly duration_minutes: CodecTypes['pg/int4@1']['output'];
       readonly id: CodecTypes['pg/uuid@1']['output'];
+      readonly image_url: CodecTypes['pg/text@1']['output'] | null;
       readonly is_active: CodecTypes['pg/bool@1']['output'];
       readonly name: Varchar<200>;
       readonly price: Numeric<10, 2>;
@@ -752,15 +792,32 @@ export type StorageColumnTypes = {
     };
     readonly staff: {
       readonly account_id: CodecTypes['pg/uuid@1']['output'];
+      readonly bio: CodecTypes['pg/text@1']['output'] | null;
+      readonly covered_roles: ReadonlyArray<CodecTypes['pg/text@1']['output']> | null;
       readonly created_at: CodecTypes['pg/timestamptz-temporal@1']['output'];
       readonly employment_type: 'FULL_TIME' | 'PART_TIME';
       readonly first_name: Varchar<100>;
       readonly id: CodecTypes['pg/uuid@1']['output'];
       readonly last_name: Varchar<100>;
       readonly phone: Varchar<30> | null;
+      readonly photo_url: Varchar<500> | null;
+      readonly position: Varchar<100> | null;
       readonly primary_role: Varchar<100>;
+      readonly show_on_team: CodecTypes['pg/bool@1']['output'];
       readonly updated_at: CodecTypes['pg/timestamptz-temporal@1']['output'];
       readonly work_status: 'ON_DUTY' | 'DAY_OFF' | 'UNAVAILABLE';
+    };
+    readonly staff_attendance: {
+      readonly created_at: CodecTypes['pg/timestamptz-temporal@1']['output'];
+      readonly id: CodecTypes['pg/uuid@1']['output'];
+      readonly staff_id: CodecTypes['pg/uuid@1']['output'];
+      readonly time_in: CodecTypes['pg/timestamptz-temporal@1']['output'];
+      readonly time_out: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
+    };
+    readonly staff_categories: {
+      readonly category_id: CodecTypes['pg/uuid@1']['output'];
+      readonly created_at: CodecTypes['pg/timestamptz-temporal@1']['output'];
+      readonly staff_id: CodecTypes['pg/uuid@1']['output'];
     };
     readonly staff_schedules: {
       readonly created_at: CodecTypes['pg/timestamptz-temporal@1']['output'];
@@ -805,6 +862,7 @@ export type StorageColumnInputTypes = {
       readonly created_at: CodecTypes['pg/timestamptz-temporal@1']['input'];
       readonly email: CodecTypes['sql/varchar@1']['input'];
       readonly id: CodecTypes['pg/uuid@1']['input'];
+      readonly is_system: CodecTypes['pg/bool@1']['input'];
       readonly password_hash: CodecTypes['pg/text@1']['input'];
       readonly role: 'ADMIN' | 'MANAGER' | 'STAFF' | 'CUSTOMER';
       readonly status: 'ACTIVE' | 'DEACTIVATED';
@@ -929,6 +987,7 @@ export type StorageColumnInputTypes = {
       readonly description: CodecTypes['pg/text@1']['input'] | null;
       readonly duration_minutes: CodecTypes['pg/int4@1']['input'];
       readonly id: CodecTypes['pg/uuid@1']['input'];
+      readonly image_url: CodecTypes['pg/text@1']['input'] | null;
       readonly is_active: CodecTypes['pg/bool@1']['input'];
       readonly name: CodecTypes['sql/varchar@1']['input'];
       readonly price: CodecTypes['pg/numeric@1']['input'];
@@ -936,15 +995,32 @@ export type StorageColumnInputTypes = {
     };
     readonly staff: {
       readonly account_id: CodecTypes['pg/uuid@1']['input'];
+      readonly bio: CodecTypes['pg/text@1']['input'] | null;
+      readonly covered_roles: ReadonlyArray<CodecTypes['pg/text@1']['input']> | null;
       readonly created_at: CodecTypes['pg/timestamptz-temporal@1']['input'];
       readonly employment_type: 'FULL_TIME' | 'PART_TIME';
       readonly first_name: CodecTypes['sql/varchar@1']['input'];
       readonly id: CodecTypes['pg/uuid@1']['input'];
       readonly last_name: CodecTypes['sql/varchar@1']['input'];
       readonly phone: CodecTypes['sql/varchar@1']['input'] | null;
+      readonly photo_url: CodecTypes['sql/varchar@1']['input'] | null;
+      readonly position: CodecTypes['sql/varchar@1']['input'] | null;
       readonly primary_role: CodecTypes['sql/varchar@1']['input'];
+      readonly show_on_team: CodecTypes['pg/bool@1']['input'];
       readonly updated_at: CodecTypes['pg/timestamptz-temporal@1']['input'];
       readonly work_status: 'ON_DUTY' | 'DAY_OFF' | 'UNAVAILABLE';
+    };
+    readonly staff_attendance: {
+      readonly created_at: CodecTypes['pg/timestamptz-temporal@1']['input'];
+      readonly id: CodecTypes['pg/uuid@1']['input'];
+      readonly staff_id: CodecTypes['pg/uuid@1']['input'];
+      readonly time_in: CodecTypes['pg/timestamptz-temporal@1']['input'];
+      readonly time_out: CodecTypes['pg/timestamptz-temporal@1']['input'] | null;
+    };
+    readonly staff_categories: {
+      readonly category_id: CodecTypes['pg/uuid@1']['input'];
+      readonly created_at: CodecTypes['pg/timestamptz-temporal@1']['input'];
+      readonly staff_id: CodecTypes['pg/uuid@1']['input'];
     };
     readonly staff_schedules: {
       readonly created_at: CodecTypes['pg/timestamptz-temporal@1']['input'];
@@ -989,6 +1065,7 @@ export namespace Models {
     createdAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
     email: Varchar<255>;
     id: CodecTypes['pg/uuid@1']['output'];
+    isSystem: CodecTypes['pg/bool@1']['output'];
     passwordHash: CodecTypes['pg/text@1']['output'];
     role: 'ADMIN' | 'MANAGER' | 'STAFF' | 'CUSTOMER';
     status: 'ACTIVE' | 'DEACTIVATED';
@@ -1166,6 +1243,7 @@ export namespace Models {
     description: CodecTypes['pg/text@1']['output'] | null;
     durationMinutes: CodecTypes['pg/int4@1']['output'];
     id: CodecTypes['pg/uuid@1']['output'];
+    imageUrl: CodecTypes['pg/text@1']['output'] | null;
     isActive: CodecTypes['pg/bool@1']['output'];
     name: Varchar<200>;
     price: Numeric<10, 2>;
@@ -1182,26 +1260,57 @@ export namespace Models {
     name: Varchar<100>;
     updatedAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
     services: public_Service[];
-    readonly [RelationKeys]?: 'services';
+    staffCategories: public_StaffCategory[];
+    readonly [RelationKeys]?: 'services' | 'staffCategories';
   };
   export type public_Staff = {
     accountId: CodecTypes['pg/uuid@1']['output'];
+    bio: CodecTypes['pg/text@1']['output'] | null;
+    coveredRoles: ReadonlyArray<CodecTypes['pg/text@1']['output']> | null;
     createdAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
     employmentType: 'FULL_TIME' | 'PART_TIME';
     firstName: Varchar<100>;
     id: CodecTypes['pg/uuid@1']['output'];
     lastName: Varchar<100>;
     phone: Varchar<30> | null;
+    photoUrl: Varchar<500> | null;
+    position: Varchar<100> | null;
     primaryRole: Varchar<100>;
+    showOnTeam: CodecTypes['pg/bool@1']['output'];
     updatedAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
     workStatus: 'ON_DUTY' | 'DAY_OFF' | 'UNAVAILABLE';
     account: public_Account;
     appointments: public_Appointment[];
     scheduleRequests: public_ScheduleRequest[];
+    staffAttendance: public_StaffAttendance[];
+    staffCategories: public_StaffCategory[];
     staffSchedules: public_StaffSchedule[];
     staffServices: public_StaffService[];
     readonly [RelationKeys]?:
-      'account' | 'appointments' | 'scheduleRequests' | 'staffSchedules' | 'staffServices';
+      | 'account'
+      | 'appointments'
+      | 'scheduleRequests'
+      | 'staffAttendance'
+      | 'staffCategories'
+      | 'staffSchedules'
+      | 'staffServices';
+  };
+  export type public_StaffAttendance = {
+    createdAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
+    id: CodecTypes['pg/uuid@1']['output'];
+    staffId: CodecTypes['pg/uuid@1']['output'];
+    timeIn: CodecTypes['pg/timestamptz-temporal@1']['output'];
+    timeOut: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
+    staff: public_Staff;
+    readonly [RelationKeys]?: 'staff';
+  };
+  export type public_StaffCategory = {
+    categoryId: CodecTypes['pg/uuid@1']['output'];
+    createdAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
+    staffId: CodecTypes['pg/uuid@1']['output'];
+    category: public_ServiceCategory;
+    staff: public_Staff;
+    readonly [RelationKeys]?: 'category' | 'staff';
   };
   export type public_StaffSchedule = {
     createdAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
@@ -1246,6 +1355,8 @@ export declare const models: {
     Service: Models.public_Service;
     ServiceCategory: Models.public_ServiceCategory;
     Staff: Models.public_Staff;
+    StaffAttendance: Models.public_StaffAttendance;
+    StaffCategory: Models.public_StaffCategory;
     StaffSchedule: Models.public_StaffSchedule;
     StaffService: Models.public_StaffService;
   };
@@ -1292,6 +1403,15 @@ type ContractBase = Omit<
                     readonly expression: 'gen_random_uuid()';
                   };
                 };
+                readonly is_system: {
+                  readonly nativeType: 'bool';
+                  readonly codecId: 'pg/bool@1';
+                  readonly nullable: false;
+                  readonly default: {
+                    readonly kind: 'literal';
+                    readonly value: DefaultLiteralValue<'pg/bool@1', false>;
+                  };
+                };
                 readonly password_hash: {
                   readonly nativeType: 'text';
                   readonly codecId: 'pg/text@1';
@@ -1329,6 +1449,12 @@ type ContractBase = Omit<
                 { readonly columns: readonly ['email']; readonly name: 'accounts_email_key' },
               ];
               indexes: readonly [
+                {
+                  readonly name: 'accounts_single_system_key';
+                  readonly columns: readonly ['is_system'];
+                  readonly where: 'is_system';
+                  readonly unique: true;
+                },
                 {
                   readonly name: 'idx_accounts_role';
                   readonly columns: readonly ['role'];
@@ -2387,6 +2513,11 @@ type ContractBase = Omit<
                     readonly expression: 'gen_random_uuid()';
                   };
                 };
+                readonly image_url: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: true;
+                };
                 readonly is_active: {
                   readonly nativeType: 'bool';
                   readonly codecId: 'pg/bool@1';
@@ -2452,6 +2583,16 @@ type ContractBase = Omit<
                   readonly codecId: 'pg/uuid@1';
                   readonly nullable: false;
                 };
+                readonly bio: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: true;
+                };
+                readonly covered_roles: {
+                  readonly nativeType: 'text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: true;
+                };
                 readonly created_at: {
                   readonly nativeType: 'timestamptz';
                   readonly codecId: 'pg/timestamptz-temporal@1';
@@ -2491,11 +2632,32 @@ type ContractBase = Omit<
                   readonly nullable: true;
                   readonly typeParams: { readonly length: 30 };
                 };
+                readonly photo_url: {
+                  readonly nativeType: 'character varying';
+                  readonly codecId: 'sql/varchar@1';
+                  readonly nullable: true;
+                  readonly typeParams: { readonly length: 500 };
+                };
+                readonly position: {
+                  readonly nativeType: 'character varying';
+                  readonly codecId: 'sql/varchar@1';
+                  readonly nullable: true;
+                  readonly typeParams: { readonly length: 100 };
+                };
                 readonly primary_role: {
                   readonly nativeType: 'character varying';
                   readonly codecId: 'sql/varchar@1';
                   readonly nullable: false;
                   readonly typeParams: { readonly length: 100 };
+                };
+                readonly show_on_team: {
+                  readonly nativeType: 'bool';
+                  readonly codecId: 'pg/bool@1';
+                  readonly nullable: false;
+                  readonly default: {
+                    readonly kind: 'literal';
+                    readonly value: DefaultLiteralValue<'pg/bool@1', false>;
+                  };
                 };
                 readonly updated_at: {
                   readonly nativeType: 'timestamptz';
@@ -2546,6 +2708,134 @@ type ContractBase = Omit<
                     readonly columns: readonly ['id'];
                   };
                   readonly name: 'fk_staff_account';
+                },
+              ];
+            };
+            readonly staff_attendance: {
+              columns: {
+                readonly created_at: {
+                  readonly nativeType: 'timestamptz';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                  readonly nullable: false;
+                  readonly default: { readonly kind: 'function'; readonly expression: 'now()' };
+                };
+                readonly id: {
+                  readonly nativeType: 'uuid';
+                  readonly codecId: 'pg/uuid@1';
+                  readonly nullable: false;
+                  readonly default: {
+                    readonly kind: 'function';
+                    readonly expression: 'gen_random_uuid()';
+                  };
+                };
+                readonly staff_id: {
+                  readonly nativeType: 'uuid';
+                  readonly codecId: 'pg/uuid@1';
+                  readonly nullable: false;
+                };
+                readonly time_in: {
+                  readonly nativeType: 'timestamptz';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                  readonly nullable: false;
+                  readonly default: { readonly kind: 'function'; readonly expression: 'now()' };
+                };
+                readonly time_out: {
+                  readonly nativeType: 'timestamptz';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                  readonly nullable: true;
+                };
+              };
+              primaryKey: {
+                readonly columns: readonly ['id'];
+                readonly name: 'staff_attendance_pkey';
+              };
+              uniques: readonly [];
+              indexes: readonly [
+                {
+                  readonly name: 'idx_staff_attendance_staff_id_time';
+                  readonly columns: readonly ['staff_id', 'time_in'];
+                  readonly unique: false;
+                },
+                {
+                  readonly name: 'staff_attendance_open_shift_key';
+                  readonly columns: readonly ['staff_id'];
+                  readonly where: '(time_out IS NULL)';
+                  readonly unique: true;
+                },
+              ];
+              foreignKeys: readonly [
+                {
+                  readonly source: {
+                    readonly namespaceId: 'public' & NamespaceId;
+                    readonly tableName: 'staff_attendance';
+                    readonly columns: readonly ['staff_id'];
+                  };
+                  readonly target: {
+                    readonly namespaceId: 'public' & NamespaceId;
+                    readonly tableName: 'staff';
+                    readonly columns: readonly ['id'];
+                  };
+                  readonly name: 'fk_staff_attendance_staff';
+                },
+              ];
+            };
+            readonly staff_categories: {
+              columns: {
+                readonly category_id: {
+                  readonly nativeType: 'uuid';
+                  readonly codecId: 'pg/uuid@1';
+                  readonly nullable: false;
+                };
+                readonly created_at: {
+                  readonly nativeType: 'timestamptz';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                  readonly nullable: false;
+                  readonly default: { readonly kind: 'function'; readonly expression: 'now()' };
+                };
+                readonly staff_id: {
+                  readonly nativeType: 'uuid';
+                  readonly codecId: 'pg/uuid@1';
+                  readonly nullable: false;
+                };
+              };
+              primaryKey: {
+                readonly columns: readonly ['staff_id', 'category_id'];
+                readonly name: 'staff_categories_pkey';
+              };
+              uniques: readonly [];
+              indexes: readonly [
+                {
+                  readonly name: 'idx_staff_categories_category_id';
+                  readonly columns: readonly ['category_id'];
+                  readonly unique: false;
+                },
+              ];
+              foreignKeys: readonly [
+                {
+                  readonly source: {
+                    readonly namespaceId: 'public' & NamespaceId;
+                    readonly tableName: 'staff_categories';
+                    readonly columns: readonly ['staff_id'];
+                  };
+                  readonly target: {
+                    readonly namespaceId: 'public' & NamespaceId;
+                    readonly tableName: 'staff';
+                    readonly columns: readonly ['id'];
+                  };
+                  readonly name: 'fk_staff_categories_staff';
+                },
+                {
+                  readonly source: {
+                    readonly namespaceId: 'public' & NamespaceId;
+                    readonly tableName: 'staff_categories';
+                    readonly columns: readonly ['category_id'];
+                  };
+                  readonly target: {
+                    readonly namespaceId: 'public' & NamespaceId;
+                    readonly tableName: 'service_categories';
+                    readonly columns: readonly ['id'];
+                  };
+                  readonly name: 'fk_staff_categories_category';
                 },
               ];
             };
@@ -2897,6 +3187,14 @@ type ContractBase = Omit<
     };
     readonly services: { readonly namespace: 'public' & NamespaceId; readonly model: 'Service' };
     readonly staff: { readonly namespace: 'public' & NamespaceId; readonly model: 'Staff' };
+    readonly staff_attendance: {
+      readonly namespace: 'public' & NamespaceId;
+      readonly model: 'StaffAttendance';
+    };
+    readonly staff_categories: {
+      readonly namespace: 'public' & NamespaceId;
+      readonly model: 'StaffCategory';
+    };
     readonly staff_schedules: {
       readonly namespace: 'public' & NamespaceId;
       readonly model: 'StaffSchedule';
@@ -2932,6 +3230,10 @@ type ContractBase = Omit<
               readonly id: {
                 readonly nullable: false;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/uuid@1' };
+              };
+              readonly isSystem: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/bool@1' };
               };
               readonly passwordHash: {
                 readonly nullable: false;
@@ -3027,6 +3329,7 @@ type ContractBase = Omit<
                 readonly createdAt: { readonly column: 'created_at' };
                 readonly email: { readonly column: 'email' };
                 readonly id: { readonly column: 'id' };
+                readonly isSystem: { readonly column: 'is_system' };
                 readonly passwordHash: { readonly column: 'password_hash' };
                 readonly role: { readonly column: 'role' };
                 readonly status: { readonly column: 'status' };
@@ -4128,6 +4431,10 @@ type ContractBase = Omit<
                 readonly nullable: false;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/uuid@1' };
               };
+              readonly imageUrl: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
               readonly isActive: {
                 readonly nullable: false;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/bool@1' };
@@ -4201,6 +4508,7 @@ type ContractBase = Omit<
                 readonly description: { readonly column: 'description' };
                 readonly durationMinutes: { readonly column: 'duration_minutes' };
                 readonly id: { readonly column: 'id' };
+                readonly imageUrl: { readonly column: 'image_url' };
                 readonly isActive: { readonly column: 'is_active' };
                 readonly name: { readonly column: 'name' };
                 readonly price: { readonly column: 'price' };
@@ -4253,6 +4561,17 @@ type ContractBase = Omit<
                   readonly targetFields: readonly ['categoryId'];
                 };
               };
+              readonly staffCategories: {
+                readonly to: {
+                  readonly namespace: 'public' & NamespaceId;
+                  readonly model: 'StaffCategory';
+                };
+                readonly cardinality: '1:N';
+                readonly on: {
+                  readonly localFields: readonly ['id'];
+                  readonly targetFields: readonly ['categoryId'];
+                };
+              };
             };
             readonly storage: {
               readonly table: 'service_categories';
@@ -4271,6 +4590,15 @@ type ContractBase = Omit<
               readonly accountId: {
                 readonly nullable: false;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/uuid@1' };
+              };
+              readonly bio: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly coveredRoles: {
+                readonly nullable: true;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+                readonly many: true;
               };
               readonly createdAt: {
                 readonly nullable: false;
@@ -4315,6 +4643,22 @@ type ContractBase = Omit<
                   readonly typeParams: { readonly length: 30 };
                 };
               };
+              readonly photoUrl: {
+                readonly nullable: true;
+                readonly type: {
+                  readonly kind: 'scalar';
+                  readonly codecId: 'sql/varchar@1';
+                  readonly typeParams: { readonly length: 500 };
+                };
+              };
+              readonly position: {
+                readonly nullable: true;
+                readonly type: {
+                  readonly kind: 'scalar';
+                  readonly codecId: 'sql/varchar@1';
+                  readonly typeParams: { readonly length: 100 };
+                };
+              };
               readonly primaryRole: {
                 readonly nullable: false;
                 readonly type: {
@@ -4322,6 +4666,10 @@ type ContractBase = Omit<
                   readonly codecId: 'sql/varchar@1';
                   readonly typeParams: { readonly length: 100 };
                 };
+              };
+              readonly showOnTeam: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/bool@1' };
               };
               readonly updatedAt: {
                 readonly nullable: false;
@@ -4374,6 +4722,28 @@ type ContractBase = Omit<
                   readonly targetFields: readonly ['staffId'];
                 };
               };
+              readonly staffAttendance: {
+                readonly to: {
+                  readonly namespace: 'public' & NamespaceId;
+                  readonly model: 'StaffAttendance';
+                };
+                readonly cardinality: '1:N';
+                readonly on: {
+                  readonly localFields: readonly ['id'];
+                  readonly targetFields: readonly ['staffId'];
+                };
+              };
+              readonly staffCategories: {
+                readonly to: {
+                  readonly namespace: 'public' & NamespaceId;
+                  readonly model: 'StaffCategory';
+                };
+                readonly cardinality: '1:N';
+                readonly on: {
+                  readonly localFields: readonly ['id'];
+                  readonly targetFields: readonly ['staffId'];
+                };
+              };
               readonly staffSchedules: {
                 readonly to: {
                   readonly namespace: 'public' & NamespaceId;
@@ -4402,15 +4772,132 @@ type ContractBase = Omit<
               readonly namespaceId: 'public';
               readonly fields: {
                 readonly accountId: { readonly column: 'account_id' };
+                readonly bio: { readonly column: 'bio' };
+                readonly coveredRoles: { readonly column: 'covered_roles' };
                 readonly createdAt: { readonly column: 'created_at' };
                 readonly employmentType: { readonly column: 'employment_type' };
                 readonly firstName: { readonly column: 'first_name' };
                 readonly id: { readonly column: 'id' };
                 readonly lastName: { readonly column: 'last_name' };
                 readonly phone: { readonly column: 'phone' };
+                readonly photoUrl: { readonly column: 'photo_url' };
+                readonly position: { readonly column: 'position' };
                 readonly primaryRole: { readonly column: 'primary_role' };
+                readonly showOnTeam: { readonly column: 'show_on_team' };
                 readonly updatedAt: { readonly column: 'updated_at' };
                 readonly workStatus: { readonly column: 'work_status' };
+              };
+            };
+          };
+          readonly StaffAttendance: {
+            readonly fields: {
+              readonly createdAt: {
+                readonly nullable: false;
+                readonly type: {
+                  readonly kind: 'scalar';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                };
+              };
+              readonly id: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/uuid@1' };
+              };
+              readonly staffId: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/uuid@1' };
+              };
+              readonly timeIn: {
+                readonly nullable: false;
+                readonly type: {
+                  readonly kind: 'scalar';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                };
+              };
+              readonly timeOut: {
+                readonly nullable: true;
+                readonly type: {
+                  readonly kind: 'scalar';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                };
+              };
+            };
+            readonly relations: {
+              readonly staff: {
+                readonly to: {
+                  readonly namespace: 'public' & NamespaceId;
+                  readonly model: 'Staff';
+                };
+                readonly cardinality: 'N:1';
+                readonly nullable: false;
+                readonly on: {
+                  readonly localFields: readonly ['staffId'];
+                  readonly targetFields: readonly ['id'];
+                };
+              };
+            };
+            readonly storage: {
+              readonly table: 'staff_attendance';
+              readonly namespaceId: 'public';
+              readonly fields: {
+                readonly createdAt: { readonly column: 'created_at' };
+                readonly id: { readonly column: 'id' };
+                readonly staffId: { readonly column: 'staff_id' };
+                readonly timeIn: { readonly column: 'time_in' };
+                readonly timeOut: { readonly column: 'time_out' };
+              };
+            };
+          };
+          readonly StaffCategory: {
+            readonly fields: {
+              readonly categoryId: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/uuid@1' };
+              };
+              readonly createdAt: {
+                readonly nullable: false;
+                readonly type: {
+                  readonly kind: 'scalar';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                };
+              };
+              readonly staffId: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/uuid@1' };
+              };
+            };
+            readonly relations: {
+              readonly category: {
+                readonly to: {
+                  readonly namespace: 'public' & NamespaceId;
+                  readonly model: 'ServiceCategory';
+                };
+                readonly cardinality: 'N:1';
+                readonly nullable: false;
+                readonly on: {
+                  readonly localFields: readonly ['categoryId'];
+                  readonly targetFields: readonly ['id'];
+                };
+              };
+              readonly staff: {
+                readonly to: {
+                  readonly namespace: 'public' & NamespaceId;
+                  readonly model: 'Staff';
+                };
+                readonly cardinality: 'N:1';
+                readonly nullable: false;
+                readonly on: {
+                  readonly localFields: readonly ['staffId'];
+                  readonly targetFields: readonly ['id'];
+                };
+              };
+            };
+            readonly storage: {
+              readonly table: 'staff_categories';
+              readonly namespaceId: 'public';
+              readonly fields: {
+                readonly categoryId: { readonly column: 'category_id' };
+                readonly createdAt: { readonly column: 'created_at' };
+                readonly staffId: { readonly column: 'staff_id' };
               };
             };
           };
