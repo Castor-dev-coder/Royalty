@@ -99,7 +99,12 @@ function addStaff(id: string, opts: {
 }
 
 function matches(row: Record<string, unknown>, filter: Record<string, unknown>): boolean {
-  return Object.entries(filter).every(([key, value]) => row[key] === value);
+  return Object.entries(filter).every(([key, value]) => {
+    if (row[key] === value) return true
+    // Codec values (Temporal.PlainDate/Instant) arrive as objects while the
+    // fake rows store plain strings — compare their canonical text form.
+    return value != null && row[key] != null && String(row[key]) === String(value)
+  })
 }
 
 function table(getRows: () => Array<Record<string, unknown>>) {

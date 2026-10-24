@@ -8,6 +8,7 @@
 // is labeled "covers X of Y" and recommended stays null (never auto-select).
 import { db } from '../../prisma/db.js'
 import { BadRequestError } from '../../errors/index.js'
+import { toPlainDate } from '../../utils/date-time.js'
 
 export const NEUTRAL_RATING = 3.0
 
@@ -94,7 +95,7 @@ export async function matchStaff(input: {
     const coversCategories = neededCategories.filter((categoryId) => covered.includes(categoryId)).length
 
     // Free at the slot: no RESERVED/CONFIRMED appointment may overlap.
-    const dayAppointments = await db.orm.public.Appointment.where({ staffId: member.id, appointmentDate: input.date as never }).all()
+    const dayAppointments = await db.orm.public.Appointment.where({ staffId: member.id, appointmentDate: toPlainDate(input.date) }).all()
     const busy = dayAppointments.some((appointment) => {
       const status = String(appointment.status)
       if (status !== 'RESERVED' && status !== 'CONFIRMED') return false

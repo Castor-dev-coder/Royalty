@@ -8,6 +8,7 @@
 import { db } from '../../prisma/db.js'
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../errors/index.js'
 import { generateAuditLog } from '../../utils/audit.js'
+import { toTemporalInstant } from '../../utils/date-time.js'
 
 export const OPEN_TOO_LONG_MS = 16 * 60 * 60 * 1000
 
@@ -87,7 +88,7 @@ export class AttendanceService {
     }
     const open = await db.orm.public.StaffAttendance.where({ accountId: userId, timeOut: null }).first()
     if (!open) throw new BadRequestError('You have no open shift to end')
-    const updated = await db.orm.public.StaffAttendance.where({ id: open.id }).update({ timeOut: new Date() })
+    const updated = await db.orm.public.StaffAttendance.where({ id: open.id }).update({ timeOut: toTemporalInstant(new Date()) })
     return toRecord(updated ?? open)
   }
 
@@ -143,8 +144,8 @@ export class AttendanceService {
     }
 
     const updated = await db.orm.public.StaffAttendance.where({ id: recordId }).update({
-      timeIn: nextTimeIn,
-      timeOut: nextTimeOut,
+      timeIn: toTemporalInstant(nextTimeIn),
+      timeOut: nextTimeOut ? toTemporalInstant(nextTimeOut) : null,
     })
     await generateAuditLog({
       actorAccountId: userId,
