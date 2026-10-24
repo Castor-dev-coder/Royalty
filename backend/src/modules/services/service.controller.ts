@@ -10,7 +10,8 @@ const param = (req: Request, key: keyof typeof req.params): string => String(req
 // GET /services/categories - List all service categories
 export const listCategoriesController = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
-    const categories = await ServiceService.listCategories(req.user!.role);
+    // Anonymous callers browse as a guest: the active catalogue only.
+    const categories = await ServiceService.listCategories(req.user?.role ?? 'CUSTOMER');
     res.json({ data: { categories } });
   } catch (error) {
     next(error);
@@ -20,7 +21,7 @@ export const listCategoriesController = async (req: AuthenticatedRequest, res: R
 // GET /services/categories/:id - Get a service category by ID
 export const getCategoryController = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
-    const category = await ServiceService.getCategoryById(param(req, 'id'), req.user!.role);
+    const category = await ServiceService.getCategoryById(param(req, 'id'), req.user?.role ?? 'CUSTOMER');
     res.json({ data: { category } });
   } catch (error) {
     next(error);
@@ -50,7 +51,7 @@ export const updateCategoryController = async (req: AuthenticatedRequest, res: R
 // GET /services - List all services
 export const listServicesController = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
-    const services = await ServiceService.listServices(req.user!.role);
+    const services = await ServiceService.listServices(req.user?.role ?? 'CUSTOMER');
     res.json({ data: { services } });
   } catch (error) {
     next(error);
@@ -60,7 +61,7 @@ export const listServicesController = async (req: AuthenticatedRequest, res: Res
 // GET /services/:id - Get a service by ID
 export const getServiceController = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
-    const service = await ServiceService.getServiceById(param(req, 'id'), req.user!.role);
+    const service = await ServiceService.getServiceById(param(req, 'id'), req.user?.role ?? 'CUSTOMER');
     res.json({ data: { service } });
   } catch (error) {
     next(error);
