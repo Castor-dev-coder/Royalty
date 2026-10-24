@@ -1,9 +1,8 @@
 import { useState } from 'react';
-import { apiFetch, mockApiEnabled, storeAccessTokens } from '../api';
+import { apiFetch, storeAccessTokens } from '../api';
 import { FieldError, invalidField } from '../shared/ui';
 import { EMAIL_MESSAGE, isValidEmail } from '../shared/validation';
 import { BrandShowcase } from '../components/BrandShowcase';
-import { DemoCredentials } from '../components/DemoCredentials';
 import { readLoginSession, storeAccountSession } from '../session';
 
 /**
@@ -140,7 +139,6 @@ export function StaffSignIn({ onSignedIn }: { onSignedIn: () => void }) {
                 <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.5" strokeDasharray="31.4 31.4"/></svg>
               </span>
             </button>
-            {mockApiEnabled && <DemoCredentials variant="staff" />}
           </form>
           <footer className="login-footer">
             <p>Royalty Hair &amp; Nails Studio</p>

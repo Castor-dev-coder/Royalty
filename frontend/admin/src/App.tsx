@@ -1,6 +1,6 @@
 import { BrowserRouter, Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { apiFetch, clearAccessTokens, DEMO_STAFF_ACCOUNT, generateTemporaryPassword, getAccessToken, mockApiEnabled, resetMockData, storeAccessTokens } from './api';
+import { apiFetch, clearAccessTokens, generateTemporaryPassword, getAccessToken, storeAccessTokens } from './api';
 import {
   accountEmailError,
   DURATION_MESSAGE,
@@ -24,7 +24,6 @@ import { ThemeProvider } from './theme';
 import { ThemeSwitch } from './components/ThemeSwitch';
 import { SignOutControl } from './components/SignOutControl';
 import { BrandShowcase } from './components/BrandShowcase';
-import { DemoCredentials } from './components/DemoCredentials';
 import { SidebarStatusPanel } from './components/SidebarStatusPanel';
 import { CalendarSkeleton, ChartSkeleton, FieldError, invalidField, ListSkeleton, Skeleton, SkeletonRegion, StatCardSkeleton, TableSkeleton } from './shared/ui';
 import { CategoryBars, DataOriginNote, LineChart, type LineAxisPoint, type LineSeries } from './components/charts';
@@ -301,7 +300,7 @@ function useAccountData() {
 
   useEffect(() => {
     const token = getAccessToken();
-    if (!token && !mockApiEnabled) {
+    if (!token) {
       setStatus('error');
       return;
     }
@@ -354,7 +353,7 @@ function useStaffData() {
 
   useEffect(() => {
     const token = getAccessToken();
-    if (!token && !mockApiEnabled) {
+    if (!token) {
       setStatus('error');
       return;
     }
@@ -427,7 +426,7 @@ function useAppointmentData() {
 
   useEffect(() => {
     const token = getAccessToken();
-    if (!token && !mockApiEnabled) { setLoading(false); return; }
+    if (!token) { setLoading(false); return; }
     const controller = new AbortController();
     const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
     apiFetch(`${baseUrl}/appointments?page=1&limit=100`, {
@@ -550,7 +549,7 @@ function Shell() {
           </nav>
           <SidebarStatusPanel />
           <SignOutControl
-            label={mockApiEnabled ? 'Demo Administrator' : 'Signed in'}
+            label="Signed in"
             initials="SA"
             onSignOut={() => {
               clearAccessTokens();
@@ -585,12 +584,6 @@ function Shell() {
             </div>
           </section>
 
-          {mockApiEnabled && (
-            <div className="demo-data-banner">
-              <span><strong>Development demo</strong> · Fictional records saved in this browser</span>
-              <button type="button" onClick={resetMockData}>Reset demo data</button>
-            </div>
-          )}
 
           {(location.pathname === '/' || location.pathname === '/services') && (
             <nav className="dashboard-tabs" aria-label="Dashboard sections">
@@ -620,7 +613,7 @@ function BusinessDashboardPage() {
 
   useEffect(() => {
     const token = getAccessToken();
-    if (!token && !mockApiEnabled) return;
+    if (!token) return;
     const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
     const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
     const controller = new AbortController();
@@ -887,7 +880,7 @@ function ServiceManagementPage() {
   }
 
   useEffect(() => {
-    if (!token && !mockApiEnabled) {
+    if (!token) {
       setLoading(false);
       setLoadError('Sign in to view the service catalog.');
       return;
@@ -1535,7 +1528,7 @@ function StaffManagementPage() {
 
   useEffect(() => {
     const token = getAccessToken();
-    if (!token && !mockApiEnabled) return;
+    if (!token) return;
     const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
     const controller = new AbortController();
     apiFetch(`${baseUrl}/schedules/requests`, { signal: controller.signal, headers: { Authorization: `Bearer ${token}` } })
@@ -1560,7 +1553,7 @@ function StaffManagementPage() {
    */
   async function loadScheduleRequests() {
     const token = getAccessToken();
-    if (!token && !mockApiEnabled) return;
+    if (!token) return;
     const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
     try {
       const response = await apiFetch(`${baseUrl}/schedules/requests`, {
@@ -1825,11 +1818,9 @@ function StaffManagementPage() {
                     <button
                       type="button"
                       className="link-button"
-                      disabled={!row.accountId || row.email === DEMO_STAFF_ACCOUNT.email}
+                      disabled={!row.accountId}
                       onClick={() => row.accountId && setCredentialsFor(row)}
-                      title={row.email === DEMO_STAFF_ACCOUNT.email
-                        ? 'Published demo account — its sign-in details are shown on the sign-in page.'
-                        : 'Issue new sign-in details for this staff member.'}
+                      title="Issue new sign-in details for this staff member."
                     >
                       Sign-in details
                     </button>
@@ -1922,7 +1913,7 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [loadingTimeOff, setLoadingTimeOff] = useState(mockApiEnabled);
+  const [loadingTimeOff, setLoadingTimeOff] = useState(false);
   const [schedule, setSchedule] = useState(normalizeWeeklySchedule());
   const [scheduleError, setScheduleError] = useState('');
   const [savingSchedule, setSavingSchedule] = useState(false);
@@ -1930,22 +1921,10 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
   const dialogRef = useDialogBehavior(onClose);
 
   useEffect(() => {
-    if (!mockApiEnabled) {
-      setTimeOffUnavailable(true);
-      setLoadingTimeOff(false);
-      return;
-    }
-    const controller = new AbortController();
-    apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/staff/${staff.id}/time-off`, { signal: controller.signal })
-      .then(async (response) => {
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload.message ?? 'Unable to load time-off records.');
-        setTimeOff(payload?.data?.timeOff ?? []);
-      })
-      .catch((cause) => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Unable to load time-off records.'); })
-      .finally(() => { if (!controller.signal.aborted) setLoadingTimeOff(false); });
-    return () => controller.abort();
-  }, [staff.id]);
+    // The time-off endpoint does not exist on the configured backend.
+    setTimeOffUnavailable(true);
+    setLoadingTimeOff(false);
+  }, []);
 
   useEffect(() => {
     const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
@@ -2622,7 +2601,7 @@ function PaymentPage() {
   }
 
   useEffect(() => {
-    if (!token && !mockApiEnabled) return;
+    if (!token) return;
     const controller = new AbortController();
     loadPayments(controller.signal).catch((cause) => {
       if (!controller.signal.aborted) setNotice(cause instanceof Error ? cause.message : 'Unable to load payment records.');
@@ -2706,7 +2685,7 @@ function PaymentPage() {
             <input aria-label="Search payments" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by reference or customer..." className="search-input" />
           </div>
           {notice && <p className="table-message" role="status">{notice}</p>}
-          {!mockApiEnabled && payments.length === 0 ? (
+          {payments.length === 0 ? (
             <div className="payment-unavailable">
               <strong>Payments API unavailable</strong>
               <p>{notice || 'The configured backend does not expose payment records. No demo payments are mixed into live data.'}</p>
@@ -2724,7 +2703,7 @@ function PaymentPage() {
                       <td role="cell" data-label="Booking"><span className={`status-badge ${appointmentStatusBadge(String(payment.bookingStatus ?? 'RESERVED'))}`}>{appointmentStatusText(String(payment.bookingStatus ?? 'RESERVED'))}</span></td>
                       <td role="cell" data-label="Payment"><span className={`status-badge ${payment.status === 'VERIFIED' ? 'success' : payment.status === 'REJECTED' ? 'danger' : 'warning'}`}>{payment.status === 'VERIFIED' ? 'Verified' : payment.status === 'REJECTED' ? 'Rejected' : 'Pending'}</span></td>
                       <td className="cell-actions" role="cell" data-label="Action">{payment.status === 'UNVERIFIED'
-                        ? <button type="button" className="payment-action approve-action" disabled={!token || !mockApiEnabled} onClick={() => { setSelectedPayment(payment); setVerificationCode(''); setCodeError(''); }}>Verify</button>
+                        ? <button type="button" className="payment-action approve-action" disabled onClick={() => { setSelectedPayment(payment); setVerificationCode(''); setCodeError(''); }}>Verify</button>
                         : <span className="payment-date">{payment.verifiedAt ? new Date(payment.verifiedAt).toLocaleDateString() : '—'}</span>}</td>
                     </tr>
                   ))}
@@ -2733,7 +2712,6 @@ function PaymentPage() {
               </table>
             </div>
           )}
-          {!token && mockApiEnabled && <p className="payment-hint">Sign in with the demo administrator to verify payments.</p>}
         </section>
 
         <section className="panel payment-activity">
@@ -2760,12 +2738,11 @@ function PaymentPage() {
               <div><dt>Amount</dt><dd>₱{Number(selectedPayment.amount).toLocaleString()}</dd></div>
               <div><dt>Method</dt><dd>{selectedPayment.paymentMethod}</dd></div>
             </dl>
-            {mockApiEnabled && <label className="field-label payment-code-field">PAYMENT CODE<input className="modal-input" inputMode="numeric" autoComplete="off" maxLength={5} value={verificationCode} onChange={(event) => { setVerificationCode(event.target.value.replace(/\D/g, '').slice(0, 5)); setCodeError(''); }} aria-describedby={codeError ? 'payment-code-error' : undefined} aria-invalid={codeError ? true : undefined} /></label>}
-            {codeError && <p id="payment-code-error" className="form-error" role="alert">{codeError}</p>}
+                        {codeError && <p id="payment-code-error" className="form-error" role="alert">{codeError}</p>}
             <div className="modal-actions">
               <button type="button" className="secondary-action" onClick={() => setSelectedPayment(null)}>Cancel</button>
-              <button type="button" className="reject-action" disabled={!token || !mockApiEnabled} onClick={() => setPaymentConfirmation('REJECTED')}>Reject</button>
-              <button type="button" className="primary-action" disabled={!token || !mockApiEnabled || busy} onClick={validatePaymentCode}>Validate code</button>
+              <button type="button" className="reject-action" disabled onClick={() => setPaymentConfirmation('REJECTED')}>Reject</button>
+              <button type="button" className="primary-action" disabled={busy} onClick={validatePaymentCode}>Validate code</button>
             </div>
           </section>
         </div>
@@ -3023,13 +3000,9 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
       focusFirstError(errors);
       return;
     }
-    if (!mockApiEnabled) {
-      setResult({ success: false, title: 'Account not created', message: 'Account provisioning is not available: the configured backend has no administrator account-creation endpoint.' });
-      return;
-    }
     const token = getAccessToken();
     if (!token) {
-      setResult({ success: false, title: 'Account not created', message: 'Sign in with the demo administrator before creating accounts.' });
+      setResult({ success: false, title: 'Account not created', message: 'Sign in as an administrator before creating accounts.' });
       return;
     }
     if (!validatePasswordStrength(password)) {
@@ -3042,49 +3015,11 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
     }
     if (!validateSchedule()) return;
     setSubmitting(true);
-    try {
-    const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/accounts`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({
-        firstName: String(form.get('firstName')).trim(),
-        lastName: String(form.get('lastName')).trim(),
-        email: form.get('email'),
-        role: selectedRole.toUpperCase(),
-        password,
-        schedule: schedule.filter((day) => day.enabled).map((day) => ({
-          dayOfWeek: day.dayOfWeek,
-          startTime: day.startTime,
-          endTime: day.endTime,
-          isActive: true,
-        })),
-      }),
-    });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.message ?? 'Unable to create demo account.');
-      const staffId = payload.data?.staffId;
-      if (staffId && payload.data?.schedule && payload.data.schedule.length > 0) {
-        await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/schedules/staff`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ staffId, schedule: payload.data.schedule }),
-        });
-      }
-      const firstName = String(form.get('firstName')).trim();
-      const email = String(form.get('email')).trim();
-      // The credentials are shown once, in the handover panel, so the
-      // administrator can copy them. They are not kept in any storage.
-      setCreatedCredentials({
-        accountId: String(payload.data?.id ?? ''),
-        email,
-        name: firstName,
-        password,
-      });
-    } catch (cause) {
-      setResult({ success: false, title: 'Account not created', message: cause instanceof Error ? cause.message : 'Unable to create demo account.' });
-    } finally {
-      setSubmitting(false);
-    }
+    // The configured backend has no administrator account-creation endpoint
+    // (admin REST exposes account status/password changes only), so creation
+    // reports the gap instead of pretending to provision.
+    setResult({ success: false, title: 'Account not created', message: 'Account provisioning is not available: the configured backend has no administrator account-creation endpoint.' });
+    setSubmitting(false);
   }
 
   if (createdCredentials) {
@@ -3236,11 +3171,11 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
           </div>
         </div>
 
-        {!mockApiEnabled && <p className="form-hint">This configured backend does not support administrator-created accounts.</p>}
+        <p className="form-hint">This configured backend does not support administrator-created accounts.</p>
 
         <div className="modal-actions">
           <button type="button" className="secondary-action" onClick={onClose}>Cancel</button>
-          <button type="submit" className="primary-action" disabled={!mockApiEnabled || submitting}>{submitting ? 'Creating…' : 'Create Account'}</button>
+          <button type="submit" className="primary-action" disabled>{submitting ? 'Creating…' : 'Create Account'}</button>
         </div>
       </form>
     </div>
@@ -3390,7 +3325,6 @@ function LoginPage({ onLogin }: { onLogin: (role: AccountRole | null) => void })
                 <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeDasharray="31.4 31.4"/></svg>
               </span>
             </button>
-            {mockApiEnabled && <DemoCredentials />}
           </form>
           <footer className="login-footer">
             <p>Royalty Hair &amp; Nails Studio</p>

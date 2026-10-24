@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { apiFetch, getAccessToken, mockApiEnabled } from '../api';
+import { apiFetch, getAccessToken } from '../api';
 import { formatTime, localDateKey } from '../shared/ui';
 
 /**
@@ -42,7 +42,7 @@ export function SidebarStatusPanel() {
 
   useEffect(() => {
     const token = getAccessToken();
-    if (!token && !mockApiEnabled) return;
+    if (!token) return;
     const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
     const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
     const controller = new AbortController();
@@ -149,9 +149,6 @@ export function SidebarStatusPanel() {
         </>
       )}
 
-      {mockApiEnabled && (
-        <p className="sidebar-status-note">Figures come from the development demo data in this browser.</p>
-      )}
     </div>
   );
 }

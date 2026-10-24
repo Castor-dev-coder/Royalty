@@ -1,4 +1,4 @@
-import { apiFetch, getAccessToken, mockApiEnabled } from '../api';
+import { apiFetch, getAccessToken } from '../api';
 
 /**
  * Client for the staff-scoped API.
@@ -177,7 +177,7 @@ export const staffApi = {
   },
 };
 
-/** True when the browser has a session but the API is unreachable. */
+/** The admin panel always talks to the real API. */
 export function isDemoEnvironment(): boolean {
-  return mockApiEnabled;
+  return false;
 }
