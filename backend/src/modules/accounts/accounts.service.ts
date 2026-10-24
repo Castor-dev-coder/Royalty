@@ -261,4 +261,78 @@ export class AccountService {
       newData: { message: 'Password changed successfully' },
     });
   }
+
+  /**
+   * Create a STAFF or MANAGER account together with its staff profile.
+   * ADMIN is never creatable here (400); the requester must be ADMIN/MANAGER.
+   */
+  static async createStaffAccount(data: {
+    email: string;
+    password: string;
+    role: 'STAFF' | 'MANAGER';
+    firstName: string;
+    lastName: string;
+    phone?: string;
+    position?: string;
+    bio?: string;
+    coveredRoles?: string[];
+    showOnTeam?: boolean;
+    specialties?: string[];
+  }, requestingUserId: string): Promise<{ accountId: string; staffId: string }> {
+    const requester = await db.orm.public.Account.where({ id: requestingUserId }).first();
+    if (!requester || (requester.role !== 'ADMIN' && requester.role !== 'MANAGER')) {
+      throw new ForbiddenError('You do not have permission to create accounts');
+    }
+    if (data.role !== 'STAFF' && data.role !== 'MANAGER') {
+      throw new BadRequestError('Only STAFF and MANAGER accounts can be created here');
+    }
+    const existing = await db.orm.public.Account.where({ email: pgVarchar<255>(data.email) }).first();
+    if (existing) {
+      throw new ConflictError('An account with that email already exists');
+    }
+    const specialties = data.specialties ?? [];
+    if (data.showOnTeam && specialties.length === 0) {
+      throw new BadRequestError('A team member needs at least one specialty');
+    }
+    for (const categoryId of specialties) {
+      const category = await db.orm.public.ServiceCategory.where({ id: categoryId }).first();
+      if (!category) throw new BadRequestError(`Unknown category: ${categoryId}`);
+    }
+
+    const passwordHash = await bcrypt.hash(data.password, 12);
+
+    const account = await db.orm.public.Account.create({
+      email: pgVarchar<255>(data.email),
+      passwordHash,
+      role: data.role,
+      status: 'ACTIVE',
+      isSystem: false,
+    });
+    const staff = await db.orm.public.Staff.create({
+      accountId: account.id,
+      firstName: pgVarchar<100>(data.firstName),
+      lastName: pgVarchar<100>(data.lastName),
+      phone: data.phone ? pgVarchar<30>(data.phone) : null,
+      primaryRole: pgVarchar<100>(data.role === 'MANAGER' ? 'Manager' : 'Stylist'),
+      employmentType: 'FULL_TIME',
+      workStatus: 'DAY_OFF',
+      position: data.position ? pgVarchar<100>(data.position) : null,
+      bio: data.bio ?? null,
+      coveredRoles: data.coveredRoles ?? [],
+      showOnTeam: data.showOnTeam ?? false,
+    });
+    for (const categoryId of specialties) {
+      await db.orm.public.StaffCategory.create({ staffId: staff.id, categoryId });
+    }
+
+    await generateAuditLog({
+      actorAccountId: requestingUserId,
+      action: 'CREATE_ACCOUNT',
+      entityType: 'Account',
+      entityId: account.id,
+      newData: { email: data.email, role: data.role },
+    });
+
+    return { accountId: account.id, staffId: staff.id };
+  }
 }

@@ -24,6 +24,11 @@ export const createStaffSchema = z.object({
   primaryRole: z.string().min(1).max(100),
   employmentType: z.enum(['FULL_TIME', 'PART_TIME']),
   workStatus: z.enum(['ON_DUTY', 'DAY_OFF', 'UNAVAILABLE']).default('DAY_OFF'),
+  position: z.string().min(1).max(100).optional(),
+  bio: z.string().max(2000).optional(),
+  coveredRoles: z.array(z.string().min(1).max(100)).max(10).optional(),
+  showOnTeam: z.boolean().optional(),
+  specialties: z.array(z.string().uuid()).max(20).optional(),
 });
 
 export type CreateStaffRequest = z.infer<typeof createStaffSchema>;
@@ -52,6 +57,11 @@ export const updateStaffDetailsSchema = z.object({
   primaryRole: z.string().min(1).max(100).optional(),
   employmentType: z.enum(['FULL_TIME', 'PART_TIME']).optional(),
   workStatus: z.enum(['ON_DUTY', 'DAY_OFF', 'UNAVAILABLE']).optional(),
+  position: z.string().min(1).max(100).optional(),
+  bio: z.string().max(2000).optional(),
+  coveredRoles: z.array(z.string().min(1).max(100)).max(10).optional(),
+  showOnTeam: z.boolean().optional(),
+  specialties: z.array(z.string().uuid()).max(20).optional(),
 });
 
 export type UpdateStaffDetailsRequest = z.infer<typeof updateStaffDetailsSchema>;

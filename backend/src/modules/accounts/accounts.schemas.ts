@@ -57,3 +57,22 @@ export const accountsListResponseSchema = z.object({
 });
 
 export type AccountsListResponse = z.infer<typeof accountsListResponseSchema>;
+
+// Staff/Manager account creation. ADMIN is deliberately NOT in the enum: no
+// API or UI path creates an ADMIN here (the hidden system admin is provisioned
+// only by the one-off backend script).
+export const createStaffAccountSchema = z.object({
+  email: z.string().email().max(255),
+  password: z.string().min(8).max(100),
+  role: z.enum(['STAFF', 'MANAGER']),
+  firstName: z.string().min(1).max(100),
+  lastName: z.string().min(1).max(100),
+  phone: z.string().max(30).optional(),
+  position: z.string().min(1).max(100).optional(),
+  bio: z.string().max(2000).optional(),
+  coveredRoles: z.array(z.string().min(1).max(100)).max(10).optional(),
+  showOnTeam: z.boolean().optional(),
+  specialties: z.array(z.string().uuid()).max(20).optional(),
+});
+
+export type CreateStaffAccountRequest = z.infer<typeof createStaffAccountSchema>;

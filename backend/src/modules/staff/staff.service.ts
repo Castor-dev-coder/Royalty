@@ -24,6 +24,18 @@ export interface StaffProfile {
   updatedAt: Date;
 }
 
+/** Replace a staff member's specialty links (staff_categories). */
+async function syncSpecialties(staffId: string, categoryIds: string[]): Promise<void> {
+  for (const categoryId of categoryIds) {
+    const category = await db.orm.public.ServiceCategory.where({ id: categoryId }).first();
+    if (!category) throw new BadRequestError(`Unknown category: ${categoryId}`);
+  }
+  await db.orm.public.StaffCategory.where({ staffId }).delete();
+  for (const categoryId of categoryIds) {
+    await db.orm.public.StaffCategory.create({ staffId, categoryId });
+  }
+}
+
 export class StaffService {
   static async listEligibleForServices(serviceIds: string[]): Promise<EligibleStaffInfo[]> {
     for (const serviceId of serviceIds) {
@@ -242,6 +254,11 @@ export class StaffService {
     primaryRole?: string;
     employmentType?: 'FULL_TIME' | 'PART_TIME';
     workStatus?: 'ON_DUTY' | 'DAY_OFF' | 'UNAVAILABLE';
+    position?: string;
+    bio?: string;
+    coveredRoles?: string[];
+    showOnTeam?: boolean;
+    specialties?: string[];
   }, requestingUserId: string): Promise<StaffProfile> {
     // Only admins/managers can update employment details
     const requester = await db.orm.public.Account.where({ id: requestingUserId }).first();
@@ -273,10 +290,28 @@ export class StaffService {
     if (data.primaryRole !== undefined) updateData.primaryRole = data.primaryRole;
     if (data.employmentType !== undefined) updateData.employmentType = data.employmentType;
     if (data.workStatus !== undefined) updateData.workStatus = data.workStatus;
+    if (data.position !== undefined) updateData.position = data.position;
+    if (data.bio !== undefined) updateData.bio = data.bio;
+    if (data.coveredRoles !== undefined) updateData.coveredRoles = data.coveredRoles;
+    if (data.showOnTeam !== undefined) updateData.showOnTeam = data.showOnTeam;
+
+    // Anyone shown on the team page needs at least one specialty.
+    const specialtiesProvided = data.specialties !== undefined;
+    const currentSpecialties = (await db.orm.public.StaffCategory.where({ staffId }).all())
+      .map((link) => String(link.categoryId));
+    const resultingSpecialties = specialtiesProvided ? data.specialties! : currentSpecialties;
+    const willShowOnTeam = data.showOnTeam !== undefined ? data.showOnTeam : Boolean(staff.showOnTeam);
+    if (willShowOnTeam && resultingSpecialties.length === 0) {
+      throw new BadRequestError('A team member needs at least one specialty');
+    }
 
     const updated = await db.orm.public.Staff
       .where({ id: staffId })
       .update(updateData);
+
+    if (specialtiesProvided) {
+      await syncSpecialties(staffId, data.specialties!);
+    }
 
     if (!updated) {
       throw new NotFoundError('Staff member not found');

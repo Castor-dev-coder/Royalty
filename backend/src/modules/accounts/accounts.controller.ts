@@ -115,3 +115,12 @@ export async function adminChangePasswordController(req: AuthenticatedRequest, r
     next(error);
   }
 }
+
+export async function createStaffAccountController(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const result = await AccountService.createStaffAccount(req.body, (req as unknown as { user: { userId: string } }).user.userId);
+    res.status(201).json({ data: result });
+  } catch (error) {
+    next(error);
+  }
+}

@@ -1,13 +1,17 @@
 import { Router } from 'express';
-import { getAccountController, listAccountsController, updateAccountStatusController, updateOwnProfileController, changePasswordController, adminChangePasswordController } from '../modules/accounts/accounts.controller.js';
+import { getAccountController, listAccountsController, updateAccountStatusController, updateOwnProfileController, changePasswordController, adminChangePasswordController, createStaffAccountController } from '../modules/accounts/accounts.controller.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import { validateRequest } from '../middleware/validator.js';
-import { updateAccountStatusSchema, updateOwnProfileSchema, changePasswordSchema } from '../modules/accounts/accounts.schemas.js';
+import { updateAccountStatusSchema, updateOwnProfileSchema, changePasswordSchema, createStaffAccountSchema } from '../modules/accounts/accounts.schemas.js';
 
 export const accountsRouter = Router();
 
 // All routes require authentication
 accountsRouter.use(authenticate);
+
+// POST /accounts - create STAFF/MANAGER accounts (ADMIN/MANAGER only; the
+// role enum in the schema makes ADMIN uncreatable here).
+accountsRouter.post('/', requireRole('ADMIN', 'MANAGER'), validateRequest(createStaffAccountSchema), createStaffAccountController);
 
 // GET /accounts - List accounts (admin/manager only)
 accountsRouter.get('/', requireRole('ADMIN', 'MANAGER'), listAccountsController);
