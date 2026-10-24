@@ -101,6 +101,7 @@ namespace public {
     payments         Payment[]
     scheduleRequests ScheduleRequest[]
     staff            Staff?
+    staffAttendance  StaffAttendance[]
 
     @@index([role], map: "idx_accounts_role")
     @@index([status], map: "idx_accounts_status")
@@ -460,15 +461,19 @@ namespace public {
 
   model StaffAttendance {
     id        Uuid        @id(map: "staff_attendance_pkey") @default(sql`gen_random_uuid()`)
-    staffId   Uuid        @map("staff_id")
+    staffId   Uuid?       @map("staff_id")
+    accountId Uuid?       @map("account_id")
     timeIn    Timestamptz @default(now()) @map("time_in")
     timeOut   Timestamptz? @map("time_out")
     createdAt Timestamptz @default(now()) @map("created_at")
-    staff     Staff       @relation(fields: [staffId], references: [id], onDelete: Restrict, map: "fk_staff_attendance_staff")
+    staff     Staff?      @relation(fields: [staffId], references: [id], onDelete: Restrict, map: "fk_staff_attendance_staff")
+    account   Account?    @relation(fields: [accountId], references: [id], onDelete: Restrict, map: "fk_staff_attendance_account")
 
     @@index([staffId, timeIn], map: "idx_staff_attendance_staff_id_time")
     @@check(expression: "((time_out IS NULL) OR (time_out > time_in))", map: "valid_attendance_time")
     @@index([staffId], map: "staff_attendance_open_shift_key", unique: true, where: "(time_out IS NULL)")
+    @@index([accountId], map: "staff_attendance_open_shift_account_key", unique: true, where: "(time_out IS NULL)")
+    @@check(expression: "((staff_id IS NOT NULL) <> (account_id IS NOT NULL))", map: "exactly_one_attendance_owner")
     @@rls
     @@map("staff_attendance")
   }

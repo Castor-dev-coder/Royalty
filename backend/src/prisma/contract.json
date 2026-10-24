@@ -238,6 +238,21 @@
                   "model": "Staff",
                   "namespace": "public"
                 }
+              },
+              "staffAttendance": {
+                "cardinality": "1:N",
+                "on": {
+                  "localFields": [
+                    "id"
+                  ],
+                  "targetFields": [
+                    "accountId"
+                  ]
+                },
+                "to": {
+                  "model": "StaffAttendance",
+                  "namespace": "public"
+                }
               }
             },
             "storage": {
@@ -2392,6 +2407,13 @@
           },
           "StaffAttendance": {
             "fields": {
+              "accountId": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/uuid@1",
+                  "kind": "scalar"
+                }
+              },
               "createdAt": {
                 "nullable": false,
                 "type": {
@@ -2407,7 +2429,7 @@
                 }
               },
               "staffId": {
-                "nullable": false,
+                "nullable": true,
                 "type": {
                   "codecId": "pg/uuid@1",
                   "kind": "scalar"
@@ -2429,9 +2451,25 @@
               }
             },
             "relations": {
+              "account": {
+                "cardinality": "N:1",
+                "nullable": true,
+                "on": {
+                  "localFields": [
+                    "accountId"
+                  ],
+                  "targetFields": [
+                    "id"
+                  ]
+                },
+                "to": {
+                  "model": "Account",
+                  "namespace": "public"
+                }
+              },
               "staff": {
                 "cardinality": "N:1",
-                "nullable": false,
+                "nullable": true,
                 "on": {
                   "localFields": [
                     "staffId"
@@ -2448,6 +2486,9 @@
             },
             "storage": {
               "fields": {
+                "accountId": {
+                  "column": "account_id"
+                },
                 "createdAt": {
                   "column": "created_at"
                 },
@@ -4762,11 +4803,20 @@
             "staff_attendance": {
               "checks": [
                 {
+                  "expression": "((staff_id IS NOT NULL) <> (account_id IS NOT NULL))",
+                  "name": "exactly_one_attendance_owner"
+                },
+                {
                   "expression": "((time_out IS NULL) OR (time_out > time_in))",
                   "name": "valid_attendance_time"
                 }
               ],
               "columns": {
+                "account_id": {
+                  "codecId": "pg/uuid@1",
+                  "nativeType": "uuid",
+                  "nullable": true
+                },
                 "created_at": {
                   "codecId": "pg/timestamptz-temporal@1",
                   "default": {
@@ -4788,7 +4838,7 @@
                 "staff_id": {
                   "codecId": "pg/uuid@1",
                   "nativeType": "uuid",
-                  "nullable": false
+                  "nullable": true
                 },
                 "time_in": {
                   "codecId": "pg/timestamptz-temporal@1",
@@ -4823,6 +4873,24 @@
                     "namespaceId": "public",
                     "tableName": "staff"
                   }
+                },
+                {
+                  "name": "fk_staff_attendance_account",
+                  "onDelete": "restrict",
+                  "source": {
+                    "columns": [
+                      "account_id"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "staff_attendance"
+                  },
+                  "target": {
+                    "columns": [
+                      "id"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "accounts"
+                  }
                 }
               ],
               "indexes": [
@@ -4833,6 +4901,14 @@
                   ],
                   "name": "idx_staff_attendance_staff_id_time",
                   "unique": false
+                },
+                {
+                  "columns": [
+                    "account_id"
+                  ],
+                  "name": "staff_attendance_open_shift_account_key",
+                  "unique": true,
+                  "where": "(time_out IS NULL)"
                 },
                 {
                   "columns": [
@@ -5358,7 +5434,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "73ae5ac9b05cadbe897ba58c2743688db1f0afd5ff19ece5a838a0327a9516fe"
+    "storageHash": "c61d33568910197e566ed84ebf6b0123d9801d4f1b311da5274ddd8a65f95dcb"
   },
   "capabilities": {
     "postgres": {
