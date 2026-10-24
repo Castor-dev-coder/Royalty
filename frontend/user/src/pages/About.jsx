@@ -1,8 +1,42 @@
+import { useEffect, useState } from 'react'
 import SafeImage from '../components/SafeImage.jsx'
 import WaveDivider from '../components/WaveDivider.jsx'
+import { fetchTeam } from '../lib/api.js'
 
+// Initials placeholder for team members without a photo.
+function initialsFor(member) {
+  const initials = `${member.firstName?.trim()?.[0] ?? ''}${member.lastName?.trim()?.[0] ?? ''}`.toUpperCase()
+  return initials || '?'
+}
+
+function fullNameFor(member) {
+  return [member.firstName, member.lastName].filter(Boolean).join(' ').trim() || 'Our team'
+}
 
 function About() {
+  const [team, setTeam] = useState([])
+  const [teamStatus, setTeamStatus] = useState('loading') // loading | ready | empty
+
+  // Public team roster (GET /staff/team, no auth). The card renders only the
+  // team-visible fields — never email or phone.
+  useEffect(() => {
+    let stale = false
+    fetchTeam().then(
+      (data) => {
+        if (stale) return
+        const rows = data?.staff ?? []
+        setTeam(rows)
+        setTeamStatus(rows.length > 0 ? 'ready' : 'empty')
+      },
+      () => {
+        if (!stale) setTeamStatus('empty')
+      },
+    )
+    return () => {
+      stale = true
+    }
+  }, [])
+
   return (
     <main className="min-h-[calc(100vh-76px)] bg-black" id="home">
         <section
@@ -78,11 +112,64 @@ function About() {
             </p>
           </header>
 
-          {/* No public team endpoint exists yet (staff list is admin-gated) —
-              empty state instead of demo profiles. */}
-          <p className="mx-auto mt-19 max-w-[calc(100%-128px)] text-center text-[clamp(15px,1.3vw,18px)] leading-[1.7] text-[#a7a198] max-[680px]:mt-9.5 max-[680px]:max-w-[calc(100%-36px)]" role="status">
-            Our team profiles are not available yet.
-          </p>
+          {teamStatus === 'loading' && (
+            <p className="mx-auto mt-19 max-w-[calc(100%-128px)] text-center text-[clamp(15px,1.3vw,18px)] leading-[1.7] text-[#a7a198] max-[680px]:mt-9.5 max-[680px]:max-w-[calc(100%-36px)]" role="status">
+              Loading our team…
+            </p>
+          )}
+          {teamStatus === 'ready' && (
+            <ul className="mx-auto mt-19 grid w-[calc(100%-128px)] max-w-341 list-none grid-cols-3 gap-6 p-0 max-[980px]:grid-cols-2 max-[680px]:mt-9.5 max-[680px]:w-[calc(100%-36px)] max-[680px]:grid-cols-1">
+              {team.map((member) => {
+                const name = fullNameFor(member)
+                const specialties = (member.specialties ?? []).map((specialty) => specialty.name).filter(Boolean)
+                const coveredRoles = member.coveredRoles ?? []
+                return (
+                  <li key={member.id}>
+                    <article className="flex h-full flex-col gap-4 rounded-[18px] border border-[rgba(212,180,92,0.4)] bg-[#141311] p-7">
+                      {member.photoUrl ? (
+                        <SafeImage
+                          alt={name}
+                          className="size-20 rounded-full object-cover"
+                          src={member.photoUrl}
+                        />
+                      ) : (
+                        <div
+                          aria-hidden="true"
+                          className="grid size-20 place-items-center rounded-full border border-(--gold) font-serif text-[26px] leading-none font-semibold text-(--gold)"
+                        >
+                          {initialsFor(member)}
+                        </div>
+                      )}
+                      <div>
+                        <h3 className="m-0 font-serif text-[22px] leading-tight text-[#f6f2ea]">{name}</h3>
+                        {member.position && (
+                          <p className="m-0 mt-1.5 text-[12px] font-semibold tracking-[1.3px] text-(--gold) uppercase">
+                            {member.position}
+                          </p>
+                        )}
+                      </div>
+                      {specialties.length > 0 && (
+                        <p className="m-0 text-sm leading-[1.6] text-[#c8c3bb]">{specialties.join(' · ')}</p>
+                      )}
+                      {coveredRoles.length > 0 && (
+                        <p className="m-0 text-[11px] leading-[1.6] tracking-[1.2px] text-[#8d877c] uppercase">
+                          Covers {coveredRoles.join(' · ')}
+                        </p>
+                      )}
+                      {member.bio && (
+                        <p className="m-0 text-[14px] leading-[1.7] text-[#a7a198]">{member.bio}</p>
+                      )}
+                    </article>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+          {teamStatus === 'empty' && (
+            <p className="mx-auto mt-19 max-w-[calc(100%-128px)] text-center text-[clamp(15px,1.3vw,18px)] leading-[1.7] text-[#a7a198] max-[680px]:mt-9.5 max-[680px]:max-w-[calc(100%-36px)]" role="status">
+              Our team profiles are not available yet.
+            </p>
+          )}
         </section>
     </main>
   )

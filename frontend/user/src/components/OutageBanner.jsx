@@ -1,5 +1,3 @@
-import { SALON_PHONE } from '../lib/salon.js'
-
 // Slim banner used when public data is already on screen: the visitor keeps
 // reading what loaded, and the automatic retry continues underneath.
 function OutageBanner({ lastCheckedAt, checking, onRetry }) {
@@ -23,9 +21,6 @@ function OutageBanner({ lastCheckedAt, checking, onRetry }) {
         >
           {checking ? 'Checking…' : 'Try again'}
         </button>
-        <a className="text-[12px] text-(--gold) underline underline-offset-4 hover:text-(--gold-bright)" href={SALON_PHONE.href}>
-          {SALON_PHONE.value}
-        </a>
         {lastCheckedAt && (
           <span className="text-[11px] tracking-[0.14em] text-[#b3ada2] uppercase">
             Last checked{' '}

@@ -7,7 +7,7 @@ import SearchBar from '../components/SearchBar.jsx'
 import ServiceCard from '../components/ServiceCard.jsx'
 import { useAuth } from '../context/useAuth.jsx'
 import { useRecoveryTick } from '../lib/useOutage.js'
-import { AuthError, fetchMyAppointments, fetchServices } from '../lib/api.js'
+import { fetchMyAppointments, fetchServices } from '../lib/api.js'
 
 const ALL_SERVICES = 'All Services'
 
@@ -31,13 +31,13 @@ function Services() {
   const [activeCategory, setActiveCategory] = useState(ALL_SERVICES)
   const [bookingService, setBookingService] = useState(null)
   const [services, setServices] = useState([])
-  const [status, setStatus] = useState('loading') // loading | ready | empty | unavailable
+  const [status, setStatus] = useState('loading') // loading | ready | empty
   const [nextAppointment, setNextAppointment] = useState(null)
 
   useEffect(() => {
     let stale = false
-    // Re-runs when auth changes: the catalogue is role-gated, so a request made
-    // before sign-in fails with 401 and must be retried afterwards.
+    // The catalogue is public (anonymous GET /services returns data), so
+    // signed-out visitors browse it too; only booking requires an account.
     fetchServices().then(
       (data) => {
         if (stale) return
@@ -45,19 +45,17 @@ function Services() {
         setServices(rows)
         setStatus(rows.length > 0 ? 'ready' : 'empty')
       },
-      (error) => {
+      () => {
         if (stale) return
         // Keep whatever is already on screen — the outage banner explains
         // staleness; only a page with nothing to show gets an empty state.
-        setStatus((current) =>
-          current === 'ready' ? 'ready' : error instanceof AuthError ? 'unavailable' : 'empty',
-        )
+        setStatus((current) => (current === 'ready' ? 'ready' : 'empty'))
       },
     )
     return () => {
       stale = true
     }
-  }, [user, recoveryTick])
+  }, [recoveryTick])
 
   // Real "next appointment" from GET /appointments/mine (no demo model).
   useEffect(() => {
@@ -197,18 +195,12 @@ function Services() {
                 title={service.name}
               />
             ))}
-          {(status === 'empty' || status === 'unavailable') && (
+          {status === 'empty' && (
             <div className="col-span-full">
               <EmptyState
-                actionLabel={status === 'unavailable' ? 'Sign in' : undefined}
                 image="/images/empty-states/empty-search.svg"
-                message={
-                  status === 'unavailable'
-                    ? 'The service catalogue is available to signed-in customers.'
-                    : 'Our services will appear here once they are published.'
-                }
-                onAction={status === 'unavailable' ? () => openAuth('login') : undefined}
-                title={status === 'unavailable' ? 'Sign in to see services' : 'No services yet'}
+                message="Our services will appear here once they are published."
+                title="No services yet"
               />
             </div>
           )}

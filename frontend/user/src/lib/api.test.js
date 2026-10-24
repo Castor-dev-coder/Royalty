@@ -8,6 +8,8 @@ import {
   ValidationError,
   apiFetch,
   clearSession,
+  fetchMatching,
+  fetchTeam,
   getAccessToken,
   hasAuthHint,
   setSession,
@@ -181,5 +183,26 @@ describe('silent refresh', () => {
     await expect(tryRefresh()).resolves.toBe(false)
     await expect(sessionDispositionAfter401('CUSTOMER')).resolves.toBe('clear')
     await expect(sessionDispositionAfter401('MANAGER')).resolves.toBe('keep')
+  })
+})
+
+describe('team and matching endpoints', () => {
+  it('fetchTeam calls the public roster endpoint', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(200, { data: { staff: [] } }))
+    vi.stubGlobal('fetch', fetchMock)
+    const data = await fetchTeam()
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/staff/team')
+    expect(data).toEqual({ staff: [] })
+  })
+
+  it('fetchMatching sends serviceIds, date and startTime', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(200, { data: { recommended: null, alternatives: [], reason: '', partial: true, covers: 0, needed: 1 } }))
+    vi.stubGlobal('fetch', fetchMock)
+    await fetchMatching({ serviceIds: ['s1', 's2'], date: '2026-11-02', startTime: '14:00' })
+    const url = new URL(String(fetchMock.mock.calls[0][0]))
+    expect(url.pathname).toBe('/matching')
+    expect(url.searchParams.get('serviceIds')).toBe('s1,s2')
+    expect(url.searchParams.get('date')).toBe('2026-11-02')
+    expect(url.searchParams.get('startTime')).toBe('14:00')
   })
 })

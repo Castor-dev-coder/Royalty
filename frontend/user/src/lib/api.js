@@ -313,6 +313,25 @@ export function fetchEligibleStaff(serviceIds) {
   return apiFetch(`/staff/eligible?serviceIds=${encodeURIComponent(serviceIds.join(','))}`)
 }
 
+/** Public team roster for the About page (no auth, never email/phone). */
+export function fetchTeam() {
+  return apiFetch('/staff/team')
+}
+
+/**
+ * Best stylist for a specific slot (authenticated). Returns
+ * { recommended, reason, alternatives, partial, covers, needed };
+ * `recommended` is null when nobody covers every category.
+ */
+export function fetchMatching({ serviceIds, date, startTime }) {
+  const params = new URLSearchParams({
+    serviceIds: serviceIds.join(','),
+    date,
+    startTime,
+  })
+  return apiFetch(`/matching?${params.toString()}`)
+}
+
 export function createAppointment(payload) {
   return apiFetch('/appointments', { method: 'POST', body: payload })
 }

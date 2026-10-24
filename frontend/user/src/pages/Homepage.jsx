@@ -8,7 +8,7 @@ import SafeImage from '../components/SafeImage.jsx'
 import WaveDivider from '../components/WaveDivider.jsx'
 import { useAuth } from '../context/useAuth.jsx'
 import { useRecoveryTick } from '../lib/useOutage.js'
-import { AuthError, fetchReviewList, fetchServices } from '../lib/api.js'
+import { fetchReviewList, fetchServices } from '../lib/api.js'
 
 // Brand assets (not data) — they live in /public/images.
 const HERO_IMAGE = '/images/hero.jpg'
@@ -43,7 +43,7 @@ function Homepage() {
   const recoveryTick = useRecoveryTick()
   const navigate = useNavigate()
   const [services, setServices] = useState([])
-  const [servicesStatus, setServicesStatus] = useState('loading') // loading | ready | empty | unavailable
+  const [servicesStatus, setServicesStatus] = useState('loading') // loading | ready | empty
   const [reviews, setReviews] = useState([])
 
   // Booking requires a signed-in customer: signed-out visitors get the login
@@ -56,8 +56,8 @@ function Homepage() {
 
   useEffect(() => {
     let stale = false
-    // Re-runs when auth changes: the catalogue is role-gated, so a request made
-    // before sign-in fails with 401 and must be retried afterwards.
+    // The catalogue is public (anonymous GET /services returns data), so
+    // signed-out visitors browse it too; only booking requires an account.
     fetchServices().then(
       (data) => {
         if (stale) return
@@ -65,21 +65,17 @@ function Homepage() {
         setServices(rows.slice(0, 6))
         setServicesStatus(rows.length > 0 ? 'ready' : 'empty')
       },
-      (error) => {
+      () => {
         if (stale) return
-        // GET /services requires a signed-in role; anonymous visitors get the
-        // sign-in prompt instead of invented catalogue data.
         // Keep whatever is already on screen — the outage banner explains
         // staleness; only a page with nothing to show gets an empty state.
-        setServicesStatus((current) =>
-          current === 'ready' ? 'ready' : error instanceof AuthError ? 'unavailable' : 'empty',
-        )
+        setServicesStatus((current) => (current === 'ready' ? 'ready' : 'empty'))
       },
     )
     return () => {
       stale = true
     }
-  }, [user, recoveryTick])
+  }, [recoveryTick])
 
   useEffect(() => {
     let stale = false
@@ -177,18 +173,12 @@ function Homepage() {
                   title={service.name}
                 />
               ))}
-            {(servicesStatus === 'empty' || servicesStatus === 'unavailable') && (
+            {servicesStatus === 'empty' && (
               <div className="col-span-full">
                 <EmptyState
-                  actionLabel={servicesStatus === 'unavailable' ? 'Sign in' : undefined}
                   image="/images/empty-states/empty-search.svg"
-                  message={
-                    servicesStatus === 'unavailable'
-                      ? 'Sign in to browse our current service catalogue.'
-                      : 'Our services will appear here once they are published.'
-                  }
-                  onAction={servicesStatus === 'unavailable' ? () => openAuth('login') : undefined}
-                  title={servicesStatus === 'unavailable' ? 'Sign in to see services' : 'No services yet'}
+                  message="Our services will appear here once they are published."
+                  title="No services yet"
                 />
               </div>
             )}

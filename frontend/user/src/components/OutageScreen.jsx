@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import BrandMark from './BrandMark.jsx'
-import { SALON_PHONE } from '../lib/salon.js'
 
 // Full-viewport outage screen. Shown when the API is confirmed unreachable
 // (see lib/outage.js for the trigger) and there is no content worth keeping on
@@ -74,13 +73,6 @@ function OutageScreen({ lastCheckedAt, nextRetryAt, checking, onRetry }) {
 
         <p className="mt-8 text-[11px] tracking-[0.18em] text-[#8d877c] uppercase">
           {lastCheckedAt ? `Last checked ${formatClock(lastCheckedAt)}` : 'Checking the connection…'}
-        </p>
-
-        <p className="mt-3 text-[13px] text-[#b3ada2]">
-          Call the salon:{' '}
-          <a className="text-(--gold) underline underline-offset-4 hover:text-(--gold-bright)" href={SALON_PHONE.href}>
-            {SALON_PHONE.value}
-          </a>
         </p>
       </div>
     </div>
