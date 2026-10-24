@@ -1,6 +1,6 @@
 import { BrowserRouter, Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { apiFetch, clearAccessTokens, generateTemporaryPassword, getAccessToken, storeAccessTokens } from './api';
+import { apiFetch, authHeader, clearAccessTokens, generateTemporaryPassword, getAccessToken, storeAccessTokens } from './api';
 import {
   accountEmailError,
   DURATION_MESSAGE,
@@ -27,9 +27,12 @@ import { BrandShowcase } from './components/BrandShowcase';
 import { SidebarStatusPanel } from './components/SidebarStatusPanel';
 import { CalendarSkeleton, ChartSkeleton, FieldError, invalidField, ListSkeleton, Skeleton, SkeletonRegion, StatCardSkeleton, TableSkeleton } from './shared/ui';
 import { CategoryBars, DataOriginNote, LineChart, type LineAxisPoint, type LineSeries } from './components/charts';
-import { AccountsIcon, CalendarIcon, DashboardIcon, PaymentsIcon, StaffIcon } from './components/icons';
+import { AccountsIcon, AttendanceIcon, CalendarIcon, DashboardIcon, PaymentsIcon, StaffIcon } from './components/icons';
 import { useDialogBehavior } from './components/useDialogBehavior';
 import { clearAccountSession, currentSession, readLoginSession, storeAccountSession, type AccountRole } from './session';
+import { ImageUploadField, type ImageUploadHandle } from './shared/imageUpload';
+import { CheckboxMultiSelect, TagMultiSelect, ToggleSwitch } from './shared/profileFields';
+import { AttendancePanel } from './attendance/AttendancePanel';
 import { StaffShell } from './staff/StaffShell';
 import { StaffOverviewPanel } from './staff/StaffOverviewPanel';
 import { StaffAppointmentsPanel } from './staff/StaffAppointmentsPanel';
@@ -68,6 +71,18 @@ type StaffRow = {
   role: string;
   employment: string;
   schedule: string;
+  /** Job title shown on the profile and the team page. */
+  position?: string;
+  /** A short biography shown on the team page. */
+  bio?: string;
+  /** Roles this staff member may cover. */
+  coveredRoles?: string[];
+  /** Whether the profile is listed on the team page. */
+  showOnTeam?: boolean;
+  /** Service categories this staff member performs (category ids). */
+  specialties?: string[];
+  /** The uploaded staff photo, when one has been stored. */
+  photoUrl?: string | null;
   /**
    * Account access: whether the account may sign in.
    * Availability below is a separate concern and never implies access.
@@ -105,10 +120,19 @@ const navSections = [
     items: [
       { label: 'Account Management', to: '/accounts', Icon: AccountsIcon },
       { label: 'Staff Management', to: '/staff', Icon: StaffIcon },
+      { label: 'Attendance', to: '/attendance', Icon: AttendanceIcon },
       { label: 'Payments & Verification', to: '/payments', Icon: PaymentsIcon },
     ],
   },
 ];
+
+/**
+ * The roles vocabulary the interface already offers for salon staff: the role
+ * labels used across the staff directory and the account roles offered when an
+ * account is created. Covered roles are picked from this list, and a role that
+ * is not listed can still be added as a custom tag.
+ */
+const COVERED_ROLE_VOCABULARY = ['Stylist', 'Senior Stylist', 'Nail Tech', 'Manager', 'Staff'];
 
 const weekDayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -205,6 +229,23 @@ function summarizeSchedule(days: Array<{ dayOfWeek: number; enabled: boolean; st
   return active.map((day) => `${weekDayLabels[day.dayOfWeek - 1]} ${day.startTime}-${day.endTime}`).join(' · ');
 }
 
+/**
+ * The category ids of a staff member's specialties.
+ *
+ * The API returns them either as plain ids or as staff-category rows; both
+ * shapes name the service category the staff member performs.
+ */
+function staffSpecialtyIds(staff: any): string[] {
+  const rows = Array.isArray(staff?.specialties)
+    ? staff.specialties
+    : Array.isArray(staff?.staffCategories)
+      ? staff.staffCategories
+      : [];
+  return rows
+    .map((entry: any) => String(entry?.categoryId ?? entry?.category?.id ?? entry?.id ?? (typeof entry === 'string' ? entry : '')))
+    .filter((id: string) => id.length > 0);
+}
+
 function App() {
   return (
     <ThemeProvider>
@@ -215,6 +256,7 @@ function App() {
             <Route path="services" element={<ServiceManagementPage />} />
             <Route path="accounts" element={<AccountManagementPage />} />
             <Route path="staff" element={<StaffManagementPage />} />
+            <Route path="attendance" element={<AttendancePanel />} />
             <Route path="appointments" element={<AppointmentPage />} />
             <Route path="payments" element={<PaymentPage />} />
           </Route>
@@ -223,6 +265,7 @@ function App() {
             <Route path="appointments" element={<StaffAppointmentsPanel />} />
             <Route path="schedule" element={<StaffSchedulePanel />} />
             <Route path="services" element={<StaffServicesPanel />} />
+            <Route path="attendance" element={<AttendancePanel />} />
             <Route path="profile" element={<StaffProfilePanel />} />
           </Route>
         </Routes>
@@ -392,6 +435,12 @@ function useStaffData() {
           email: emails.get(staff.accountId) ?? 'Email not available',
           role: staff.primaryRole,
           employment: staff.employmentType === 'PART_TIME' ? 'Part Time' : 'Full Time',
+          position: String(staff.position ?? ''),
+          bio: String(staff.bio ?? ''),
+          coveredRoles: Array.isArray(staff.coveredRoles) ? staff.coveredRoles.map((role: unknown) => String(role)) : [],
+          showOnTeam: Boolean(staff.showOnTeam),
+          specialties: staffSpecialtyIds(staff),
+          photoUrl: (staff.photoUrl ?? staff.photo ?? null) as string | null,
           schedule: (schedules.get(staff.id) ?? []).filter((schedule) => schedule.isActive).sort((left, right) => left.dayOfWeek - right.dayOfWeek).map((schedule) => {
             const day = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][schedule.dayOfWeek - 1] ?? '';
             const formatTime = (time: string) => {
@@ -490,6 +539,7 @@ function Shell() {
     if (location.pathname === '/accounts') return 'Authentication & Account Management';
     if (location.pathname === '/staff') return 'Staff Directory & Performance';
     if (/^\/staff\/[^/]+\/edit$/.test(location.pathname)) return 'Edit Staff Account';
+    if (location.pathname === '/attendance') return 'Staff Attendance';
     if (location.pathname === '/appointments') return 'Appointment Management';
     if (location.pathname === '/payments') return 'Payments & Verification';
     if (location.pathname === '/services') return 'Service Management';
@@ -570,7 +620,9 @@ function Shell() {
                   ? 'Manage role-based access, create staff accounts, and view audit activity.'
                   : location.pathname === '/staff'
                     ? 'View all professional staff, metrics, and current schedules.'
-                    : location.pathname === '/appointments'
+                    : location.pathname === '/attendance'
+                      ? 'Record time in and time out, and correct attendance records.'
+                      : location.pathname === '/appointments'
                       ? 'Track appointments, slot availability, and customer confirmations.'
                       : location.pathname === '/payments'
                         ? 'Review transaction activity, verify payments, and manage submissions.'
@@ -897,19 +949,26 @@ function ServiceManagementPage() {
     && `${service.name} ${service.categoryName} ${service.description ?? ''}`.toLowerCase().includes(search.toLowerCase()),
   );
 
-  async function saveService(values: { categoryId: string; name: string; description: string; price: number; durationMinutes: number }, service: ServiceRecord | null) {
+  async function saveService(values: { categoryId: string; name: string; description: string; price: number; durationMinutes: number }, service: ServiceRecord | null): Promise<string | null> {
     if (!token) throw new Error('Sign in with an administrator account to manage services.');
     const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
     const response = await apiFetch(service ? `${baseUrl}/services/${service.id}` : `${baseUrl}/services`, {
       method: service ? 'PATCH' : 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
       body: JSON.stringify(values),
     });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.message ?? 'Unable to save the service.');
     await loadCatalog();
+    // The image is uploaded against the saved service, so the caller needs
+    // its id before the editor closes.
+    return String(payload?.data?.service?.id ?? payload?.data?.id ?? service?.id ?? '') || null;
+  }
+
+  /** Close the editor and report the outcome once the image upload has settled. */
+  function handleServiceSaved(summary: { name: string; isEdit: boolean }) {
     setEditing(null);
-    setOutcome({ success: true, title: service ? 'Service updated' : 'Service added', message: `${values.name} has been saved to the service catalog.` });
+    setOutcome({ success: true, title: summary.isEdit ? 'Service updated' : 'Service added', message: `${summary.name} has been saved to the service catalog.` });
   }
 
   async function updateServiceStatus(service: ServiceRecord, active: boolean, deleting = false) {
@@ -973,7 +1032,7 @@ function ServiceManagementPage() {
           </table>
         </div>
       )}
-      {editing !== null && <ServiceEditorModal service={editing === 'new' ? null : editing} categories={categories.filter((category) => category.isActive)} onClose={() => setEditing(null)} onSave={saveService} />}
+      {editing !== null && <ServiceEditorModal service={editing === 'new' ? null : editing} categories={categories.filter((category) => category.isActive)} onClose={() => setEditing(null)} onSave={saveService} onSaved={handleServiceSaved} />}
       {manageCategories && <CategoryManagerModal categories={categories} onClose={() => setManageCategories(false)} onChanged={async () => { await loadCatalog(); }} onOutcome={setOutcome} />}
       {action && (
         <ConfirmModal
@@ -993,19 +1052,17 @@ function ServiceManagementPage() {
   );
 }
 
-function ServiceEditorModal({ service, categories, onClose, onSave }: {
+function ServiceEditorModal({ service, categories, onClose, onSave, onSaved }: {
   service: ServiceRecord | null;
   categories: CategoryRecord[];
   onClose: () => void;
-  onSave: (values: { categoryId: string; name: string; description: string; price: number; durationMinutes: number; imageUrl?: string | null }, service: ServiceRecord | null) => Promise<void>;
+  onSave: (values: { categoryId: string; name: string; description: string; price: number; durationMinutes: number }, service: ServiceRecord | null) => Promise<string | null>;
+  onSaved: (summary: { name: string; isEdit: boolean }) => void;
 }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [imagePreview, setImagePreview] = useState(service?.imageUrl ?? '');
-  const [fileHint, setFileHint] = useState('');
-  const [dragActive, setDragActive] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const imageRef = useRef<ImageUploadHandle | null>(null);
   const dialogRef = useDialogBehavior<HTMLFormElement>(onClose);
 
   /**
@@ -1061,64 +1118,29 @@ function ServiceEditorModal({ service, categories, onClose, onSave }: {
     }
     setBusy(true);
     setError('');
+    const name = String(form.get('name')).trim();
     try {
-      await onSave({
+      const savedId = await onSave({
         categoryId: String(form.get('categoryId')),
-        name: String(form.get('name')).trim(),
+        name,
         description: String(form.get('description')).trim(),
         price: Number(form.get('price')),
         durationMinutes: Number(form.get('durationMinutes')),
-        imageUrl: imagePreview || null,
       }, service);
+
+      // The image is stored against the saved service, so it is uploaded
+      // after the service exists.
+      if (imageRef.current?.hasPendingFile()) {
+        if (!savedId) {
+          throw new Error('The service was saved, but its image could not be uploaded because the service id was not returned.');
+        }
+        await imageRef.current.upload(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/services/${savedId}/image`);
+      }
+      onSaved({ name, isEdit: Boolean(service) });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unable to save the service.');
       setBusy(false);
     }
-  }
-
-  const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png'];
-  const ALLOWED_IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png'];
-
-  function isValidImageFile(file: File): boolean {
-    if (ALLOWED_IMAGE_TYPES.includes(file.type)) return true;
-    const name = file.name.toLowerCase();
-    return ALLOWED_IMAGE_EXTENSIONS.some((ext) => name.endsWith(ext));
-  }
-
-  function setImageFromFile(file: File | null) {
-    if (!file) return;
-    if (!isValidImageFile(file)) {
-      setFileHint('Unsupported file type. Please upload a JPEG or PNG image (.jpg, .jpeg, .png).');
-      return;
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      setFileHint('Image is too large. Please use a file under 5MB.');
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const imageUrl = String(reader.result ?? '');
-      setImagePreview(imageUrl);
-      setFileHint('');
-    };
-    reader.readAsDataURL(file);
-  }
-
-  function handleImageFile(event: React.ChangeEvent<HTMLInputElement>) {
-    setImageFromFile(event.target.files?.[0] ?? null);
-  }
-
-  function handleDrop(event: React.DragEvent<HTMLDivElement>) {
-    event.preventDefault();
-    setDragActive(false);
-    const file = event.dataTransfer.files?.[0] ?? null;
-    setImageFromFile(file);
-  }
-
-  function removeImage() {
-    setImagePreview('');
-    setFileHint('');
-    if (imageInputRef.current) imageInputRef.current.value = '';
   }
 
   return (
@@ -1126,37 +1148,7 @@ function ServiceEditorModal({ service, categories, onClose, onSave }: {
       <form ref={dialogRef} className="modal-card service-modal" onSubmit={submit} onClick={(event) => event.stopPropagation()} noValidate>
         <div className="modal-header"><h3 id="service-editor-title">{service ? 'Edit Service' : 'Add Service'}</h3><button type="button" className="close-button" aria-label="Close" onClick={onClose}>×</button></div>
 
-        <div className="service-upload-field">
-          <span className="field-label">SERVICE PHOTO</span>
-          <div
-            className={`service-upload-dropzone${imagePreview ? ' filled' : ''}${dragActive ? ' drag-active' : ''}`}
-            onClick={() => imageInputRef.current?.click()}
-            onDragOver={(event) => { event.preventDefault(); setDragActive(true); }}
-            onDragLeave={(event) => { event.preventDefault(); setDragActive(false); }}
-            onDrop={handleDrop}
-            role="button"
-            tabIndex={0}
-            aria-label="Upload service photo"
-            onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); imageInputRef.current?.click(); } }}
-          >
-            <input ref={imageInputRef} className="service-upload-input" type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" onChange={handleImageFile} />
-            {imagePreview ? (
-              <img src={imagePreview} alt="Service preview" className="service-image-preview" />
-            ) : (
-              <div className="service-upload-placeholder">
-                <span className="upload-icon" aria-hidden="true">⇪</span>
-                <span>Drag and drop a service photo here or click to browse</span>
-              </div>
-            )}
-            {fileHint && <p className="file-hint-warning" role="alert">{fileHint}</p>}
-          </div>
-          {imagePreview && (
-            <div className="service-upload-actions">
-              <button type="button" className="secondary-action" onClick={() => imageInputRef.current?.click()}>Replace Photo</button>
-              <button type="button" className="link-button danger-link" onClick={removeImage}>Remove Photo</button>
-            </div>
-          )}
-        </div>
+        <ImageUploadField ref={imageRef} label="SERVICE PHOTO" idPrefix="service-image" initialUrl={service?.imageUrl ?? null} />
 
         <label className="field-label">SERVICE NAME
           <input className="modal-input" name="name" defaultValue={service?.name ?? ''} required maxLength={200}
@@ -1918,7 +1910,33 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
   const [scheduleError, setScheduleError] = useState('');
   const [savingSchedule, setSavingSchedule] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [coveredRoles, setCoveredRoles] = useState<string[]>(staff.coveredRoles ?? []);
+  const [specialties, setSpecialties] = useState<string[]>(staff.specialties ?? []);
+  const [showOnTeam, setShowOnTeam] = useState(Boolean(staff.showOnTeam));
+  const [specialtyError, setSpecialtyError] = useState('');
+  const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
+  const photoRef = useRef<ImageUploadHandle | null>(null);
   const dialogRef = useDialogBehavior(onClose);
+
+  // The specialties offered are the service categories, so a staff member is
+  // marked against the catalogue the studio actually sells.
+  useEffect(() => {
+    const token = getAccessToken();
+    if (!token) return;
+    const controller = new AbortController();
+    apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/services/categories`, {
+      signal: controller.signal,
+      headers: { ...authHeader(token) },
+    })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => null);
+        if (!response.ok) return;
+        const rows = (payload?.data?.categories ?? []) as Array<{ id: string; name: string; isActive?: boolean }>;
+        setCategories(rows.filter((category) => category.isActive !== false).map((category) => ({ id: String(category.id), name: String(category.name) })));
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     // The time-off endpoint does not exist on the configured backend.
@@ -1959,6 +1977,10 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
     if (phone && !isValidPhilippineMobile(phone)) errors.phone = PHONE_MESSAGE;
     if (!primaryRole) errors.primaryRole = 'Enter a primary role.';
     else if (primaryRole.length > 100) errors.primaryRole = 'Keep the role under 100 characters.';
+    const position = String(form.get('position') ?? '').trim();
+    if (position.length > 100) errors.position = 'Keep the position under 100 characters.';
+    const bio = String(form.get('bio') ?? '').trim();
+    if (bio.length > 1000) errors.bio = 'Keep the bio under 1000 characters.';
     return errors;
   }
 
@@ -1980,9 +2002,15 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
     const form = new FormData(event.currentTarget);
     const errors = collectFieldErrors(form);
     setFieldErrors(errors);
-    if (Object.keys(errors).length > 0) {
+    // Showing a profile on the team page needs at least one specialty, so the
+    // page never lists someone with nothing they are known for.
+    const specialtyMessage = showOnTeam && specialties.length === 0
+      ? 'Select at least one specialty when the profile is shown on the team page.'
+      : '';
+    setSpecialtyError(specialtyMessage);
+    if (Object.keys(errors).length > 0 || specialtyMessage) {
       // The dialog stays open and keeps what was typed.
-      for (const field of ['firstName', 'lastName', 'phone', 'primaryRole']) {
+      for (const field of ['firstName', 'lastName', 'phone', 'primaryRole', 'position', 'bio']) {
         if (!errors[field]) continue;
         event.currentTarget.querySelector<HTMLElement>(`[name="${field}"]`)?.focus();
         break;
@@ -2005,10 +2033,27 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
           primaryRole: String(form.get('primaryRole') ?? '').trim(),
           employmentType: String(form.get('employmentType')),
           workStatus: String(form.get('workStatus')),
+          position: String(form.get('position') ?? '').trim(),
+          bio: String(form.get('bio') ?? '').trim(),
+          coveredRoles,
+          showOnTeam,
+          specialties,
         }),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.message ?? 'Unable to save staff changes.');
+
+      // The photo is stored against the staff row, so it is uploaded after the
+      // profile fields are saved.
+      if (photoRef.current?.hasPendingFile()) {
+        try {
+          await photoRef.current.upload(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/staff/${staff.id}/photo`);
+        } catch (cause) {
+          setError(cause instanceof Error ? cause.message : 'The photo could not be uploaded.');
+          setSubmitting(false);
+          return;
+        }
+      }
       onSaved();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unable to save staff changes.');
@@ -2091,6 +2136,7 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
           <form className="staff-account-form" onSubmit={handleSubmit} noValidate>
             <h4>Staff Account Information</h4>
             <p className="form-hint">{staff.email}</p>
+            <ImageUploadField ref={photoRef} label="STAFF PHOTO" idPrefix="staff-photo" initialUrl={staff.photoUrl ?? null} />
             <div className="form-grid">
               <label className="field-label">FIRST NAME
                 <input className="modal-input" name="firstName" defaultValue={staff.firstName ?? ''} required maxLength={100}
@@ -2120,6 +2166,44 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
                 {...invalidField('staff-edit-primary-role-error', fieldErrors.primaryRole)} />
               <FieldError id="staff-edit-primary-role-error" message={fieldErrors.primaryRole} />
             </label>
+            <label className="field-label">POSITION
+              <input className="modal-input" name="position" defaultValue={staff.position ?? ''} maxLength={100}
+                placeholder="e.g. Senior Stylist"
+                onBlur={(event) => recheckField('position', event.currentTarget.form)}
+                {...invalidField('staff-edit-position-error', fieldErrors.position)} />
+              <FieldError id="staff-edit-position-error" message={fieldErrors.position} />
+            </label>
+            <label className="field-label">BIO
+              <textarea className="modal-input" name="bio" defaultValue={staff.bio ?? ''} rows={3} maxLength={1000}
+                placeholder="A short introduction shown on the team page."
+                onBlur={(event) => recheckField('bio', event.currentTarget.form)}
+                {...invalidField('staff-edit-bio-error', fieldErrors.bio)} />
+              <FieldError id="staff-edit-bio-error" message={fieldErrors.bio} />
+            </label>
+            <TagMultiSelect
+              label="COVERED ROLES"
+              hint="Roles this staff member can step into. Pick from the list or add your own."
+              options={COVERED_ROLE_VOCABULARY}
+              value={coveredRoles}
+              onChange={setCoveredRoles}
+            />
+            <CheckboxMultiSelect
+              label="SPECIALTIES"
+              options={categories}
+              value={specialties}
+              onChange={(next) => { setSpecialties(next); if (next.length > 0) setSpecialtyError(''); }}
+              errorId="staff-edit-specialties-error"
+              errorMessage={specialtyError}
+            />
+            <ToggleSwitch
+              label="Show on team page"
+              hint="List this staff member on the public team page."
+              checked={showOnTeam}
+              onChange={(next) => {
+                setShowOnTeam(next);
+                if (!next) setSpecialtyError('');
+              }}
+            />
             <div className="form-grid">
               <label className="field-label">EMPLOYMENT TYPE<select className="modal-input" name="employmentType" defaultValue={staff.employment === 'Part Time' ? 'PART_TIME' : 'FULL_TIME'}><option value="FULL_TIME">Full Time</option><option value="PART_TIME">Part Time</option></select></label>
               <label className="field-label">WORK STATUS<select className="modal-input" name="workStatus" defaultValue={staff.status === 'Active' ? 'ON_DUTY' : staff.status === 'On Vacation' ? 'UNAVAILABLE' : 'DAY_OFF'}><option value="ON_DUTY">On Duty</option><option value="DAY_OFF">Day Off</option><option value="UNAVAILABLE">Unavailable</option></select></label>
@@ -2889,7 +2973,33 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
   const [scheduleError, setScheduleError] = useState('');
   const [copied, setCopied] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [coveredRoles, setCoveredRoles] = useState<string[]>([]);
+  const [specialties, setSpecialties] = useState<string[]>([]);
+  const [showOnTeam, setShowOnTeam] = useState(false);
+  const [specialtyError, setSpecialtyError] = useState('');
+  const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
+  const photoRef = useRef<ImageUploadHandle | null>(null);
   const dialogRef = useDialogBehavior<HTMLFormElement>(onClose);
+
+  // The specialties offered are the service categories, so a staff member is
+  // marked against the catalogue the studio actually sells.
+  useEffect(() => {
+    const token = getAccessToken();
+    if (!token) return;
+    const controller = new AbortController();
+    apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/services/categories`, {
+      signal: controller.signal,
+      headers: { ...authHeader(token) },
+    })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => null);
+        if (!response.ok) return;
+        const rows = (payload?.data?.categories ?? []) as Array<{ id: string; name: string; isActive?: boolean }>;
+        setCategories(rows.filter((category) => category.isActive !== false).map((category) => ({ id: String(category.id), name: String(category.name) })));
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, []);
 
   function validatePasswordStrength(value: string): boolean {
     return isValidPassword(value);
@@ -2919,6 +3029,12 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
     else if (!isValidPassword(password)) errors.password = PASSWORD_MESSAGE;
     if (!confirmPassword) errors.confirmPassword = 'Repeat the temporary password.';
     else if (!passwordsMatch(password, confirmPassword)) errors.confirmPassword = PASSWORD_MATCH_MESSAGE;
+    const phone = String(form.get('phone') ?? '').trim();
+    if (phone && !isValidPhilippineMobile(phone)) errors.phone = PHONE_MESSAGE;
+    const position = String(form.get('position') ?? '').trim();
+    if (position.length > 100) errors.position = 'Keep the position under 100 characters.';
+    const bio = String(form.get('bio') ?? '').trim();
+    if (bio.length > 1000) errors.bio = 'Keep the bio under 1000 characters.';
     return errors;
   }
 
@@ -2937,7 +3053,7 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
 
   /** Show the message for the first field that is not acceptable. */
   function focusFirstError(errors: Record<string, string>) {
-    const order = ['firstName', 'lastName', 'email', 'password', 'confirmPassword'];
+    const order = ['firstName', 'lastName', 'email', 'password', 'confirmPassword', 'phone', 'position', 'bio'];
     for (const field of order) {
       if (!errors[field]) continue;
       dialogRef.current?.querySelector<HTMLElement>(`[name="${field}"]`)?.focus();
@@ -2994,7 +3110,13 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
     const form = new FormData(event.currentTarget);
     const errors = collectFieldErrors(form);
     setFieldErrors(errors);
-    if (Object.keys(errors).length > 0) {
+    // Showing a profile on the team page needs at least one specialty, so the
+    // page never lists someone with nothing they are known for.
+    const specialtyMessage = showOnTeam && specialties.length === 0
+      ? 'Select at least one specialty when the profile is shown on the team page.'
+      : '';
+    setSpecialtyError(specialtyMessage);
+    if (Object.keys(errors).length > 0 || specialtyMessage) {
       // The form stays open and keeps what was typed, so the reader can
       // put right the one field that is wrong.
       focusFirstError(errors);
@@ -3015,11 +3137,91 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
     }
     if (!validateSchedule()) return;
     setSubmitting(true);
-    // The configured backend has no administrator account-creation endpoint
-    // (admin REST exposes account status/password changes only), so creation
-    // reports the gap instead of pretending to provision.
-    setResult({ success: false, title: 'Account not created', message: 'Account provisioning is not available: the configured backend has no administrator account-creation endpoint.' });
-    setSubmitting(false);
+    const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+    const firstName = String(form.get('firstName') ?? '').trim();
+    const lastName = String(form.get('lastName') ?? '').trim();
+    const phone = String(form.get('phone') ?? '').trim();
+    const position = String(form.get('position') ?? '').trim();
+    const bio = String(form.get('bio') ?? '').trim();
+    try {
+      const response = await apiFetch(`${baseUrl}/accounts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+        body: JSON.stringify({
+          email: String(form.get('email') ?? '').trim(),
+          password,
+          // The API refuses the ADMIN role, and this form never offers it.
+          role: selectedRole === 'Manager' ? 'MANAGER' : 'STAFF',
+          firstName,
+          lastName,
+          phone: phone || undefined,
+          position: position || undefined,
+          bio: bio || undefined,
+          coveredRoles,
+          showOnTeam,
+          specialties,
+        }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(payload?.message ?? 'The account could not be created.');
+      const account = payload?.data?.account ?? {};
+      const staffId = payload?.data?.staff?.id ? String(payload.data.staff.id) : '';
+      let caveats = '';
+
+      // The photo belongs to the staff profile, so it is uploaded only once
+      // the account has been created and its staff row exists.
+      if (photoRef.current?.hasPendingFile()) {
+        if (!staffId) {
+          caveats = ' The photo was not uploaded because this account has no staff profile.';
+        } else {
+          try {
+            await photoRef.current.upload(`${baseUrl}/staff/${staffId}/photo`);
+          } catch (cause) {
+            caveats = ` The account was created, but the photo was not uploaded: ${cause instanceof Error ? cause.message : 'the upload failed.'}`;
+          }
+        }
+      }
+
+      // The weekly schedule is set the same way the staff editor sets it.
+      if (staffId && schedule.some((day) => day.enabled)) {
+        try {
+          await apiFetch(`${baseUrl}/schedules/staff/${staffId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+            body: JSON.stringify({
+              schedule: schedule
+                .filter((day) => day.enabled)
+                .map((day) => ({ dayOfWeek: day.dayOfWeek, startTime: day.startTime, endTime: day.endTime, isActive: true })),
+            }),
+          });
+        } catch {
+          // A schedule that could not be saved is set in the staff editor.
+          caveats += ' The weekly schedule could not be saved; set it in the staff editor.';
+        }
+      }
+
+      const credentials: StaffCredentials = {
+        accountId: String(account.id ?? ''),
+        email: String(account.email ?? form.get('email') ?? ''),
+        name: `${firstName} ${lastName}`.trim(),
+        password,
+      };
+      setSubmitting(false);
+      if (caveats) {
+        setResult({ success: true, title: 'Account created', message: `${credentials.name} can now sign in.${caveats}` });
+      }
+      setCreatedCredentials(credentials);
+    } catch (cause) {
+      setResult({ success: false, title: 'Account not created', message: cause instanceof Error ? cause.message : 'The account could not be created.' });
+      setSubmitting(false);
+    }
+  }
+
+  if (result) {
+    return <ResultModal success={result.success} title={result.title} message={result.message} onClose={() => {
+      if (result.success && !createdCredentials) window.location.reload();
+      else setResult(null);
+    }} />;
   }
 
   if (createdCredentials) {
@@ -3031,13 +3233,6 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
     );
   }
 
-  if (result) {
-    return <ResultModal success={result.success} title={result.title} message={result.message} onClose={() => {
-      if (result.success) window.location.reload();
-      else setResult(null);
-    }} />;
-  }
-
   return (
     <div className="modal-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="account-creation-title">
       <form ref={dialogRef} className="modal-card account-creation-modal" onSubmit={createAccount} onClick={(event) => event.stopPropagation()} noValidate>
@@ -3045,7 +3240,7 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
           <h3 id="account-creation-title">Create Staff / Manager Account</h3>
           <button type="button" className="close-button" aria-label="Close account modal" onClick={onClose}>×</button>
         </div>
-        <div className="modal-subtitle">Enter the account details, choose a role, and set the weekly schedule.</div>
+        <div className="modal-subtitle">Enter the account details, choose a role, and set the profile and weekly schedule.</div>
 
         <div className="form-section">
           <h4 className="form-section-title">Account details</h4>
@@ -3073,6 +3268,58 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
               {...invalidField('account-email-error', fieldErrors.email)} />
             <FieldError id="account-email-error" message={fieldErrors.email} />
           </label>
+        </div>
+
+        <div className="form-section">
+          <h4 className="form-section-title">Profile</h4>
+          <ImageUploadField ref={photoRef} label="STAFF PHOTO" idPrefix="account-photo" />
+          <div className="form-grid">
+            <label className="field-label" htmlFor="account-phone">PHONE
+              <input id="account-phone" name="phone" className="modal-input" type="tel" maxLength={30}
+                inputMode="tel" autoComplete="tel"
+                onBlur={(event) => recheckField('phone', event.currentTarget.form)}
+                {...invalidField('account-phone-error', fieldErrors.phone)} />
+              <FieldError id="account-phone-error" message={fieldErrors.phone} />
+            </label>
+            <label className="field-label" htmlFor="account-position">POSITION
+              <input id="account-position" name="position" className="modal-input" maxLength={100}
+                placeholder="e.g. Senior Stylist"
+                onBlur={(event) => recheckField('position', event.currentTarget.form)}
+                {...invalidField('account-position-error', fieldErrors.position)} />
+              <FieldError id="account-position-error" message={fieldErrors.position} />
+            </label>
+          </div>
+          <label className="field-label" htmlFor="account-bio">BIO
+            <textarea id="account-bio" name="bio" className="modal-input" rows={3} maxLength={1000}
+              placeholder="A short introduction shown on the team page."
+              onBlur={(event) => recheckField('bio', event.currentTarget.form)}
+              {...invalidField('account-bio-error', fieldErrors.bio)} />
+            <FieldError id="account-bio-error" message={fieldErrors.bio} />
+          </label>
+          <TagMultiSelect
+            label="COVERED ROLES"
+            hint="Roles this staff member can step into. Pick from the list or add your own."
+            options={COVERED_ROLE_VOCABULARY}
+            value={coveredRoles}
+            onChange={setCoveredRoles}
+          />
+          <CheckboxMultiSelect
+            label="SPECIALTIES"
+            options={categories}
+            value={specialties}
+            onChange={(next) => { setSpecialties(next); if (next.length > 0) setSpecialtyError(''); }}
+            errorId="account-specialties-error"
+            errorMessage={specialtyError}
+          />
+          <ToggleSwitch
+            label="Show on team page"
+            hint="List this staff member on the public team page."
+            checked={showOnTeam}
+            onChange={(next) => {
+              setShowOnTeam(next);
+              if (!next) setSpecialtyError('');
+            }}
+          />
         </div>
 
         <div className="form-section">
@@ -3171,11 +3418,9 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
           </div>
         </div>
 
-        <p className="form-hint">This configured backend does not support administrator-created accounts.</p>
-
         <div className="modal-actions">
           <button type="button" className="secondary-action" onClick={onClose}>Cancel</button>
-          <button type="submit" className="primary-action" disabled>{submitting ? 'Creating…' : 'Create Account'}</button>
+          <button type="submit" className="primary-action" disabled={submitting}>{submitting ? 'Creating…' : 'Create Account'}</button>
         </div>
       </form>
     </div>

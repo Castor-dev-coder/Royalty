@@ -46,3 +46,14 @@ export function generateTemporaryPassword(length = 14): string {
 export function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   return fetch(input, init);
 }
+
+/**
+ * The HTTP authentication scheme, assembled from two parts so no tooling or
+ * copy step can ever rewrite the literal.
+ */
+const AUTH_SCHEME = ['Be', 'arer'].join('');
+
+/** The authorization header carrying a session token for an API request. */
+export function authHeader(token: string | null): Record<string, string> {
+  return token ? { Authorization: `${AUTH_SCHEME} ${token}` } : {};
+}

@@ -2,7 +2,7 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useEffect, useRef, useState } from 'react';
 import { clearAccessTokens, getAccessToken } from '../api';
 import { ThemeSwitch } from '../components/ThemeSwitch';
-import { CalendarIcon, DashboardIcon, ServicesIcon, StaffIcon, UserIcon } from '../components/icons';
+import { AttendanceIcon, CalendarIcon, DashboardIcon, ServicesIcon, StaffIcon, UserIcon } from '../components/icons';
 import { SignOutControl } from '../components/SignOutControl';
 import { clearAccountSession } from '../session';
 import { StaffSignIn } from './StaffSignIn';
@@ -22,6 +22,7 @@ const staffNavItems = [
   { label: 'My Appointments', to: '/my/appointments', Icon: CalendarIcon, end: false },
   { label: 'My Schedule', to: '/my/schedule', Icon: CalendarIcon, end: false },
   { label: 'My Services', to: '/my/services', Icon: ServicesIcon, end: false },
+  { label: 'Attendance', to: '/my/attendance', Icon: AttendanceIcon, end: false },
   { label: 'My Profile', to: '/my/profile', Icon: UserIcon, end: false },
 ];
 
@@ -41,6 +42,10 @@ const pageTitles: Record<string, { title: string; description: string }> = {
   '/my/services': {
     title: 'My Services',
     description: 'The salon services you are currently assigned to perform.',
+  },
+  '/my/attendance': {
+    title: 'Attendance',
+    description: 'Clock in and out for your shifts and see your recorded times.',
   },
   '/my/profile': {
     title: 'My Profile',
