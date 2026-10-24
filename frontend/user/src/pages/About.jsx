@@ -1,8 +1,6 @@
-import EmployeeCard from '../components/EmployeeCard.jsx'
 import SafeImage from '../components/SafeImage.jsx'
 import WaveDivider from '../components/WaveDivider.jsx'
-import aboutStats from '../data/about.js'
-import employees from '../data/employees.js'
+
 
 function About() {
   return (
@@ -51,18 +49,11 @@ function About() {
                 — Founder, Royalty Hair and Nails Studio
               </cite>
             </blockquote>
-            <div className="grid grid-cols-3 gap-4.5 max-[380px]:gap-2.5">
-              {aboutStats.map(({ value, label }) => (
-                <div className="flex flex-col gap-1.75" key={label}>
-                  <strong className="font-serif text-[clamp(25px,2.36vw,34px)] leading-[1.1] font-semibold text-(--gold)">
-                    {value}
-                  </strong>
-                  <span className="font-sans text-[clamp(10px,0.83vw,12px)] leading-[1.2] font-medium tracking-[0.8px] text-[#a7a198] uppercase">
-                    {label}
-                  </span>
-                </div>
-              ))}
-            </div>
+            {/* No studio-stats endpoint exists yet (FE gap) — the fabricated
+                numbers were removed rather than replaced with invented ones. */}
+            <p className="m-0 text-[clamp(13px,1.1vw,15px)] leading-[1.7] text-[#a7a198]" role="status">
+              Studio statistics are not available yet.
+            </p>
           </div>
         </section>
 
@@ -87,11 +78,11 @@ function About() {
             </p>
           </header>
 
-          <div className="mx-auto mt-19 grid w-[calc(100%-128px)] max-w-328 grid-cols-1 gap-9.5 max-[680px]:mt-9.5 max-[680px]:mx-auto max-[680px]:w-[calc(100%-36px)] xl:grid-cols-2 min-[1400px]:!ml-16! min-[1400px]:!mr-0 min-[1400px]:!w-328!">
-            {employees.map((employee) => (
-              <EmployeeCard key={employee.id} {...employee} />
-            ))}
-          </div>
+          {/* No public team endpoint exists yet (staff list is admin-gated) —
+              empty state instead of demo profiles. */}
+          <p className="mx-auto mt-19 max-w-[calc(100%-128px)] text-center text-[clamp(15px,1.3vw,18px)] leading-[1.7] text-[#a7a198] max-[680px]:mt-9.5 max-[680px]:max-w-[calc(100%-36px)]" role="status">
+            Our team profiles are not available yet.
+          </p>
         </section>
     </main>
   )

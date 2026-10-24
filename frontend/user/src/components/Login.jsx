@@ -1,21 +1,13 @@
 import { useRef, useState } from 'react'
 import AuthModal from './AuthModal.jsx'
 import BrandMark from './BrandMark.jsx'
-
-// Development-only convenience for local testing: fills the mock sign-in form
-// with obviously fictional values. It never submits on its own — the regular
-// LOG IN button stays the authoritative path — and it is compiled out of
-// production builds (import.meta.env.DEV is false there). The project defines
-// no seeded demo account; these values exist only to speed up local testing of
-// the mock authentication flow.
-const DEV_DEMO_FILL = {
-  email: 'maria@demo.example',
-  password: 'demo1234',
-}
+import { useAuth } from '../context/useAuth.jsx'
+import { ApiError, AuthError, ValidationError } from '../lib/api.js'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 function Login({ onClose, onSwitch, onLogin = () => {} }) {
+  const { signIn } = useAuth()
   const [showPassword, setShowPassword] = useState(false)
   const [message, setMessage] = useState('')
   const [errors, setErrors] = useState({})
@@ -23,20 +15,21 @@ function Login({ onClose, onSwitch, onLogin = () => {} }) {
   const submittingRef = useRef(false)
   const formRef = useRef(null)
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault()
     // Guards duplicate submissions even before React re-renders.
     if (submittingRef.current) return
 
     const form = event.currentTarget
     const email = String(form.elements.email.value).trim()
+    const password = String(form.elements.password.value)
     const nextErrors = {}
     if (!email) {
       nextErrors.email = 'Enter your email address.'
     } else if (!EMAIL_PATTERN.test(email)) {
       nextErrors.email = 'Enter a valid email address, such as you@example.com.'
     }
-    if (!form.elements.password.value) {
+    if (!password) {
       nextErrors.password = 'Enter your password.'
     }
     setErrors(nextErrors)
@@ -48,20 +41,26 @@ function Login({ onClose, onSwitch, onLogin = () => {} }) {
 
     submittingRef.current = true
     setSubmitting(true)
-    const name = email.split('@')[0].replace(/[._-]/g, ' ') || 'Maria'
-    const user = { name: name.replace(/\b\w/g, (letter) => letter.toUpperCase()), email }
-    localStorage.setItem('royalty-user', JSON.stringify(user))
-    onLogin(user)
-    onClose()
-  }
-
-  function fillDemoCredentials() {
-    const form = formRef.current
-    if (!form) return
-    form.elements.email.value = DEV_DEMO_FILL.email
-    form.elements.password.value = DEV_DEMO_FILL.password
-    setErrors({})
-    setMessage('Demo values filled. Press LOG IN to continue.')
+    setMessage('')
+    const rememberMe = Boolean(form.elements.rememberMe?.checked)
+    try {
+      const user = await signIn(email, password, rememberMe)
+      onLogin(user)
+      onClose()
+    } catch (error) {
+      if (error instanceof ValidationError && error.details && typeof error.details === 'object') {
+        setErrors((current) => ({ ...current, ...error.details }))
+      } else if (error instanceof AuthError) {
+        setMessage('Email or password is incorrect.')
+      } else if (error instanceof ApiError) {
+        setMessage(error.message)
+      } else {
+        setMessage('Something went wrong. Please try again.')
+      }
+    } finally {
+      submittingRef.current = false
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -148,6 +147,14 @@ function Login({ onClose, onSwitch, onLogin = () => {} }) {
               Forgot password?
             </button>
           </div>
+          <label className="-mt-[2px] flex cursor-pointer items-center gap-[8px] text-[0.72rem] text-[#b3ada2]">
+            <input
+              className="size-[15px] cursor-pointer accent-[var(--gold)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--gold)]"
+              name="rememberMe"
+              type="checkbox"
+            />
+            Keep me logged in
+          </label>
           <button
             className="btn-pill mt-1 inline-flex min-h-[46px] w-full cursor-pointer items-center justify-center rounded-full border border-[var(--gold)] bg-[var(--gold)] px-[1.4rem] py-[0.8rem] text-[0.7rem] font-bold tracking-[0.13em] text-[#111] uppercase hover:bg-[var(--gold-bright)] disabled:cursor-default disabled:opacity-60"
             disabled={submitting}
@@ -168,22 +175,12 @@ function Login({ onClose, onSwitch, onLogin = () => {} }) {
         </div>
         <button
           className="flex min-h-11 w-full cursor-pointer items-center justify-center gap-[10px] rounded border border-[#34322e] bg-[#171716] text-[0.7rem] text-[#e1ded8] transition-[border-color,background] duration-[180ms] hover:border-[var(--gold)] hover:bg-[#1d1c19]"
-          onClick={() => setMessage('Google sign-in is not connected yet.')}
+          onClick={() => setMessage('Sign-up isn’t available yet.')}
           type="button"
         >
           <span className="font-[Arial,sans-serif] text-base font-bold text-[#4285f4]" aria-hidden="true">G</span>
           Log in with Google
         </button>
-        {import.meta.env.DEV && (
-          <button
-            aria-label="Fill the form with fictional demo values (development helper). Does not submit the form."
-            className="auth-helper mt-[14px] cursor-pointer border-0 bg-transparent p-0 text-[0.6rem] font-semibold tracking-[0.12em] uppercase"
-            onClick={fillDemoCredentials}
-            type="button"
-          >
-            Fill demo credentials (dev)
-          </button>
-        )}
       </div>
     </AuthModal>
   )

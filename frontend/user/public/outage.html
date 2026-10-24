@@ -1,0 +1,102 @@
+<!doctype html>
+<!-- Static offline outage page, precached by sw.js and served ONLY when a
+     navigation fails because the network or the host is unreachable.
+     Inline CSS, no JavaScript, no external requests: it must render from a
+     cold cache with nothing else available. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>We'll be right back · Royalty Hair &amp; Nails Studio</title>
+    <style>
+      :root {
+        --gold: #d4b45c;
+        --gold-bright: #e2c470;
+        --ink: #0a0a09;
+        --body: #d8d4cb;
+        --muted: #b3ada2;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; }
+      body {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--ink);
+        color: var(--body);
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        text-align: center;
+      }
+      main {
+        width: 100%;
+        max-width: 640px;
+        padding: 56px 20px;
+      }
+      .crown { width: 72px; height: auto; color: var(--gold); }
+      .eyebrow {
+        margin: 24px 0 0;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.32em;
+        text-transform: uppercase;
+        color: var(--gold);
+      }
+      h1 {
+        margin: 16px 0 0;
+        font-family: Georgia, "Times New Roman", serif;
+        font-weight: 300;
+        font-size: clamp(36px, 7vw, 60px);
+        line-height: 1.05;
+        color: #f4f1eb;
+      }
+      .lede {
+        margin: 20px auto 0;
+        max-width: 420px;
+        font-size: 15px;
+        line-height: 1.75;
+        color: var(--body);
+      }
+      a.reload {
+        display: inline-block;
+        margin-top: 36px;
+        padding: 14px 32px;
+        border: 1px solid var(--gold);
+        border-radius: 999px;
+        background: var(--gold);
+        color: #15120b;
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        text-decoration: none;
+      }
+      a.reload:hover, a.reload:focus-visible { background: var(--gold-bright); }
+      a.reload:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
+      .foot { margin: 32px 0 0; font-size: 13px; color: var(--muted); }
+      .foot a { color: var(--gold); text-underline-offset: 4px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <svg class="crown" viewBox="0 0 100 78" fill="none" aria-hidden="true">
+        <path d="m10 23 19 17 20-30 21 30 20-17-8 43H18L10 23Z" stroke="currentColor" stroke-width="3" />
+        <path d="M18 55h64M26 67h48" stroke="currentColor" stroke-width="3" />
+        <circle cx="10" cy="20" r="4" fill="currentColor" />
+        <circle cx="49" cy="8" r="4" fill="currentColor" />
+        <circle cx="90" cy="20" r="4" fill="currentColor" />
+      </svg>
+      <p class="eyebrow">Royalty Hair &amp; Nails Studio</p>
+      <h1>We'll be right back</h1>
+      <p class="lede">
+        We can't reach the salon server right now. Nothing is lost — reload the
+        page once you're back online.
+      </p>
+      <a class="reload" href="/">Reload</a>
+      <p class="foot">
+        Call the salon:
+        <a href="tel:+639XXXXXXXXX">+63 9XX XXX XXXX</a>
+      </p>
+    </main>
+  </body>
+</html>

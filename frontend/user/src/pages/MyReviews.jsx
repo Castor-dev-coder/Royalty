@@ -1,42 +1,13 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import EmptyState from '../components/EmptyState.jsx'
 import { useAuth } from '../context/useAuth.jsx'
-import { useToast } from '../context/useToast.jsx'
+import { useRecoveryTick } from '../lib/useOutage.js'
+import { fetchMyAppointments } from '../lib/api.js'
 
-const myReviews = [
-  {
-    id: 'r1',
-    service: 'Radiance Facial',
-    date: 'Aug 24, 2026',
-    rating: 5,
-    stylist: 'Elena',
-    text: 'My skin has never felt this good. The room was calm and the whole visit felt genuinely luxurious.',
-  },
-  {
-    id: 'r2',
-    service: 'Dimensional Color',
-    date: 'June 12, 2026',
-    rating: 5,
-    stylist: 'Sophia',
-    text: 'Sophia found the perfect tone for me and explained every step. The color still looks beautifully rich.',
-  },
-  {
-    id: 'r3',
-    service: 'Gel Manicure',
-    date: 'Apr 03, 2026',
-    rating: 5,
-    stylist: 'Maya',
-    text: 'Maya was detail-oriented and kind. The shape lasted weeks without a single chip.',
-  },
-]
-
-function getSavedReviews() {
-  try {
-    return JSON.parse(localStorage.getItem('royalty-reviews') || '[]')
-  } catch {
-    return []
-  }
+function formatDate(iso) {
+  const date = new Date(`${iso}T00:00:00`)
+  return Number.isNaN(date.getTime()) ? iso : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 function Stars({ value }) {
@@ -63,51 +34,67 @@ function Stars({ value }) {
   )
 }
 
+// The customer's own reviews, derived from GET /appointments/mine (there is no
+// dedicated "my reviews" endpoint — FE gap). Only real review rows appear.
+function toMyReview(item) {
+  const review = item.review
+  return {
+    id: review.id ?? item.id,
+    service: item.services.map((s) => s.serviceName).join(', '),
+    date: formatDate(item.appointmentDate),
+    rating: review.overallRating ?? review.rating,
+    stylist: item.staff ? `${item.staff.firstName} ${item.staff.lastName}`.trim() : 'Unassigned',
+    text: review.comment ?? '',
+  }
+}
+
 function MyReviews() {
   const navigate = useNavigate()
-  const { user } = useAuth()
-  const { showToast } = useToast()
+  const { user, restoring } = useAuth()
+  // Refetches the page's data whenever an outage recovers.
+  const recoveryTick = useRecoveryTick()
   const [filter, setFilter] = useState('all')
-  const [reviews, setReviews] = useState(() => [...myReviews, ...getSavedReviews()])
-  const [editingId, setEditingId] = useState(null)
-  const [draft, setDraft] = useState({ title: '', text: '' })
+  const [reviews, setReviews] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let stale = false
+    fetchMyAppointments({ page: 1, limit: 100 }).then(
+      (data) => {
+        if (stale) return
+        setReviews((data?.appointments ?? []).filter((item) => item.review).map(toMyReview))
+        setLoading(false)
+      },
+      () => {
+        if (stale) return
+        // Keep rows already on screen; the outage banner explains staleness.
+        setLoading(false)
+      },
+    )
+    return () => {
+      stale = true
+    }
+  }, [recoveryTick])
 
   const visibleReviews = useMemo(() => {
     if (filter === 'all') return reviews
     return reviews.filter((r) => r.rating === Number(filter))
   }, [filter, reviews])
 
-  function startEdit(review) {
-    setEditingId(review.id)
-    setDraft({ title: review.service, text: review.text })
-  }
-
-  function saveEdit(id) {
-    setReviews((current) => current.map((review) => (
-      review.id === id
-        ? { ...review, service: draft.title.trim() || review.service, text: draft.text.trim() || review.text }
-        : review
-    )))
-    const savedReviews = getSavedReviews().map((review) => (
-      review.id === id
-        ? { ...review, service: draft.title.trim() || review.service, text: draft.text.trim() || review.text }
-        : review
-    ))
-    localStorage.setItem('royalty-reviews', JSON.stringify(savedReviews))
-    setEditingId(null)
-    setDraft({ title: '', text: '' })
-    showToast('success', 'Your review has been updated.')
-  }
-
-  function cancelEdit() {
-    setEditingId(null)
-    setDraft({ title: '', text: '' })
-  }
-
-  function deleteReview(id) {
-    setReviews((current) => current.filter((r) => r.id !== id))
-    localStorage.setItem('royalty-reviews', JSON.stringify(getSavedReviews().filter((review) => review.id !== id)))
-    showToast('info', 'Your review has been deleted.')
+  // While the session is still being restored, keep the skeleton in place —
+  // bouncing to /services here would lose the requested page.
+  if (restoring) {
+    return (
+      <main className="min-h-[calc(100vh-76px)] bg-black py-16">
+        <div className="mx-auto w-[min(100%-48px,1180px)] max-[680px]:w-[min(100%-36px,1180px)]">
+          <div className="grid grid-cols-3 gap-6 max-[900px]:grid-cols-2 max-[680px]:grid-cols-1">
+            {[0, 1, 2].map((row) => (
+              <div className="h-[220px] animate-pulse rounded-lg border border-[rgba(212,180,92,0.22)] bg-[#11100e]" key={row} />
+            ))}
+          </div>
+        </div>
+      </main>
+    )
   }
 
   if (!user) return <Navigate to="/services" replace />
@@ -128,162 +115,61 @@ function MyReviews() {
         </div>
 
         <section className="mt-16" aria-label="Your shared experiences">
-          <div className="flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <p className="m-0 text-[10px] font-semibold tracking-[0.32em] text-(--gold) uppercase">
-                Shared by you
-              </p>
-              <h2 className="mt-2 mb-0 font-(--serif) text-[clamp(28px,3.4vw,40px)] leading-tight font-light text-[#f4f1eb]">
-                Your experiences
-              </h2>
-            </div>
+          <div className="mb-8 flex items-center justify-center gap-2">
+            <label className="text-[13px] tracking-[0.12em] text-[#918c82] uppercase" htmlFor="review-filter">
+              Filter by rating
+            </label>
+            <select
+              className="rounded-full border border-[rgba(212,180,92,0.4)] bg-[#11100e] px-4 py-2 text-[13px] text-[#f4f1eb] outline-none focus:border-(--gold)"
+              id="review-filter"
+              onChange={(event) => setFilter(event.target.value)}
+              value={filter}
+            >
+              <option value="all">All</option>
+              {[5, 4, 3, 2, 1].map((rating) => (
+                <option key={rating} value={rating}>{rating} stars</option>
+              ))}
+            </select>
           </div>
 
-          <div className="mt-8 flex flex-wrap items-center justify-between gap-4 border-y border-[rgba(212,180,92,0.18)] py-4">
-            <div className="flex items-center gap-3" role="tablist" aria-label="Filter reviews by rating">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={filter === 'all'}
-                onClick={() => setFilter('all')}
-                className={`cursor-pointer rounded-full border px-5 py-2 text-[11px] font-semibold tracking-[0.18em] uppercase transition-colors ${
-                  filter === 'all'
-                    ? 'border-(--gold) bg-(--gold) text-[#111111]'
-                    : 'border-[rgba(212,180,92,0.35)] bg-transparent text-[#c2beb6] hover:border-(--gold) hover:text-(--gold)'
-                }`}
-              >
-                All reviews
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={filter === '5'}
-                onClick={() => setFilter('5')}
-                className={`cursor-pointer rounded-full border px-5 py-2 text-[11px] font-semibold tracking-[0.18em] uppercase transition-colors ${
-                  filter === '5'
-                    ? 'border-(--gold) bg-(--gold) text-[#111111]'
-                    : 'border-[rgba(212,180,92,0.35)] bg-transparent text-[#c2beb6] hover:border-(--gold) hover:text-(--gold)'
-                }`}
-              >
-                5 stars
-              </button>
+          {loading && (
+            <div className="grid grid-cols-3 gap-6 max-[900px]:grid-cols-2 max-[680px]:grid-cols-1">
+              {[0, 1, 2].map((row) => (
+                <div className="h-[220px] animate-pulse rounded-lg border border-[rgba(212,180,92,0.22)] bg-[#11100e]" key={row} />
+              ))}
             </div>
-            <p className="m-0 text-[10px] tracking-[0.32em] text-(--gold) uppercase">
-              {visibleReviews.length} experiences
-            </p>
-          </div>
+          )}
 
-          <div className="mt-8 grid gap-6">
-            {visibleReviews.length === 0 && (
-              <div className="rounded-md border border-[rgba(212,180,92,0.22)] bg-[#11100e]">
-                <EmptyState
-                  actionLabel="Explore services"
-                  image="/images/empty-states/empty-reviews.svg"
-                  message={
-                    filter === 'all'
-                      ? 'Share your first experience after your next visit and it will appear here.'
-                      : 'No reviews match this rating filter yet.'
-                  }
-                  onAction={() => navigate('/services')}
-                  title={filter === 'all' ? 'No reviews yet' : 'Nothing under this filter'}
-                />
-              </div>
-            )}
+          {!loading && visibleReviews.length === 0 && (
+            <EmptyState
+              actionLabel="Book an appointment"
+              image="/images/empty-states/empty-reviews.svg"
+              message={reviews.length === 0
+                ? 'Reviews you leave after your visits will appear here.'
+                : 'No reviews match this rating filter.'}
+              onAction={() => navigate('/services')}
+              title={reviews.length === 0 ? 'No reviews yet' : 'Nothing matches'}
+            />
+          )}
 
-            {visibleReviews.map((review) => (
-              <article
-                key={review.id}
-                className="rounded-md border border-[rgba(212,180,92,0.55)] bg-[#11100e] p-6 shadow-[0_8px_24px_rgba(0,0,0,0.35)] sm:p-8"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div>
-                    <h3 className="m-0 font-(--serif) text-2xl font-light italic text-[#f4f1eb]">
-                      {review.service}
-                    </h3>
-                    <p className="mt-1 text-[10px] font-semibold tracking-[0.28em] text-[#918c82] uppercase">
-                      {review.date}
-                    </p>
-                  </div>
-                  <div className="text-right">
+          {!loading && visibleReviews.length > 0 && (
+            <div className="grid grid-cols-3 gap-6 max-[900px]:grid-cols-2 max-[680px]:grid-cols-1">
+              {visibleReviews.map((review) => (
+                <article className="flex flex-col gap-3 rounded-lg border border-[rgba(212,180,92,0.22)] bg-[#11100e] p-6" key={review.id}>
+                  <div className="flex items-start justify-between gap-3">
+                    <h2 className="m-0 font-(--serif) text-xl text-[#f4f1eb]">{review.service}</h2>
                     <Stars value={review.rating} />
-                    <p className="mt-1 text-[10px] tracking-[0.18em] text-[#918c82] uppercase">
-                      with {review.stylist}
-                    </p>
                   </div>
-                </div>
-
-                {editingId === review.id ? (
-                  <div className="mt-5">
-                    <label
-                      htmlFor={`edit-title-${review.id}`}
-                      className="sr-only"
-                    >
-                      Edit review title for {review.service}
-                    </label>
-                    <input
-                      id={`edit-title-${review.id}`}
-                      type="text"
-                      value={draft.title}
-                      onChange={(e) => setDraft((current) => ({ ...current, title: e.target.value }))}
-                      className="mb-3 w-full border-0 bg-transparent p-0 font-(--serif) text-2xl font-light italic text-[#f4f1eb] outline-none"
-                    />
-                    <label
-                      htmlFor={`edit-${review.id}`}
-                      className="sr-only"
-                    >
-                      Edit review for {review.service}
-                    </label>
-                    <textarea
-                      id={`edit-${review.id}`}
-                      rows={4}
-                      value={draft.text}
-                      onChange={(e) => setDraft((current) => ({ ...current, text: e.target.value }))}
-                      className="w-full resize-y rounded-md border border-[rgba(212,180,92,0.35)] bg-[#0d0d0c] px-4 py-3 text-sm leading-relaxed text-[#f4f1eb] outline-none transition-colors focus:border-(--gold)"
-                    />
-                    <div className="mt-3 flex items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={() => saveEdit(review.id)}
-                        className="btn-pill cursor-pointer rounded-full border border-(--gold) bg-(--gold) px-4 py-2 text-[10px] font-bold tracking-[0.2em] text-[#111] uppercase transition-colors hover:bg-(--gold-bright)"
-                      >
-                        Save
-                      </button>
-                      <button
-                        type="button"
-                        onClick={cancelEdit}
-                        className="btn-pill cursor-pointer rounded-full border border-[rgba(212,180,92,0.35)] bg-transparent px-4 py-2 text-[10px] font-semibold tracking-[0.2em] text-[#918c82] uppercase transition-colors hover:border-[rgba(212,180,92,0.6)] hover:text-[#f4f1eb]"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="mt-5 text-sm leading-relaxed text-[#e7e1d5]">
-                    {review.text}
+                  <p className="m-0 text-[12px] tracking-[0.12em] text-[#918c82] uppercase">
+                    {review.date} · with {review.stylist}
                   </p>
-                )}
-
-                {editingId !== review.id && (
-                  <div className="mt-6 flex items-center gap-6 border-t border-[rgba(212,180,92,0.15)] pt-4">
-                    <button
-                      type="button"
-                      onClick={() => startEdit(review)}
-                      className="cursor-pointer text-[10px] font-semibold tracking-[0.28em] text-(--gold) uppercase transition-opacity hover:opacity-80"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => deleteReview(review.id)}
-                      className="cursor-pointer text-[10px] font-semibold tracking-[0.28em] text-[#918c82] uppercase transition-colors hover:text-[#f4f1eb]"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                )}
-              </article>
-            ))}
-          </div>
+                  {review.text && (
+                    <p className="m-0 text-[14px] leading-[1.7] text-[#c2beb6]">{review.text}</p>
+                  )}
+                </article>
+              ))}
+            </div>
+          )}
         </section>
       </div>
     </main>

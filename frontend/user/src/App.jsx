@@ -20,6 +20,7 @@ const Profile = lazy(() => import('./pages/Profile.jsx'))
 const ChangePassword = lazy(() => import('./pages/ChangePassword.jsx'))
 const MyReviews = lazy(() => import('./pages/MyReviews.jsx'))
 const Reviews = lazy(() => import('./pages/Reviews.jsx'))
+const NotFound = lazy(() => import('./pages/NotFound.jsx'))
 const About = lazy(() => import('./pages/About.jsx'))
 
 function lazily(element, fallback) {
@@ -62,6 +63,10 @@ function App() {
               <Route
                 element={lazily(<About />, <ContentPageSkeleton />)}
                 path="/about"
+              />
+              <Route
+                element={lazily(<NotFound />, <ContentPageSkeleton />)}
+                path="*"
               />
             </Route>
           </Routes>

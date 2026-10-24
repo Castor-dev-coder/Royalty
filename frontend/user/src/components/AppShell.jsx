@@ -1,5 +1,7 @@
 import { useCallback } from 'react'
-import { Outlet } from 'react-router-dom'
+import { Outlet, useLocation } from 'react-router-dom'
+import OutageHost from './OutageHost.jsx'
+import ErrorBoundary from './ErrorBoundary.jsx'
 import Footer from './Footer.jsx'
 import Login from './Login.jsx'
 import MobileBookCTA from './MobileBookCTA.jsx'
@@ -14,6 +16,7 @@ import { useToast } from '../context/useToast.jsx'
 function AppShell() {
   const { user, authView, login, logout, openAuth, closeAuth, switchAuth } = useAuth()
   const { showToast } = useToast()
+  const location = useLocation()
 
   const handleLogin = useCallback(
     (nextUser) => {
@@ -40,8 +43,12 @@ function AppShell() {
         onLogout={handleLogout}
         user={user}
       />
+      <OutageHost />
       <div>
-        <Outlet />
+        {/* Per-route boundary: keyed by pathname so navigation resets it. */}
+        <ErrorBoundary key={location.pathname}>
+          <Outlet />
+        </ErrorBoundary>
       </div>
       <Footer onLoginClick={() => openAuth('login')} user={user} />
       <MobileBookCTA />

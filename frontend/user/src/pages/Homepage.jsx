@@ -1,18 +1,51 @@
-import { useCallback } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import GalleryMarquee from '../components/GalleryMarquee.jsx'
+import EmptyState from '../components/EmptyState.jsx'
 import OurStory from '../components/OurStory.jsx'
 import ReviewsCarousel from '../components/ReviewsCarousel.jsx'
 import ServiceCard from '../components/ServiceCard.jsx'
 import SafeImage from '../components/SafeImage.jsx'
 import WaveDivider from '../components/WaveDivider.jsx'
 import { useAuth } from '../context/useAuth.jsx'
-import { images, serviceDetails } from '../data/sample-data'
-import { reviews } from '../data/reviews.js'
+import { useRecoveryTick } from '../lib/useOutage.js'
+import { AuthError, fetchReviewList, fetchServices } from '../lib/api.js'
+
+// Brand assets (not data) — they live in /public/images.
+const HERO_IMAGE = '/images/hero.jpg'
+const STORY_IMAGE = '/images/stylist-curling-hair.jpg'
+
+function formatPeso(amount) {
+  return `₱${Number(amount).toLocaleString('en-PH', { minimumFractionDigits: 0 })}`
+}
+
+function formatReviewDate(iso) {
+  const date = new Date(iso)
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+// GET /reviews rows -> ReviewCard props. The API carries no reviewer identity,
+// so cards show a neutral label instead of a fabricated name.
+function toCardReview(row) {
+  return {
+    id: row.id,
+    name: 'Verified customer',
+    avatar: undefined,
+    date: formatReviewDate(row.createdAt),
+    rating: row.overallRating ?? row.rating,
+    category: row.appointment?.services?.[0]?.serviceName ?? '',
+    text: row.comment ?? '',
+  }
+}
 
 function Homepage() {
   const { user, openAuth } = useAuth()
+  // Refetches the page's data whenever an outage recovers.
+  const recoveryTick = useRecoveryTick()
   const navigate = useNavigate()
+  const [services, setServices] = useState([])
+  const [servicesStatus, setServicesStatus] = useState('loading') // loading | ready | empty | unavailable
+  const [reviews, setReviews] = useState([])
+
   // Booking requires a signed-in customer: signed-out visitors get the login
   // dialog (the app's established behavior), signed-in ones go straight to the
   // services catalogue where booking actually works.
@@ -21,6 +54,49 @@ function Homepage() {
     [navigate, openAuth, user],
   )
 
+  useEffect(() => {
+    let stale = false
+    // Re-runs when auth changes: the catalogue is role-gated, so a request made
+    // before sign-in fails with 401 and must be retried afterwards.
+    fetchServices().then(
+      (data) => {
+        if (stale) return
+        const rows = data?.services ?? []
+        setServices(rows.slice(0, 6))
+        setServicesStatus(rows.length > 0 ? 'ready' : 'empty')
+      },
+      (error) => {
+        if (stale) return
+        // GET /services requires a signed-in role; anonymous visitors get the
+        // sign-in prompt instead of invented catalogue data.
+        // Keep whatever is already on screen — the outage banner explains
+        // staleness; only a page with nothing to show gets an empty state.
+        setServicesStatus((current) =>
+          current === 'ready' ? 'ready' : error instanceof AuthError ? 'unavailable' : 'empty',
+        )
+      },
+    )
+    return () => {
+      stale = true
+    }
+  }, [user, recoveryTick])
+
+  useEffect(() => {
+    let stale = false
+    fetchReviewList({ page: 1, limit: 6 }).then(
+      (data) => {
+        if (stale) return
+        setReviews((data?.reviews ?? []).map(toCardReview))
+      },
+      () => {
+        // ReviewsCarousel renders its own empty state.
+      },
+    )
+    return () => {
+      stale = true
+    }
+  }, [recoveryTick])
+
   return (
     <main>
       <section
@@ -28,7 +104,7 @@ function Homepage() {
         id="home"
       >
         <div className="absolute inset-y-0 right-0 w-[min(70%,920px)] overflow-hidden max-[900px]:w-[78%] max-[680px]:inset-0 max-[680px]:w-full after:absolute after:inset-0 after:bg-[linear-gradient(90deg,#090909_0%,rgba(9,9,9,0.88)_10%,rgba(9,9,9,0.05)_72%),linear-gradient(0deg,rgba(9,9,9,0.75),transparent_34%,rgba(9,9,9,0.18))] after:content-[''] max-[680px]:after:bg-[linear-gradient(0deg,#090909_0%,rgba(9,9,9,0.9)_10%,rgba(9,9,9,0.2)_76%),linear-gradient(90deg,rgba(9,9,9,0.65),transparent)]">
-          <SafeImage className="block size-full object-cover object-[center_40%] opacity-[0.78] max-[680px]:object-[62%_center]" src={images.hero} alt="" />
+          <SafeImage className="block size-full object-cover object-[center_40%] opacity-[0.78] max-[680px]:object-[62%_center]" src={HERO_IMAGE} alt="" />
         </div>
         <div className="relative z-[1] mx-auto flex min-h-[inherit] w-[min(100%-48px,1180px)] items-center justify-between py-[70px] max-[600px]:w-[min(100%-36px,1180px)] max-[680px]:min-h-[610px] max-[680px]:items-end max-[680px]:py-[50px]">
           <div className="max-w-[550px]">
@@ -85,13 +161,37 @@ function Homepage() {
             </p>
           </header>
           <div className="grid grid-cols-3 gap-[22px] max-[900px]:grid-cols-2 max-[680px]:grid-cols-1 max-[680px]:gap-[17px]">
-            {[...serviceDetails, ...serviceDetails].map((service, index) => (
-              <ServiceCard
-                key={`${service.title}-${index}`}
-                {...service}
-                onBook={handleBook}
-              />
-            ))}
+            {servicesStatus === 'loading' &&
+              [0, 1, 2].map((row) => (
+                <div className="h-[380px] animate-pulse rounded-[16px] border border-[rgba(212,180,92,0.35)] bg-[var(--card)]" key={row} />
+              ))}
+            {servicesStatus === 'ready' &&
+              services.map((service) => (
+                <ServiceCard
+                  description={service.description ?? ''}
+                  duration={`${service.durationMinutes} MIN`}
+                  image={undefined}
+                  key={service.id}
+                  onBook={handleBook}
+                  price={formatPeso(service.price)}
+                  title={service.name}
+                />
+              ))}
+            {(servicesStatus === 'empty' || servicesStatus === 'unavailable') && (
+              <div className="col-span-full">
+                <EmptyState
+                  actionLabel={servicesStatus === 'unavailable' ? 'Sign in' : undefined}
+                  image="/images/empty-states/empty-search.svg"
+                  message={
+                    servicesStatus === 'unavailable'
+                      ? 'Sign in to browse our current service catalogue.'
+                      : 'Our services will appear here once they are published.'
+                  }
+                  onAction={servicesStatus === 'unavailable' ? () => openAuth('login') : undefined}
+                  title={servicesStatus === 'unavailable' ? 'Sign in to see services' : 'No services yet'}
+                />
+              </div>
+            )}
           </div>
           <div className="mt-[42px] flex justify-center">
             <Link className="btn-pill type-section-button inline-flex min-h-[46px] items-center justify-center rounded-full border border-[var(--gold)] bg-[var(--gold)] px-[1.4rem] py-[0.8rem] text-[#111] no-underline hover:bg-[var(--gold-bright)]" to="/services">
@@ -138,13 +238,18 @@ function Homepage() {
             </h2>
             <div className="mx-auto my-[18px] h-0.5 w-12 bg-[var(--gold)] max-[680px]:my-4" />
           </header>
-          <GalleryMarquee images={images.gallery} />
+          {/* No gallery endpoint exists yet — empty state instead of stock photos. */}
+          <EmptyState
+            image="/images/empty-states/empty-search.svg"
+            message="Client photos will appear here once the gallery is connected."
+            title="Gallery coming soon"
+          />
         </div>
       </section>
 
       <WaveDivider />
 
-      <OurStory image={images.story} />
+      <OurStory image={STORY_IMAGE} />
     </main>
   )
 }

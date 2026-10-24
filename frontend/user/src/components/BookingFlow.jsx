@@ -1,21 +1,36 @@
 import { useEffect, useRef, useState } from 'react'
 import Dialog from './Dialog.jsx'
 import SafeImage from './SafeImage.jsx'
+import { ApiError, createAppointment, fetchEligibleStaff } from '../lib/api.js'
 
 /* The progress indicator maps 1:1 onto the booking flow's real states:
-   1 = details form, 2 = payment method, 3 = confirmation screen. */
-const STEPS = ['Details', 'Payment', 'Confirmed']
+   1 = details form, 2 = review, 3 = confirmation screen. */
+const STEPS = ['Details', 'Review', 'Confirmed']
 const SWIPE_MS = 260
 
 function prefersReducedMotion() {
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches
 }
 
+function formatPeso(amount) {
+  return `₱${Number(amount).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`
+}
+
+function todayIso() {
+  const now = new Date()
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000)
+  return local.toISOString().slice(0, 10)
+}
+
 function BookingFlow({ service, user, onClose }) {
   const [step, setStep] = useState(1)
   const [slide, setSlide] = useState(null) // { from, to, dir } while swiping
-  const [form, setForm] = useState({ name: user?.name || '', email: user?.email || '', date: '', time: '', notes: '', payment: 'GCASH' })
+  const [form, setForm] = useState({ staffId: '', date: '', time: '' })
+  const [staff, setStaff] = useState([])
+  const [staffStatus, setStaffStatus] = useState('loading') // loading | ready | missing
   const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [confirmation, setConfirmation] = useState(null) // { appointmentCode }
   const transitioningRef = useRef(false)
   const slideTimerRef = useRef(null)
   const contentRef = useRef(null)
@@ -35,6 +50,26 @@ function BookingFlow({ service, user, onClose }) {
     if (slideTimerRef.current) window.clearTimeout(slideTimerRef.current)
     slideTimerRef.current = null
   }, [])
+
+  // Real eligible staff for this service (POST /appointments requires staffId).
+  useEffect(() => {
+    let stale = false
+    fetchEligibleStaff([service.id]).then(
+      (data) => {
+        if (stale) return
+        const rows = data?.staff ?? []
+        setStaff(rows)
+        setStaffStatus(rows.length > 0 ? 'ready' : 'missing')
+        if (rows.length > 0) setForm((current) => ({ ...current, staffId: current.staffId || rows[0].id }))
+      },
+      () => {
+        if (!stale) setStaffStatus('missing')
+      },
+    )
+    return () => {
+      stale = true
+    }
+  }, [service.id])
 
   function update(name, value) {
     setForm((current) => ({ ...current, [name]: value }))
@@ -71,13 +106,41 @@ function BookingFlow({ service, user, onClose }) {
     slideTimerRef.current = window.setTimeout(commit, SWIPE_MS + 160)
   }
 
-  function continueToPayment(event) {
+  function continueToReview(event) {
     event.preventDefault()
-    if (!form.name || !form.email || !form.date || !form.time) {
+    if (!form.staffId || !form.date || !form.time) {
       setError('Please complete the required fields before continuing.')
       return
     }
     goToStep(2)
+  }
+
+  function confirmBooking() {
+    if (submitting) return
+    setSubmitting(true)
+    setError('')
+    createAppointment({
+      staffId: form.staffId,
+      appointmentDate: form.date,
+      startTime: form.time,
+      serviceIds: [service.id],
+    }).then(
+      (data) => {
+        setSubmitting(false)
+        setConfirmation(data?.appointment ?? data ?? {})
+        goToStep(3)
+      },
+      (err) => {
+        setSubmitting(false)
+        setError(
+          err instanceof ApiError && err.kind === 'validation'
+            ? 'Please choose a valid date and time during opening hours.'
+            : err instanceof ApiError
+              ? err.message
+              : 'Your booking could not be completed. Please try again.',
+        )
+      },
+    )
   }
 
   function renderStep(number) {
@@ -85,9 +148,13 @@ function BookingFlow({ service, user, onClose }) {
       return (
         <div className="px-6 py-12 text-center">
           <div className="mx-auto grid size-16 place-items-center rounded-full border border-(--gold) text-3xl text-(--gold)">✓</div>
-          <h3 className="mt-5 font-(--serif) text-2xl text-(--gold)">Thank you, {form.name}!</h3>
+          <h3 className="mt-5 font-(--serif) text-2xl text-(--gold)">Thank you, {user?.name || 'guest'}!</h3>
           <p className="mx-auto mt-3 max-w-sm text-sm leading-6 text-[#bbb6ad]">Your appointment has been successfully booked. We look forward to pampering you!</p>
-          <p className="mx-auto mt-3 max-w-sm text-[10px] leading-5 tracking-[1.2px] text-[#8d877c] uppercase">Demo booking recorded locally in this browser — no payment was processed.</p>
+          {confirmation?.appointmentCode && (
+            <p className="mx-auto mt-3 max-w-sm text-[11px] leading-5 tracking-[1.2px] text-[#8d877c] uppercase">
+              Reference: {confirmation.appointmentCode}
+            </p>
+          )}
           <button type="button" onClick={onClose} className="btn-pill mt-7 border border-(--gold) bg-(--gold) px-7 py-3 text-xs font-bold uppercase tracking-wider text-[#111]">Done</button>
         </div>
       )
@@ -95,14 +162,47 @@ function BookingFlow({ service, user, onClose }) {
 
     return (
       <div className="px-6 py-6">
-        <div className="mb-6 flex items-center gap-3 rounded border border-[rgba(212,180,92,.35)] bg-[#181612] p-3"><SafeImage className="size-14 rounded object-cover" src={service.image} alt="" /><div><p className="m-0 font-(--serif) text-lg text-[#f3eee5]">{service.title}</p><p className="m-0 mt-1 text-xs text-(--gold)">{service.duration} · {service.price}</p></div></div>
-        {number === 1 ? <form className="grid gap-4" onSubmit={continueToPayment}>
-          <label className="grid gap-1 text-xs uppercase tracking-wider text-[#bcb5a9]">Full name<input required value={form.name} onChange={(e) => update('name', e.target.value)} className="rounded border border-[#3a3835] bg-[#1c1b18] p-3 text-sm normal-case tracking-normal text-white outline-none focus:border-(--gold)" /></label>
-          <label className="grid gap-1 text-xs uppercase tracking-wider text-[#bcb5a9]">Email address<input required type="email" value={form.email} onChange={(e) => update('email', e.target.value)} className="rounded border border-[#3a3835] bg-[#1c1b18] p-3 text-sm normal-case tracking-normal text-white outline-none focus:border-(--gold)" /></label>
-          <div className="grid grid-cols-2 gap-3"><label className="grid gap-1 text-xs uppercase tracking-wider text-[#bcb5a9]">Date<input required type="date" value={form.date} onChange={(e) => update('date', e.target.value)} className="rounded border border-[#3a3835] bg-[#1c1b18] p-3 text-sm text-white outline-none focus:border-(--gold)" /></label><label className="grid gap-1 text-xs uppercase tracking-wider text-[#bcb5a9]">Time<select required value={form.time} onChange={(e) => update('time', e.target.value)} className="rounded border border-[#3a3835] bg-[#1c1b18] p-3 text-sm text-white outline-none focus:border-(--gold)"><option value="">Select</option><option>10:00 AM</option><option>1:00 PM</option><option>2:30 PM</option><option>4:00 PM</option></select></label></div>
-          <label className="grid gap-1 text-xs uppercase tracking-wider text-[#bcb5a9]">Special requests (optional)<textarea value={form.notes} onChange={(e) => update('notes', e.target.value)} rows="3" className="rounded border border-[#3a3835] bg-[#1c1b18] p-3 text-sm normal-case tracking-normal text-white outline-none focus:border-(--gold)" /></label>
-          {error && <p className="m-0 text-xs text-[#e9a68c]" role="alert">{error}</p>}<p className="m-0 text-[10px] leading-5 tracking-[1.2px] text-[#8d877c] uppercase">UI preview — bookings are not connected to the salon&apos;s live system. No real appointment is submitted.</p><button className="btn-pill mt-2 border border-(--gold) bg-(--gold) px-5 py-3 text-xs font-bold uppercase tracking-wider text-[#111]">Proceed to Payment</button>
-        </form> : <div className="grid gap-5"><div className="rounded border border-[rgba(212,180,92,.25)] p-4 text-sm leading-7 text-[#cbc5ba]"><p className="m-0 text-xs uppercase tracking-wider text-(--gold)">Appointment summary</p><p className="m-0 mt-2">{form.date} at {form.time}</p><p className="m-0">Total: <strong className="text-(--gold)">{service.price}</strong></p><p className="m-0 mt-1 text-[10px] leading-5 tracking-[1.2px] text-[#8d877c] uppercase">Demo flow — nothing is charged</p></div><fieldset className="grid gap-3"><legend className="mb-1 text-xs uppercase tracking-wider text-[#bcb5a9]">Choose payment method</legend>{['GCASH', 'CASH'].map((method) => <label key={method} className="flex cursor-pointer items-center gap-3 rounded border border-[#3a3835] p-4 text-sm text-[#eee] has-checked:border-(--gold)"><input type="radio" name="payment" value={method} checked={form.payment === method} onChange={(e) => update('payment', e.target.value)} />{method === 'GCASH' ? 'GCash' : 'Pay at the salon'}</label>)}</fieldset><div className="flex gap-3"><button type="button" onClick={() => goToStep(1)} className="btn-pill flex-1 border border-[#635b4c] px-5 py-3 text-xs font-bold uppercase text-[#d5cdbf]">Back</button><button type="button" onClick={() => goToStep(3)} className="btn-pill flex-1 border border-(--gold) bg-(--gold) px-5 py-3 text-xs font-bold uppercase text-[#111]">Confirm Payment</button></div></div>}
+        <div className="mb-6 flex items-center gap-3 rounded border border-[rgba(212,180,92,.35)] bg-[#181612] p-3"><SafeImage className="size-14 rounded object-cover" src={undefined} alt="" /><div><p className="m-0 font-(--serif) text-lg text-[#f3eee5]">{service.name}</p><p className="m-0 mt-1 text-xs text-(--gold)">{service.durationMinutes} MIN · {formatPeso(service.price)}</p></div></div>
+        {staffStatus === 'missing' ? (
+          <div className="grid gap-4 text-center">
+            <p className="m-0 text-sm leading-6 text-[#bbb6ad]" role="alert">
+              Online booking is not available for this service yet — no eligible staff can be assigned.
+            </p>
+            <button type="button" onClick={onClose} className="btn-pill border border-(--gold) bg-(--gold) px-7 py-3 text-xs font-bold uppercase tracking-wider text-[#111]">Close</button>
+          </div>
+        ) : number === 1 ? (
+          <form className="grid gap-4" onSubmit={continueToReview}>
+            <label className="grid gap-1 text-xs uppercase tracking-wider text-[#bcb5a9]">Preferred stylist
+              <select required value={form.staffId} onChange={(e) => update('staffId', e.target.value)} className="rounded border border-[#3a3835] bg-[#1c1b18] p-3 text-sm normal-case tracking-normal text-white outline-none focus:border-(--gold)">
+                {staffStatus === 'loading' && <option value="">Loading stylists…</option>}
+                {staff.map((member) => (
+                  <option key={member.id} value={member.id}>{member.firstName} {member.lastName} · {member.primaryRole}</option>
+                ))}
+              </select>
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="grid gap-1 text-xs uppercase tracking-wider text-[#bcb5a9]">Date<input required type="date" min={todayIso()} value={form.date} onChange={(e) => update('date', e.target.value)} className="rounded border border-[#3a3835] bg-[#1c1b18] p-3 text-sm text-white outline-none focus:border-(--gold)" /></label>
+              <label className="grid gap-1 text-xs uppercase tracking-wider text-[#bcb5a9]">Time<input required type="time" value={form.time} onChange={(e) => update('time', e.target.value)} className="rounded border border-[#3a3835] bg-[#1c1b18] p-3 text-sm text-white outline-none focus:border-(--gold)" /></label>
+            </div>
+            {error && <p className="m-0 text-xs text-[#e9a68c]" role="alert">{error}</p>}
+            <button className="btn-pill mt-2 border border-(--gold) bg-(--gold) px-5 py-3 text-xs font-bold uppercase tracking-wider text-[#111]">Review booking</button>
+          </form>
+        ) : (
+          <div className="grid gap-5">
+            <div className="rounded border border-[rgba(212,180,92,.25)] p-4 text-sm leading-7 text-[#cbc5ba]">
+              <p className="m-0 text-xs uppercase tracking-wider text-(--gold)">Appointment summary</p>
+              <p className="m-0 mt-2">{form.date} at {form.time}</p>
+              <p className="m-0">Stylist: {staff.find((member) => member.id === form.staffId)?.firstName} {staff.find((member) => member.id === form.staffId)?.lastName}</p>
+              <p className="m-0">Total: <strong className="text-(--gold)">{formatPeso(service.price)}</strong></p>
+              <p className="m-0 mt-1 text-[10px] leading-5 tracking-[1.2px] text-[#8d877c] uppercase">Payment happens at the salon</p>
+            </div>
+            {error && <p className="m-0 text-xs text-[#e9a68c]" role="alert">{error}</p>}
+            <div className="flex gap-3">
+              <button type="button" onClick={() => goToStep(1)} className="btn-pill flex-1 border border-[#635b4c] px-5 py-3 text-xs font-bold uppercase text-[#d5cdbf]">Back</button>
+              <button type="button" onClick={confirmBooking} disabled={submitting} className="btn-pill flex-1 border border-(--gold) bg-(--gold) px-5 py-3 text-xs font-bold uppercase text-[#111] disabled:cursor-default disabled:opacity-60">{submitting ? 'Booking…' : 'Confirm booking'}</button>
+            </div>
+          </div>
+        )}
       </div>
     )
   }
@@ -110,7 +210,7 @@ function BookingFlow({ service, user, onClose }) {
   return (
     <Dialog labelledBy="booking-title" onClose={onClose} panelClassName="max-h-[92vh] w-full max-w-140 overflow-y-auto rounded-md border border-(--gold) bg-[#11110f] shadow-[0_20px_80px_rgba(0,0,0,.65)]">
         <div className="flex items-center justify-between border-b border-[rgba(212,180,92,.25)] px-6 py-5">
-          <div><p className="m-0 text-[10px] uppercase tracking-[2px] text-(--gold)">Royalty Salon</p><h2 id="booking-title" className="m-1 font-(--serif) text-2xl text-[#f3eee5]">{activeStep === 3 ? 'Booking Confirmed' : activeStep === 2 ? 'Proceed to Payment' : 'Book your appointment'}</h2></div>
+          <div><p className="m-0 text-[10px] uppercase tracking-[2px] text-(--gold)">Royalty Salon</p><h2 id="booking-title" className="m-1 font-(--serif) text-2xl text-[#f3eee5]">{activeStep === 3 ? 'Booking Confirmed' : activeStep === 2 ? 'Review your booking' : 'Book your appointment'}</h2></div>
           <button type="button" onClick={onClose} className="text-2xl text-[#aaa49a] hover:text-(--gold)" aria-label="Close">×</button>
         </div>
 

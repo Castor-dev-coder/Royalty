@@ -1,23 +1,33 @@
-﻿import { useMemo, useRef, useState } from 'react'
-import { Navigate, useNavigate } from 'react-router-dom'
-import Dialog from '../components/Dialog.jsx'
-import EmptyState from '../components/EmptyState.jsx'
+﻿import { useCallback, useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/useAuth.jsx'
+import { useRecoveryTick } from '../lib/useOutage.js'
 import { useToast } from '../context/useToast.jsx'
-import { seedAppointments, TIME_OPTIONS, STORAGE_KEY, loadPatches } from '../utils/appointments.js'
+import {
+  ApiError,
+  AuthError,
+  cancelAppointmentRequest,
+  fetchMyAppointments,
+  sessionDispositionAfter401,
+} from '../lib/api.js'
+import ReviewForm from '../components/ReviewForm.jsx'
+
+const PAGE_SIZE = 10
+
+const STATUS_LABELS = {
+  RESERVED: 'Pending',
+  CONFIRMED: 'Confirmed',
+  COMPLETED: 'Completed',
+  CANCELLED: 'Cancelled',
+  NO_SHOW: 'No-show',
+}
 
 const tabs = [
-  { id: 'upcoming', label: 'Upcoming', matches: (a) => a.status === 'CONFIRMED' || a.status === 'PENDING' },
-  { id: 'past', label: 'Past', matches: (a) => a.status === 'COMPLETED' },
+  { id: 'upcoming', label: 'Upcoming', matches: (a) => a.status === 'RESERVED' || a.status === 'CONFIRMED' },
+  // NO_SHOW is a past outcome, so it is grouped with Past alongside COMPLETED.
+  { id: 'past', label: 'Past', matches: (a) => a.status === 'COMPLETED' || a.status === 'NO_SHOW' },
   { id: 'cancelled', label: 'Cancelled', matches: (a) => a.status === 'CANCELLED' },
 ]
-
-const statusStyle = {
-  CONFIRMED: 'appt-status--confirmed',
-  PENDING: 'appt-status--pending',
-  COMPLETED: 'appt-status--completed',
-  CANCELLED: 'appt-status--cancelled',
-}
 
 function formatDateParts(iso) {
   const date = new Date(`${iso}T00:00:00`)
@@ -25,145 +35,264 @@ function formatDateParts(iso) {
     month: date.toLocaleDateString('en-US', { month: 'short' }).toUpperCase(),
     day: String(date.getDate()).padStart(2, '0'),
     weekday: date.toLocaleDateString('en-US', { weekday: 'long' }),
+    weekdayShort: date.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase(),
   }
 }
 
-function StarRating({ value, onChange }) {
+const STATUS_BADGE_STYLES = {
+  RESERVED: 'border-[rgba(212,180,92,0.45)] text-[var(--gold)]', // Pending — gold
+  CONFIRMED: 'border-[#3a352c] text-[#b3ada2]',
+  COMPLETED: 'border-[#3a352c] text-[#b3ada2]',
+  CANCELLED: 'border-[#3a352c] text-[#b3ada2]',
+  NO_SHOW: 'border-[#3a352c] text-[#b3ada2]',
+}
+
+// Text label plus color — never colour alone.
+function StatusBadge({ status, className = '' }) {
   return (
-    <div className="flex gap-2" role="group" aria-label="Review rating">
-      {[1, 2, 3, 4, 5].map((star) => (
-        <button
-          key={star}
-          type="button"
-          aria-label={`${star} star${star > 1 ? 's' : ''}`}
-          aria-pressed={star === value}
-          onClick={() => onChange && onChange(star)}
-          className="text-2xl transition-transform hover:scale-110"
-          style={{ color: star <= value ? 'var(--gold)' : '#4a4540' }}
+    <span
+      className={`inline-flex items-center rounded-full border px-3 py-1 text-[12px] font-semibold tracking-[0.12em] uppercase ${STATUS_BADGE_STYLES[status] ?? 'border-[#3a352c] text-[#b3ada2]'} ${className}`}
+    >
+      {STATUS_LABELS[status] ?? status}
+    </span>
+  )
+}
+
+function peso(amount) {
+  return `₱${Number(amount).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`
+}
+
+function AppointmentCard({ item, onCancel, onOpenReview, onReviewSuccess, cancelMessage, cancelBusy, reviewOpen, onCloseReview }) {
+  const { month, day, weekdayShort } = formatDateParts(item.appointmentDate)
+  const staffName = item.staff ? `${item.staff.firstName} ${item.staff.lastName}`.trim() : 'Unassigned'
+  const reviewed = item.alreadyReviewed && item.review
+  const titleService = item.services[0]?.serviceName ?? 'Appointment'
+  const moreCount = item.services.length - 1
+  const showReviewButton = item.status === 'COMPLETED' && !item.alreadyReviewed && !reviewOpen
+  const showCancel = item.status === 'RESERVED' || item.status === 'CONFIRMED'
+  const hasActions = Boolean(showReviewButton || reviewed || showCancel)
+  return (
+    <article className="rounded-lg border border-[#27241f] bg-[#151515] px-6 py-6 max-[640px]:px-4 max-[640px]:py-4">
+      {/* One 8px scale: 88px date column, 16px gutter, 8px row gaps. At <=640px
+          the wrappers become display:contents so the leaves sit on the card
+          grid: date chip + badge on the top row, content full width below. */}
+      <div className="grid grid-cols-[88px_1fr] items-start gap-x-4 gap-y-2 min-[641px]:flex min-[641px]:gap-x-6">
+        <time
+          className="flex w-[88px] shrink-0 flex-col items-center gap-1 text-center max-[640px]:col-start-1 max-[640px]:row-start-1 min-[641px]:border-r min-[641px]:border-[#27241f] min-[641px]:pr-6"
+          dateTime={item.appointmentDate}
         >
-          ★
-        </button>
-      ))}
-    </div>
+          <span className="text-[12px] font-semibold tracking-[0.14em] text-[var(--gold)]">{month}</span>
+          <strong className="font-[var(--serif)] text-[28px] leading-none font-normal text-[#eeeae2]">{day}</strong>
+          <span className="text-[12px] tracking-[0.14em] text-[#b3ada2]">{weekdayShort}</span>
+        </time>
+
+        <div className="contents min-[641px]:flex min-[641px]:min-w-0 min-[641px]:flex-1 min-[641px]:flex-col min-[641px]:gap-2">
+          <div className="contents min-[641px]:flex min-[641px]:items-start min-[641px]:justify-between min-[641px]:gap-4">
+            <h3 className="m-0 font-[var(--serif)] text-[21px] leading-snug text-[#eeeae2] max-[640px]:col-span-2 max-[640px]:col-start-1 max-[640px]:row-start-2">
+              {titleService}
+              {moreCount > 0 && (
+                <span className="ml-2 font-sans text-[13px] tracking-[0.08em] text-[#b3ada2]">
+                  +{moreCount} more
+                </span>
+              )}
+            </h3>
+            <StatusBadge
+              className="max-[640px]:col-start-2 max-[640px]:row-start-1 max-[640px]:justify-self-end"
+              status={item.status}
+            />
+          </div>
+
+          <p className="m-0 text-[15px] leading-relaxed max-[640px]:col-span-2 max-[640px]:row-start-3">
+            <span className="text-[#eeeae2]">{item.startTime} – {item.endTime}</span>
+            <span className="text-[#b3ada2]"> · with {staffName}</span>
+          </p>
+
+          <ul className="m-0 flex list-none flex-col gap-2 border-t border-[#27241f] p-0 pt-2 text-[13px] max-[640px]:col-span-2 max-[640px]:row-start-4">
+            {item.services.map((service) => (
+              <li className="flex items-baseline justify-between gap-4" key={service.id ?? service.serviceId}>
+                <span className="text-[#d8d4cb]">
+                  {service.serviceName}
+                  <span className="ml-2 text-[12px] text-[#b3ada2]">{service.durationMinutes} min</span>
+                </span>
+                <span className="tabular-nums text-[#d8d4cb]">{peso(service.price)}</span>
+              </li>
+            ))}
+          </ul>
+
+          <div className="mt-2 flex flex-wrap items-baseline justify-between gap-2 border-t border-[#27241f] pt-2 max-[640px]:col-span-2 max-[640px]:row-start-5">
+            <span className="text-[12px] tracking-[0.14em] text-[#8d877c] uppercase">{item.appointmentCode}</span>
+            <span className="flex items-baseline gap-2">
+              <span className="text-[12px] text-[#8d877c]">Total</span>
+              <strong className="text-[18px] font-semibold tabular-nums text-[var(--gold)]">{peso(item.totalAmount)}</strong>
+            </span>
+          </div>
+
+          {hasActions && (
+            <div className="mt-2 flex flex-wrap items-center justify-end gap-2 max-[640px]:col-span-2 max-[640px]:row-start-6">
+              {showReviewButton && (
+                <button
+                  className="btn-pill min-h-[40px] cursor-pointer rounded-full border border-[var(--gold)] bg-[var(--gold)] px-5 text-[12px] font-semibold tracking-[0.12em] text-[#111] uppercase hover:bg-[var(--gold-bright)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--gold)] max-[640px]:min-h-[44px] max-[640px]:w-full"
+                  onClick={() => onOpenReview(item.id)}
+                  type="button"
+                >
+                  LEAVE A REVIEW
+                </button>
+              )}
+              {reviewed && (
+                <span className="text-[12px] font-semibold tracking-[0.12em] text-[#b3ada2] uppercase">
+                  REVIEWED · {Number(item.review.overallRating).toFixed(1)}
+                </span>
+              )}
+              {showCancel && (
+                <button
+                  className="btn-pill min-h-[40px] cursor-pointer rounded-full border border-[#3a352c] px-5 text-[12px] font-semibold tracking-[0.12em] text-[#b3ada2] uppercase hover:border-[#e9a68c] hover:text-[#e9a68c] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--gold)] disabled:cursor-default disabled:opacity-60 max-[640px]:min-h-[44px] max-[640px]:w-full"
+                  disabled={cancelBusy}
+                  onClick={() => onCancel(item)}
+                  type="button"
+                >
+                  {cancelBusy ? 'CANCELLING…' : 'CANCEL'}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+      {cancelMessage && (
+        <p className="m-0 mt-3 text-[13px] text-[#e9a68c]" role="alert">
+          {cancelMessage}
+        </p>
+      )}
+      {reviewOpen && (
+        <div className="mt-5 border-t border-[#38332b] pt-5">
+          <p className="m-0 mb-4 text-[12px] font-semibold tracking-[0.32em] text-[var(--gold)] uppercase">New review</p>
+          <ReviewForm
+            appointmentId={item.id}
+            onDone={onCloseReview}
+            onSuccess={(review) => onReviewSuccess(item.id, review)}
+          />
+        </div>
+      )}
+    </article>
   )
 }
 
 function Appointments() {
   const navigate = useNavigate()
-  const { user } = useAuth()
+  const { user, restoring, openAuth, resolveAuthFailure } = useAuth()
+  // Refetches the page's data whenever an outage recovers.
+  const recoveryTick = useRecoveryTick()
   const { showToast } = useToast()
 
+  const [items, setItems] = useState([])
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(1)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
   const [activeTab, setActiveTab] = useState('upcoming')
-  const [patches, setPatches] = useState(loadPatches)
-  const [showReviewModal, setShowReviewModal] = useState(false)
-  const [reviewTitle, setReviewTitle] = useState('')
-  const [reviewText, setReviewText] = useState('')
-  const [reviewRating, setReviewRating] = useState(5)
-  const [rescheduleTarget, setRescheduleTarget] = useState(null)
-  const [cancelTarget, setCancelTarget] = useState(null)
-  const busyRef = useRef(false)
+  const [cancelState, setCancelState] = useState({}) // id -> { busy, message }
+  const [reviewOpenId, setReviewOpenId] = useState(null)
 
-  // Demo-only persistence: owner-scoped patches over the shared seed records.
-  const appointments = useMemo(() => {
-    if (!user) return seedAppointments
-    return seedAppointments.map((appointment) => {
-      const patch = patches.find((p) => p.id === appointment.id && p.owner === user.email)
-      return patch ? { ...appointment, ...patch.fields } : appointment
-    })
-  }, [patches, user])
+  // Customer-only screen: other roles keep their session but get no data.
+  const noAccess = Boolean(user) && user.role !== 'CUSTOMER'
 
-  function openReviewModal(appointment) {
-    setReviewTitle(appointment.service)
-    setReviewText('')
-    setReviewRating(5)
-    setShowReviewModal(true)
-  }
+  // The synchronous body never sets state (only promise callbacks do), so the
+  // effect below cannot trigger cascading renders.
+  const load = useCallback(() => {
+    if (!user || user.role !== 'CUSTOMER') return
+    fetchMyAppointments({ page, limit: PAGE_SIZE }).then(
+      (result) => {
+        setItems(result.appointments ?? [])
+        setTotal(result.total ?? 0)
+        setError(null)
+        setLoading(false)
+      },
+      (err) => {
+        void (async () => {
+          if (err instanceof AuthError && err.status === 401) {
+            // FE-01: only an invalid/expired token clears the session.
+            const disposition = await sessionDispositionAfter401(user.role)
+            await resolveAuthFailure(disposition)
+            setLoading(false)
+            return
+          }
+          if (err instanceof ApiError && err.kind === 'no-access') {
+            setError('Your account does not have access to this page.')
+          } else {
+            setError(err instanceof ApiError ? err.message : 'Could not load your appointments.')
+          }
+          setLoading(false)
+        })()
+      },
+    )
+  }, [user, page, resolveAuthFailure])
 
-  function submitReview() {
-    if (!reviewTitle.trim() || !reviewText.trim()) return
-    const savedReviews = JSON.parse(localStorage.getItem('royalty-reviews') || '[]')
-    savedReviews.push({
-      id: `review-${Date.now()}`,
-      service: reviewTitle.trim(),
-      date: new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }),
-      rating: reviewRating,
-      stylist: 'Anna Reyes',
-      text: reviewText.trim(),
-    })
-    localStorage.setItem('royalty-reviews', JSON.stringify(savedReviews))
-    setShowReviewModal(false)
-    showToast('success', 'Your review has been saved.')
-    navigate('/my-reviews')
-  }
+  useEffect(() => {
+    load()
+  }, [load, recoveryTick])
 
-  // Writes are guarded by record identity and status eligibility; patches are
-  // keyed to the signed-in mock customer, so another account's records stay
-  // untouched even if a client-side id is tampered with.
-  function applyChange(id, fields) {
-    const record = seedAppointments.find((a) => a.id === id)
-    if (!record || !user) return { ok: false, error: 'This appointment could not be found.' }
-    const current = appointments.find((a) => a.id === id)
-    if (!current || !['CONFIRMED', 'PENDING'].includes(current.status)) {
-      return { ok: false, error: 'Only upcoming appointments can be changed.' }
-    }
-    const next = [...patches.filter((p) => !(p.id === id && p.owner === user.email)), { id, owner: user.email, fields }]
-    setPatches(next)
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
-    return { ok: true }
-  }
-
-  function submitReschedule(date, time) {
-    if (busyRef.current) return { ok: false, error: null }
-    busyRef.current = true
+  async function handleCancel(item) {
+    setCancelState((current) => ({ ...current, [item.id]: { busy: true, message: null } }))
     try {
-      const today = new Date()
-      today.setHours(0, 0, 0, 0)
-      const chosen = new Date(`${date}T00:00:00`)
-      if (!date || Number.isNaN(chosen.getTime())) return { ok: false, error: 'Choose a replacement date.' }
-      if (!time) return { ok: false, error: 'Choose a replacement time.' }
-      if (chosen < today) return { ok: false, error: 'Pick a date from today onwards.' }
-      const result = applyChange(rescheduleTarget.id, { date, time })
-      if (!result.ok) return result
-      showToast('success', 'Appointment updated (demo) — saved in this browser only.')
-      setRescheduleTarget(null)
-      return { ok: true }
-    } finally {
-      busyRef.current = false
-    }
-  }
-
-  function submitCancellation() {
-    if (busyRef.current) return
-    busyRef.current = true
-    try {
-      const result = applyChange(cancelTarget.id, { status: 'CANCELLED' })
-      if (result.ok) {
-        showToast('success', 'Appointment cancelled (demo) — saved in this browser only.')
-        setActiveTab('cancelled')
-      } else {
-        showToast('error', result.error)
+      await cancelAppointmentRequest(item.id)
+      setItems((current) => current.map((row) => (row.id === item.id ? { ...row, status: 'CANCELLED' } : row)))
+      setCancelState((current) => ({ ...current, [item.id]: { busy: false, message: null } }))
+      showToast('success', 'Appointment cancelled.')
+    } catch (err) {
+      if (err instanceof AuthError && err.status === 401) {
+        const disposition = await sessionDispositionAfter401(user?.role)
+        await resolveAuthFailure(disposition)
+        return
       }
-      setCancelTarget(null)
-    } finally {
-      busyRef.current = false
+      const message =
+        err instanceof ApiError && err.kind === 'conflict'
+          ? 'This appointment can no longer be cancelled.'
+          : err instanceof ApiError && err.kind === 'no-access'
+            ? 'Your account cannot cancel this appointment.'
+            : 'Could not cancel the appointment. Try again.'
+      setCancelState((current) => ({ ...current, [item.id]: { busy: false, message } }))
     }
   }
 
-  if (!user) return <Navigate to="/services" replace />
+  function handleReviewSuccess(itemId, review) {
+    setReviewOpenId(null)
+    if (!review) {
+      // 409 "already reviewed": tell the user, then refresh the item state.
+      showToast('info', 'You already reviewed this visit.')
+      load()
+      return
+    }
+    setItems((current) =>
+      current.map((row) =>
+        row.id === itemId
+          ? {
+              ...row,
+              alreadyReviewed: true,
+              review: {
+                overallRating: review.overallRating ?? review.rating ?? 0,
+                ratings: review.ratings ?? null,
+                comment: review.comment ?? null,
+              },
+            }
+          : row,
+      ),
+    )
+    showToast('success', 'Your review has been saved.')
+  }
 
   const activeTabConfig = tabs.find((tab) => tab.id === activeTab) ?? tabs[0]
-  const visibleAppointments = appointments.filter(activeTabConfig.matches)
+  const visibleAppointments = items.filter(activeTabConfig.matches)
   const counts = {
-    upcoming: appointments.filter(tabs[0].matches).length,
-    past: appointments.filter(tabs[1].matches).length,
-    cancelled: appointments.filter(tabs[2].matches).length,
+    upcoming: items.filter(tabs[0].matches).length,
+    past: items.filter(tabs[1].matches).length,
+    cancelled: items.filter(tabs[2].matches).length,
   }
   const stats = [
-    ['◫', String(appointments.length), 'Total Appointments'],
+    ['◫', String(total), 'Total Appointments'],
     ['◷', String(counts.upcoming), 'Upcoming'],
     ['☆', String(counts.past), 'Completed'],
     ['×', String(counts.cancelled), 'Cancelled'],
   ]
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   return (
     <div className="min-h-screen bg-black text-[#eeeae2]">
@@ -172,204 +301,150 @@ function Appointments() {
           <div>
             <h1 className="m-0 font-[var(--serif)] text-[34px] leading-tight text-[var(--gold)] max-[680px]:text-[28px]">Appointments</h1>
             <p className="mt-1.5 text-[14px] text-[#b3ada2]">Your appointment overview</p>
-            <p className="mt-1 text-[12px] text-[#8d877c]">Demo workspace — appointment changes are saved in this browser only.</p>
           </div>
           <button type="button" onClick={() => navigate('/services')} className="btn-pill rounded-full border border-[var(--gold)] bg-[var(--gold)] px-8 py-3 text-[13px] font-bold text-black hover:bg-[var(--gold-bright)]">BOOK NEW</button>
         </div>
-        <div className="mb-8 grid grid-cols-4 gap-3 max-[800px]:grid-cols-2 max-[500px]:grid-cols-1">
-          {stats.map(([icon, number, label]) => (
-            <div key={label} className="flex min-h-[72px] items-center gap-3 rounded-lg border border-[rgba(212,180,92,.45)] bg-[#111] px-4">
-              <span className="grid size-10 place-items-center rounded-full border border-[var(--gold)] text-xl text-[var(--gold)]">{icon}</span>
-              <div><strong className="text-[22px] leading-none">{number}</strong><p className="m-0 mt-1 text-[12px] tracking-wide text-[#b3ada2]">{label}</p></div>
-            </div>
-          ))}
-        </div>
-        <div className="mb-5 flex gap-7 border-b border-[#27241f]" role="group" aria-label="Filter appointments">
-          {tabs.map((tab) => (
+
+        {!user && restoring && (
+          <div className="flex flex-col gap-3" aria-busy="true">
+            <div className="h-[150px] animate-pulse rounded-lg border border-[rgba(212,180,92,.35)] bg-[#151515]" />
+            <div className="h-[150px] animate-pulse rounded-lg border border-[rgba(212,180,92,.35)] bg-[#151515]" />
+          </div>
+        )}
+
+        {!user && !restoring && (
+          <div className="flex flex-col items-start gap-4 rounded-lg border border-[rgba(212,180,92,.35)] bg-[#151515] px-6 py-5">
+            <p className="m-0 text-[15px] text-[#d8d4cb]">Sign in to see your appointments.</p>
             <button
-              aria-pressed={activeTab === tab.id}
-              className={`cursor-pointer border-b-2 px-1 pb-3 text-[15px] transition-colors ${activeTab === tab.id ? 'border-[var(--gold)] font-semibold text-[var(--gold)]' : 'border-transparent text-[#b3ada2] hover:text-[#eeeae2]'}`}
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              className="btn-pill cursor-pointer rounded-full border border-[var(--gold)] bg-[var(--gold)] px-7 py-3 text-[13px] font-bold text-black hover:bg-[var(--gold-bright)]"
+              onClick={() => openAuth('login')}
               type="button"
             >
-              {tab.label} ({counts[tab.id]})
+              SIGN IN
             </button>
-          ))}
-        </div>
-        <div className="space-y-3" aria-live="polite">
-          {visibleAppointments.length === 0 && (
-            <div className="rounded-lg border border-[rgba(212,180,92,.35)] bg-[#151515]">
-              <EmptyState
-                actionLabel="Book an appointment"
-                image="/images/empty-states/empty-booking.svg"
-                message={
-                  activeTab === 'cancelled'
-                    ? 'You have no cancelled appointments.'
-                    : activeTab === 'past'
-                      ? 'Completed appointments will appear here.'
-                      : 'You have no upcoming appointments yet.'
-                }
-                onAction={() => navigate('/services')}
-                title="Nothing here yet"
-              />
+          </div>
+        )}
+
+        {user && noAccess && (
+          <div className="rounded-lg border border-[rgba(212,180,92,.35)] bg-[#151515] px-6 py-5">
+            <p className="m-0 text-[15px] text-[#d8d4cb]" role="status">
+              No access: this page is for customer accounts. You are signed in as {user.role.toLowerCase()}.
+            </p>
+          </div>
+        )}
+
+        {user && !noAccess && (
+          <>
+            <div className="mb-8 grid grid-cols-4 gap-3 max-[800px]:grid-cols-2 max-[500px]:grid-cols-1">
+              {stats.map(([icon, number, label]) => (
+                <div key={label} className="flex min-h-[72px] items-center gap-3 rounded-lg border border-[rgba(212,180,92,.45)] bg-[#111] px-4">
+                  <span className="grid size-10 place-items-center rounded-full border border-[var(--gold)] text-xl text-[var(--gold)]">{icon}</span>
+                  <div><strong className="text-[22px] leading-none">{number}</strong><p className="m-0 mt-1 text-[12px] tracking-wide text-[#b3ada2]">{label}</p></div>
+                </div>
+              ))}
             </div>
-          )}
-          {visibleAppointments.map((appointment) => {
-            const parts = formatDateParts(appointment.date)
-            const changeable = appointment.status === 'CONFIRMED' || appointment.status === 'PENDING'
-            return (
-              <article key={appointment.id} className="flex items-center gap-5 rounded-lg border border-[rgba(212,180,92,.35)] bg-[#151515] px-6 py-5 max-[800px]:flex-wrap max-[800px]:gap-4">
-                <div className="w-16 shrink-0 border-r border-[#38332b] text-center max-[500px]:border-r-0">
-                  <small className="text-[12px] tracking-[1.5px] text-[var(--gold)]">{parts.month}</small>
-                  <div className="font-[var(--serif)] text-[28px] leading-tight">{parts.day}</div>
+
+            <div className="mb-5 flex gap-7 border-b border-[#27241f]" role="group" aria-label="Filter appointments">
+              {tabs.map((tab) => (
+                <button
+                  aria-pressed={activeTab === tab.id}
+                  className={`cursor-pointer border-b-2 px-1 pb-3 text-[15px] transition-colors ${activeTab === tab.id ? 'border-[var(--gold)] font-semibold text-[var(--gold)]' : 'border-transparent text-[#b3ada2] hover:text-[#eeeae2]'}`}
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  type="button"
+                >
+                  {tab.label} ({counts[tab.id]})
+                </button>
+              ))}
+            </div>
+
+            <div className="space-y-3" aria-live="polite">
+              {loading && (
+                <>
+                  <div className="h-[150px] animate-pulse rounded-lg border border-[rgba(212,180,92,.35)] bg-[#151515]" />
+                  <div className="h-[150px] animate-pulse rounded-lg border border-[rgba(212,180,92,.35)] bg-[#151515]" />
+                </>
+              )}
+
+              {!loading && error && (
+                <div className="flex flex-col items-start gap-4 rounded-lg border border-[rgba(212,180,92,.35)] bg-[#151515] px-6 py-5">
+                  <p className="m-0 text-[15px] text-[#e9a68c]" role="alert">{error}</p>
+                  <button
+                    className="cursor-pointer rounded-full border border-[#635b4c] px-6 py-2.5 text-[12px] font-semibold tracking-[0.12em] text-[#d5cdbf] uppercase hover:border-[var(--gold)] hover:text-[#eeeae2]"
+                    onClick={load}
+                    type="button"
+                  >
+                    Try again
+                  </button>
                 </div>
-                <div className="min-w-[180px] flex-1">
-                  <h2 className="m-0 font-[var(--serif)] text-[21px] leading-snug">{appointment.service}</h2>
-                  <p className="m-0 mt-1.5 text-[15px] leading-relaxed text-[#b3ada2]">{parts.weekday} · {appointment.time} · {appointment.stylist}</p>
-                </div>
-                <strong className="text-[17px] text-[var(--gold)]">{appointment.price}</strong>
-                <span className={`appt-status rounded-full border px-3.5 py-1.5 text-[12px] font-semibold tracking-[1px] ${statusStyle[appointment.status]}`}>{appointment.status}</span>
-                <div className="flex flex-wrap items-center gap-2.5">
-                  {appointment.status === 'COMPLETED' ? (
-                    <button type="button" onClick={() => openReviewModal(appointment)} className="btn-pill min-h-[40px] rounded-full border border-[#6b5b2e] px-5 text-[12px] font-semibold text-[var(--gold)]">WRITE REVIEW</button>
-                  ) : changeable ? (
-                    <>
-                      <button type="button" onClick={() => setRescheduleTarget(appointment)} className="btn-pill min-h-[40px] rounded-full border border-[#6b5b2e] px-5 text-[12px] font-semibold text-[var(--gold)]">RESCHEDULE</button>
-                      <button type="button" onClick={() => setCancelTarget(appointment)} className="btn-pill min-h-[40px] rounded-full border border-[#555] px-5 text-[12px] font-semibold text-[#ccc6bc]">CANCEL</button>
-                    </>
-                  ) : (
-                    <span className="text-[13px] text-[#8d877c]">No actions available</span>
+              )}
+
+              {!loading && !error && visibleAppointments.length === 0 && (
+                <div className="flex flex-col items-start gap-4 rounded-lg border border-[rgba(212,180,92,.35)] bg-[#151515] px-6 py-5">
+                  <p className="m-0 text-[15px] text-[#d8d4cb]" role="status">
+                    {total === 0
+                      ? 'No appointments yet. Book your first visit — your hair, your rules.'
+                      : `No ${activeTabConfig.label.toLowerCase()} appointments.`}
+                  </p>
+                  {total === 0 && (
+                    <button
+                      className="btn-pill cursor-pointer rounded-full border border-[var(--gold)] bg-[var(--gold)] px-7 py-3 text-[13px] font-bold text-black hover:bg-[var(--gold-bright)]"
+                      onClick={() => navigate('/services')}
+                      type="button"
+                    >
+                      BOOK NOW
+                    </button>
                   )}
                 </div>
-              </article>
-            )
-          })}
-        </div>
+              )}
 
-        {rescheduleTarget && (
-          <RescheduleDialog
-            appointment={appointments.find((a) => a.id === rescheduleTarget.id) ?? rescheduleTarget}
-            onClose={() => setRescheduleTarget(null)}
-            onSubmit={submitReschedule}
-          />
-        )}
-
-        {cancelTarget && (
-          <Dialog
-            backdropClassName="bg-black/80 p-4 sm:p-8"
-            labelledBy="cancel-dialog-title"
-            onClose={() => setCancelTarget(null)}
-            panelClassName="w-full max-w-[520px] rounded-[12px] border border-[rgba(212,180,92,0.5)] bg-[#171816] px-8 py-8 shadow-[0_20px_80px_rgba(0,0,0,.65)]"
-          >
-            <h2 id="cancel-dialog-title" className="m-0 font-[var(--serif)] text-[24px] text-[#f4f1eb]">Cancel this appointment?</h2>
-            <p className="mt-4 text-[16px] leading-relaxed text-[#c9c3b9]">
-              {cancelTarget.service} — {formatDateParts(cancelTarget.date).weekday}, {cancelTarget.date} at {cancelTarget.time} with {cancelTarget.stylist}.
-            </p>
-            <p className="mt-2 text-[13px] text-[#8d877c]">This is a demo change saved in this browser only.</p>
-            <div className="mt-7 flex items-center justify-end gap-4">
-              <button type="button" onClick={() => setCancelTarget(null)} className="btn-pill min-h-[44px] rounded-full border border-[#635b4c] px-6 text-[13px] font-semibold text-[#d5cdbf]">Keep appointment</button>
-              <button type="button" onClick={submitCancellation} className="btn-pill min-h-[44px] rounded-full border border-[#8c4a4a] bg-[#8c4a4a] px-6 text-[13px] font-bold text-[#f8efef] hover:bg-[#a05656]">Cancel appointment</button>
-            </div>
-          </Dialog>
-        )}
-
-        {showReviewModal && (
-          <Dialog
-            backdropClassName="bg-black/80 p-4 sm:p-8"
-            labelledBy="review-modal-title"
-            onClose={() => setShowReviewModal(false)}
-            panelClassName="w-full max-w-[1120px] border border-[rgba(212,180,92,0.55)] bg-[#171816] px-8 py-8 shadow-[0_20px_80px_rgba(0,0,0,.65)] sm:px-12 sm:py-9"
-          >
-            <div className="flex items-start justify-between gap-6">
-              <p className="m-0 text-[12px] font-semibold tracking-[0.32em] text-(--gold) uppercase" id="review-modal-title">New review</p>
-              <StarRating value={reviewRating} onChange={setReviewRating} />
+              {!loading && !error && (
+                <ul className="m-0 flex list-none flex-col gap-3 p-0">
+                  {visibleAppointments.map((item) => (
+                    <li className="list-none" key={item.id}>
+                      <AppointmentCard
+                        cancelBusy={Boolean(cancelState[item.id]?.busy)}
+                        cancelMessage={cancelState[item.id]?.message}
+                        item={item}
+                        onCancel={handleCancel}
+                        onCloseReview={() => setReviewOpenId(null)}
+                        onOpenReview={(id) => setReviewOpenId(id)}
+                        onReviewSuccess={handleReviewSuccess}
+                        reviewOpen={reviewOpenId === item.id}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
 
-            <label htmlFor="review-title" className="sr-only">Review title</label>
-            <input
-              id="review-title"
-              type="text"
-              value={reviewTitle}
-              onChange={(e) => setReviewTitle(e.target.value)}
-              className="mt-7 w-full border-0 bg-transparent p-0 font-(--serif) text-3xl font-light italic text-[#f4f1eb] outline-none placeholder:text-[#f4f1eb] sm:text-4xl"
-              placeholder="New salon experience"
-            />
-
-            <label htmlFor="review-text" className="mt-10 mb-4 block text-[13px] tracking-[0.24em] text-[#b3ada2] uppercase">Tell us about your visit</label>
-            <textarea
-              id="review-text"
-              value={reviewText}
-              onChange={(e) => setReviewText(e.target.value)}
-              placeholder="What did you love about your experience?"
-              rows={5}
-              className="w-full resize-y border border-[rgba(212,180,92,0.35)] bg-[#0d0d0c] px-5 py-5 text-[16px] leading-relaxed text-[#f4f1eb] outline-none transition-colors placeholder:text-[#7f8994] focus:border-(--gold)"
-            />
-
-            <div className="mt-5 flex items-center justify-end gap-8">
-              <button type="button" onClick={() => setShowReviewModal(false)} className="btn-pill min-h-[44px] cursor-pointer rounded-full border border-[#635b4c] px-6 text-[13px] font-semibold text-[#d5cdbf]">Cancel</button>
-              <button type="button" onClick={submitReview} className="btn-pill min-h-[44px] cursor-pointer rounded-full border border-(--gold) bg-(--gold) px-7 text-[13px] font-bold tracking-[0.12em] text-[#111] uppercase transition-colors hover:bg-(--gold-bright)">Save review</button>
-            </div>
-          </Dialog>
+            {!loading && !error && totalPages > 1 && (
+              <div className="mt-6 flex items-center justify-center gap-3">
+                <button
+                  className="cursor-pointer rounded-full border border-[#635b4c] px-5 py-2 text-[12px] font-semibold tracking-[0.12em] text-[#d5cdbf] uppercase disabled:cursor-default disabled:opacity-50 hover:border-[var(--gold)]"
+                  disabled={page <= 1}
+                  onClick={() => setPage((current) => current - 1)}
+                  type="button"
+                >
+                  Previous
+                </button>
+                <span className="text-[12px] text-[#8d877c]">
+                  Page {page} of {totalPages}
+                </span>
+                <button
+                  className="cursor-pointer rounded-full border border-[#635b4c] px-5 py-2 text-[12px] font-semibold tracking-[0.12em] text-[#d5cdbf] uppercase disabled:cursor-default disabled:opacity-50 hover:border-[var(--gold)]"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((current) => current + 1)}
+                  type="button"
+                >
+                  Next
+                </button>
+              </div>
+            )}
+          </>
         )}
       </main>
     </div>
-  )
-}
-
-function RescheduleDialog({ appointment, onClose, onSubmit }) {
-  const parts = formatDateParts(appointment.date)
-  const [date, setDate] = useState(appointment.date)
-  const [time, setTime] = useState(appointment.time)
-  const [error, setError] = useState('')
-
-  function submit(event) {
-    event.preventDefault()
-    const result = onSubmit(date, time)
-    if (result && !result.ok && result.error) setError(result.error)
-  }
-
-  return (
-    <Dialog
-      backdropClassName="bg-black/80 p-4 sm:p-8"
-      labelledBy="reschedule-title"
-      onClose={onClose}
-      panelClassName="w-full max-w-[560px] rounded-[12px] border border-[rgba(212,180,92,0.5)] bg-[#171816] px-8 py-8 shadow-[0_20px_80px_rgba(0,0,0,.65)]"
-    >
-      <h2 id="reschedule-title" className="m-0 font-[var(--serif)] text-[24px] text-[#f4f1eb]">Reschedule appointment</h2>
-      <p className="mt-4 text-[16px] leading-relaxed text-[#c9c3b9]">
-        {appointment.service} with {appointment.stylist} — currently {parts.weekday}, {appointment.date} at {appointment.time} ({appointment.price}).
-      </p>
-      <form className="mt-6 grid gap-5" onSubmit={submit}>
-        <label className="grid gap-2 text-[13px] font-semibold tracking-[1px] text-[#b3ada2] uppercase">
-          New date
-          <input
-            required
-            type="date"
-            value={date}
-            onChange={(e) => { setDate(e.target.value); setError('') }}
-            className="rounded-lg border border-[#3a3835] bg-[#1c1b18] p-3.5 text-[16px] normal-case tracking-normal text-white outline-none focus:border-(--gold)"
-          />
-        </label>
-        <label className="grid gap-2 text-[13px] font-semibold tracking-[1px] text-[#b3ada2] uppercase">
-          New time
-          <select
-            required
-            value={time}
-            onChange={(e) => { setTime(e.target.value); setError('') }}
-            className="rounded-lg border border-[#3a3835] bg-[#1c1b18] p-3.5 text-[16px] normal-case tracking-normal text-white outline-none focus:border-(--gold)"
-          >
-            {TIME_OPTIONS.map((option) => <option key={option}>{option}</option>)}
-          </select>
-        </label>
-        {error && <p className="m-0 text-[14px] text-[#e9a68c]" role="alert">{error}</p>}
-        <p className="m-0 text-[13px] text-[#8d877c]">Demo change — saved in this browser only. Nothing is sent to the salon.</p>
-        <div className="mt-2 flex items-center justify-end gap-4">
-          <button type="button" onClick={onClose} className="btn-pill min-h-[44px] rounded-full border border-[#635b4c] px-6 text-[13px] font-semibold text-[#d5cdbf]">Keep as is</button>
-          <button type="submit" className="btn-pill min-h-[44px] rounded-full border border-(--gold) bg-(--gold) px-7 text-[13px] font-bold tracking-[0.12em] text-[#111] uppercase hover:bg-(--gold-bright)">Save new time</button>
-        </div>
-      </form>
-    </Dialog>
   )
 }
 
