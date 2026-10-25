@@ -1,11 +1,14 @@
-﻿import { useCallback, useEffect, useState } from 'react'
+﻿import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import CustomerInitials from '../components/CustomerInitials.jsx'
 import { useAuth } from '../context/useAuth.jsx'
 import { useRecoveryTick } from '../lib/useOutage.js'
+import { useAutoRefresh } from '../lib/useAutoRefresh.js'
 import { useToast } from '../context/useToast.jsx'
 import {
   ApiError,
   AuthError,
+  NOT_MODIFIED,
   cancelAppointmentRequest,
   fetchMyAppointments,
   sessionDispositionAfter401,
@@ -62,7 +65,7 @@ function peso(amount) {
   return `₱${Number(amount).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`
 }
 
-function AppointmentCard({ item, onCancel, onOpenReview, onReviewSuccess, cancelMessage, cancelBusy, reviewOpen, onCloseReview }) {
+function AppointmentCard({ item, customerName, onCancel, onOpenReview, onReviewSuccess, cancelMessage, cancelBusy, reviewOpen, onCloseReview }) {
   const { month, day, weekdayShort } = formatDateParts(item.appointmentDate)
   const staffName = item.staff ? `${item.staff.firstName} ${item.staff.lastName}`.trim() : 'Unassigned'
   const reviewed = item.alreadyReviewed && item.review
@@ -73,6 +76,12 @@ function AppointmentCard({ item, onCancel, onOpenReview, onReviewSuccess, cancel
   const hasActions = Boolean(showReviewButton || reviewed || showCancel)
   return (
     <article className="rounded-lg border border-[#27241f] bg-[#151515] px-6 py-6 max-[640px]:px-4 max-[640px]:py-4">
+      {/* Customer identity is initials only — never a photo; the name is
+          always real text beside the (aria-hidden) mark. */}
+      <div className="mb-3 flex items-center gap-2">
+        <CustomerInitials className="size-8 text-[12px]" name={customerName} />
+        <span className="text-[13px] text-[#d8d4cb]">{customerName}</span>
+      </div>
       {/* One 8px scale: 88px date column, 16px gutter, 8px row gaps. At <=640px
           the wrappers become display:contents so the leaves sit on the card
           grid: date chip + badge on the top row, content full width below. */}
@@ -195,40 +204,63 @@ function Appointments() {
   // Customer-only screen: other roles keep their session but get no data.
   const noAccess = Boolean(user) && user.role !== 'CUSTOMER'
 
+  // Rows are on screen after the first successful load — background refreshes
+  // update them in place and never replace them with a skeleton or an error.
+  const hasDataRef = useRef(false)
+
   // The synchronous body never sets state (only promise callbacks do), so the
-  // effect below cannot trigger cascading renders.
+  // effect below cannot trigger cascading renders. Resolves true on success
+  // (including a 304 that changed nothing) for the auto-refresh scheduler.
   const load = useCallback(() => {
-    if (!user || user.role !== 'CUSTOMER') return
-    fetchMyAppointments({ page, limit: PAGE_SIZE }).then(
+    if (!user || user.role !== 'CUSTOMER') return Promise.resolve(true)
+    return fetchMyAppointments({ page, limit: PAGE_SIZE }).then(
       (result) => {
-        setItems(result.appointments ?? [])
-        setTotal(result.total ?? 0)
-        setError(null)
+        // 304 on the conditional GET: what's on screen is still current.
+        if (result !== NOT_MODIFIED) {
+          setItems(result.appointments ?? [])
+          setTotal(result.total ?? 0)
+          hasDataRef.current = true
+          setError(null)
+        }
         setLoading(false)
+        return true
       },
-      (err) => {
-        void (async () => {
+      (err) =>
+        (async () => {
           if (err instanceof AuthError && err.status === 401) {
             // FE-01: only an invalid/expired token clears the session.
             const disposition = await sessionDispositionAfter401(user.role)
             await resolveAuthFailure(disposition)
             setLoading(false)
-            return
+            return false
           }
-          if (err instanceof ApiError && err.kind === 'no-access') {
-            setError('Your account does not have access to this page.')
-          } else {
-            setError(err instanceof ApiError ? err.message : 'Could not load your appointments.')
+          // A failed background refresh keeps the rows already on screen —
+          // the outage banner explains staleness. Only a page with nothing to
+          // show takes over with the error panel.
+          if (!hasDataRef.current) {
+            if (err instanceof ApiError && err.kind === 'no-access') {
+              setError('Your account does not have access to this page.')
+            } else {
+              setError(err instanceof ApiError ? err.message : 'Could not load your appointments.')
+            }
           }
           setLoading(false)
-        })()
-      },
+          return false
+        })(),
     )
   }, [user, page, resolveAuthFailure])
 
   useEffect(() => {
     load()
   }, [load, recoveryTick])
+
+  // Signed-in background refresh (focus / online / 45s ±5s jitter). Skipped
+  // while a review form/draft is open or a cancel is in flight.
+  const cancelBusy = Object.values(cancelState).some((entry) => entry?.busy)
+  useAutoRefresh(load, {
+    enabled: Boolean(user) && user.role === 'CUSTOMER',
+    paused: reviewOpenId !== null || cancelBusy,
+  })
 
   async function handleCancel(item) {
     setCancelState((current) => ({ ...current, [item.id]: { busy: true, message: null } }))
@@ -405,6 +437,7 @@ function Appointments() {
                       <AppointmentCard
                         cancelBusy={Boolean(cancelState[item.id]?.busy)}
                         cancelMessage={cancelState[item.id]?.message}
+                        customerName={user.name || user.email || 'Guest'}
                         item={item}
                         onCancel={handleCancel}
                         onCloseReview={() => setReviewOpenId(null)}

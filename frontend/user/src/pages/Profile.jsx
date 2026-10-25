@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
+import CustomerInitials from '../components/CustomerInitials.jsx'
 import { useAuth } from '../context/useAuth.jsx'
 import { useRecoveryTick } from '../lib/useOutage.js'
+import { useAutoRefresh } from '../lib/useAutoRefresh.js'
 import { useToast } from '../context/useToast.jsx'
 import { fetchMyCustomer, updateCustomer } from '../lib/api.js'
 
@@ -13,24 +15,32 @@ function Profile() {
   const { showToast } = useToast()
   const [saved, setSaved] = useState(false)
   const [customer, setCustomer] = useState(null)
+  // True while the customer is editing the form: background refreshes must
+  // never overwrite what they are typing.
+  const [dirty, setDirty] = useState(false)
 
   // Real profile: GET /customers/me fills the form.
-  useEffect(() => {
-    let stale = false
-    fetchMyCustomer().then(
-      (data) => {
-        if (stale) return
-        setCustomer(data ?? null)
-      },
-      () => {
+  const load = useCallback(
+    () =>
+      fetchMyCustomer().then(
+        (data) => {
+          setCustomer(data ?? null)
+          return true
+        },
         // Keep the loaded form visible across a failed refetch; the outage
         // banner explains staleness.
-      },
-    )
-    return () => {
-      stale = true
-    }
-  }, [recoveryTick])
+        () => false,
+      ),
+    [],
+  )
+
+  useEffect(() => {
+    void load()
+  }, [load, recoveryTick])
+
+  // Signed-in background refresh (focus / online / 45s ± jitter) — skipped
+  // entirely while the form is dirty.
+  useAutoRefresh(load, { enabled: Boolean(user) && user.role === 'CUSTOMER', paused: dirty })
 
   const updateProfile = useCallback((event) => {
     event.preventDefault()
@@ -44,6 +54,7 @@ function Profile() {
     updateCustomer(customer.id, payload).then(
       () => {
         setSaved(true)
+        setDirty(false)
         // The in-memory session keeps the display name in sync (no storage).
         login({ ...user, name: `${payload.firstName} ${payload.lastName}`.trim() || user.name })
         showToast('success', 'Your profile has been updated.')
@@ -81,9 +92,10 @@ function Profile() {
               Loading your profile…
             </div>
           ) : (
-          <form onSubmit={updateProfile} className="rounded-lg border border-[rgba(212,180,92,0.22)] bg-[#11100e] p-8 shadow-[0_8px_32px_rgba(0,0,0,0.4)] max-[680px]:p-6">
+          <form onSubmit={updateProfile} onInput={() => setDirty(true)} className="rounded-lg border border-[rgba(212,180,92,0.22)] bg-[#11100e] p-8 shadow-[0_8px_32px_rgba(0,0,0,0.4)] max-[680px]:p-6">
             <div className="mb-8 flex flex-col items-center border-b border-[rgba(212,180,92,0.15)] pb-8">
-              <div className="grid size-25 place-items-center rounded-full border-2 border-(--gold) bg-[#1a1815] text-4xl font-medium text-(--gold)">{(customer.firstName || user.name || 'U')?.[0]?.toUpperCase()}</div>
+              {/* Customer identity is initials only — never a photo. */}
+              <CustomerInitials className="size-25 text-4xl font-medium" name={`${customer.firstName ?? ''} ${customer.lastName ?? ''}`.trim() || user.name} />
               <p className="mt-4 font-(--serif) text-xl text-[#f4f1eb]">{`${customer.firstName || ''} ${customer.lastName || ''}`.trim() || user.name}</p>
               <p className="text-sm text-[#918c82]">{user.email}</p>
             </div>

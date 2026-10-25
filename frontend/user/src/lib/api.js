@@ -61,6 +61,16 @@ export class ServerError extends ApiError {
   }
 }
 
+/**
+ * Resolved value of a conditional GET whose If-None-Match matched (HTTP 304):
+ * the caller keeps its current state untouched — no re-render, no flicker.
+ */
+export const NOT_MODIFIED = Symbol.for('royalty.not-modified')
+
+// Last ETag seen per request path (query included), sent back as If-None-Match
+// on conditional GETs. In-memory only; nothing is written to storage.
+const etagByPath = new Map()
+
 // --- in-memory session (tokens are never written to web storage) ------------
 
 export function setSession({ user, accessToken }) {
@@ -199,7 +209,7 @@ async function performRefresh() {
   return true
 }
 
-export async function apiFetch(path, { method = 'GET', body, headers = {}, retryOn401 = true } = {}) {
+export async function apiFetch(path, { method = 'GET', body, headers = {}, retryOn401 = true, conditional = false } = {}) {
   const doFetch = () =>
     fetch(`${BASE}${path}`, {
       method,
@@ -207,10 +217,19 @@ export async function apiFetch(path, { method = 'GET', body, headers = {}, retry
       headers: {
         ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
         ...(memoryToken ? { Authorization: `Bearer ${memoryToken}` } : {}),
+        ...(conditional && etagByPath.has(path) ? { 'If-None-Match': etagByPath.get(path) } : {}),
         ...headers,
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     })
+
+  // Records the resource's ETag and answers a matched conditional GET with
+  // the NOT_MODIFIED sentinel (state on screen is still current).
+  const settle = (response) => {
+    const etag = response.headers?.get?.('etag')
+    if (etag) etagByPath.set(path, etag)
+    return response.status === 304 ? NOT_MODIFIED : undefined
+  }
 
   let response
   try {
@@ -240,6 +259,8 @@ export async function apiFetch(path, { method = 'GET', body, headers = {}, retry
     }
   }
 
+  const notModified = settle(response)
+  if (notModified !== undefined) return notModified
   if (response.status === 204) return null
   let payload
   try {
@@ -290,7 +311,14 @@ export function fetchMe() {
 }
 
 export function fetchMyAppointments({ page = 1, limit = 20 } = {}) {
-  return apiFetch(`/appointments/mine?page=${page}&limit=${limit}`)
+  // Conditional GET: the server sends an ETag and answers If-None-Match with
+  // 304 (NOT_MODIFIED) so polling can leave current state untouched.
+  return apiFetch(`/appointments/mine?page=${page}&limit=${limit}`, { conditional: true })
+}
+
+/** Public opening hours (no auth): { businessHours: [...] }. */
+export function fetchBusinessHours() {
+  return apiFetch('/schedules/business-hours')
 }
 
 export function cancelAppointmentRequest(appointmentId) {

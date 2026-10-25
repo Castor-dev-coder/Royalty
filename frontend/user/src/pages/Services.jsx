@@ -7,7 +7,8 @@ import SearchBar from '../components/SearchBar.jsx'
 import ServiceCard from '../components/ServiceCard.jsx'
 import { useAuth } from '../context/useAuth.jsx'
 import { useRecoveryTick } from '../lib/useOutage.js'
-import { fetchMyAppointments, fetchServices } from '../lib/api.js'
+import { useAutoRefresh } from '../lib/useAutoRefresh.js'
+import { NOT_MODIFIED, fetchMyAppointments, fetchServices } from '../lib/api.js'
 
 const ALL_SERVICES = 'All Services'
 
@@ -34,51 +35,62 @@ function Services() {
   const [status, setStatus] = useState('loading') // loading | ready | empty
   const [nextAppointment, setNextAppointment] = useState(null)
 
-  useEffect(() => {
-    let stale = false
-    // The catalogue is public (anonymous GET /services returns data), so
-    // signed-out visitors browse it too; only booking requires an account.
-    fetchServices().then(
-      (data) => {
-        if (stale) return
-        const rows = data?.services ?? []
-        setServices(rows)
-        setStatus(rows.length > 0 ? 'ready' : 'empty')
-      },
-      () => {
-        if (stale) return
-        // Keep whatever is already on screen — the outage banner explains
-        // staleness; only a page with nothing to show gets an empty state.
-        setStatus((current) => (current === 'ready' ? 'ready' : 'empty'))
-      },
-    )
-    return () => {
-      stale = true
-    }
-  }, [recoveryTick])
+  // Catalogue refresh (public GET /services). Updates in place: only a page
+  // with nothing on screen ever shows a skeleton or empty state again.
+  const loadServices = useCallback(
+    () =>
+      fetchServices().then(
+        (data) => {
+          const rows = data?.services ?? []
+          setServices(rows)
+          setStatus(rows.length > 0 ? 'ready' : 'empty')
+          return true
+        },
+        () => {
+          // Keep whatever is already on screen — the outage banner explains
+          // staleness; only a page with nothing to show gets an empty state.
+          setStatus((current) => (current === 'ready' ? 'ready' : 'empty'))
+          return false
+        },
+      ),
+    [],
+  )
 
   // Real "next appointment" from GET /appointments/mine (no demo model).
-  useEffect(() => {
-    if (!user) return undefined
-    let stale = false
-    fetchMyAppointments({ page: 1, limit: 50 }).then(
+  const loadNextAppointment = useCallback(() => {
+    if (!user) return Promise.resolve(true)
+    return fetchMyAppointments({ page: 1, limit: 50 }).then(
       (data) => {
-        if (stale) return
+        // 304 on the conditional GET: the strip on screen is still current.
+        if (data === NOT_MODIFIED) return true
         const today = new Date()
         today.setHours(0, 0, 0, 0)
         const upcoming = (data?.appointments ?? [])
           .filter((a) => ['RESERVED', 'CONFIRMED'].includes(a.status) && new Date(`${a.appointmentDate}T00:00:00`) >= today)
           .sort((a, b) => `${a.appointmentDate} ${a.startTime}`.localeCompare(`${b.appointmentDate} ${b.startTime}`))
         setNextAppointment(upcoming[0] ?? null)
+        return true
       },
-      () => {
-        if (!stale) setNextAppointment(null)
-      },
+      // A failed refresh keeps the strip on screen (outage banner explains).
+      () => false,
     )
-    return () => {
-      stale = true
-    }
-  }, [user, recoveryTick])
+  }, [user])
+
+  useEffect(() => {
+    void loadServices()
+  }, [loadServices, recoveryTick])
+
+  useEffect(() => {
+    void loadNextAppointment()
+  }, [loadNextAppointment, recoveryTick])
+
+  // Signed-in background refresh (focus / online / 45s ±5s jitter) — skipped
+  // while the booking form is open so nothing it relies on is swapped under it.
+  const refresh = useCallback(
+    () => Promise.all([loadServices(), loadNextAppointment()]).then((ok) => ok.every(Boolean)),
+    [loadServices, loadNextAppointment],
+  )
+  useAutoRefresh(refresh, { enabled: Boolean(user), paused: Boolean(bookingService) })
 
   const categories = useMemo(() => {
     const names = [...new Set(services.map((service) => service.categoryName).filter(Boolean))]

@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
+import CustomerInitials from '../components/CustomerInitials.jsx'
 import EmptyState from '../components/EmptyState.jsx'
 import { useAuth } from '../context/useAuth.jsx'
 import { useRecoveryTick } from '../lib/useOutage.js'
-import { fetchMyAppointments } from '../lib/api.js'
+import { useAutoRefresh } from '../lib/useAutoRefresh.js'
+import { NOT_MODIFIED, fetchMyAppointments } from '../lib/api.js'
 
 function formatDate(iso) {
   const date = new Date(`${iso}T00:00:00`)
@@ -57,24 +59,31 @@ function MyReviews() {
   const [reviews, setReviews] = useState([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    let stale = false
-    fetchMyAppointments({ page: 1, limit: 100 }).then(
+  const load = useCallback(() => {
+    if (!user) return Promise.resolve(true)
+    return fetchMyAppointments({ page: 1, limit: 100 }).then(
       (data) => {
-        if (stale) return
-        setReviews((data?.appointments ?? []).filter((item) => item.review).map(toMyReview))
+        // 304 on the conditional GET: the rows on screen are still current.
+        if (data !== NOT_MODIFIED) {
+          setReviews((data?.appointments ?? []).filter((item) => item.review).map(toMyReview))
+        }
         setLoading(false)
+        return true
       },
       () => {
-        if (stale) return
         // Keep rows already on screen; the outage banner explains staleness.
         setLoading(false)
+        return false
       },
     )
-    return () => {
-      stale = true
-    }
-  }, [recoveryTick])
+  }, [user])
+
+  useEffect(() => {
+    void load()
+  }, [load, recoveryTick])
+
+  // Signed-in background refresh (focus / online / 45s ±5s jitter).
+  useAutoRefresh(load, { enabled: Boolean(user) })
 
   const visibleReviews = useMemo(() => {
     if (filter === 'all') return reviews
@@ -98,6 +107,8 @@ function MyReviews() {
   }
 
   if (!user) return <Navigate to="/services" replace />
+
+  const customerName = user.name || user.email || 'Guest'
 
   return (
     <main className="min-h-[calc(100vh-76px)] bg-black py-16">
@@ -156,6 +167,11 @@ function MyReviews() {
             <div className="grid grid-cols-3 gap-6 max-[900px]:grid-cols-2 max-[680px]:grid-cols-1">
               {visibleReviews.map((review) => (
                 <article className="flex flex-col gap-3 rounded-lg border border-[rgba(212,180,92,0.22)] bg-[#11100e] p-6" key={review.id}>
+                  {/* Customer identity is initials only — never a photo. */}
+                  <div className="flex items-center gap-2">
+                    <CustomerInitials className="size-8 text-[12px]" name={customerName} />
+                    <span className="text-[13px] text-[#c2beb6]">{customerName}</span>
+                  </div>
                   <div className="flex items-start justify-between gap-3">
                     <h2 className="m-0 font-(--serif) text-xl text-[#f4f1eb]">{review.service}</h2>
                     <Stars value={review.rating} />

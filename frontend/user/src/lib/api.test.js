@@ -186,6 +186,33 @@ describe('silent refresh', () => {
   })
 })
 
+describe('conditional GET (ETag / 304)', () => {
+  it('replays the last ETag as If-None-Match and resolves NOT_MODIFIED on 304', async () => {
+    const { NOT_MODIFIED } = await import('./api.js')
+    const calls = []
+    const fetchMock = vi.fn(async (input, init) => {
+      calls.push({ url: String(input), headers: init.headers || {} })
+      if (calls.length === 1) {
+        return new Response(JSON.stringify({ data: { appointments: [] } }), {
+          status: 200,
+          headers: { 'content-type': 'application/json', etag: '"v1"' },
+        })
+      }
+      return new Response(null, { status: 304, headers: { etag: '"v1"' } })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { fetchMyAppointments } = await import('./api.js')
+    const first = await fetchMyAppointments({ page: 1, limit: 20 })
+    expect(first).toEqual({ appointments: [] })
+    expect(calls[0].headers['If-None-Match']).toBeUndefined()
+
+    const second = await fetchMyAppointments({ page: 1, limit: 20 })
+    expect(calls[1].headers['If-None-Match']).toBe('"v1"')
+    expect(second).toBe(NOT_MODIFIED)
+  })
+})
+
 describe('team and matching endpoints', () => {
   it('fetchTeam calls the public roster endpoint', async () => {
     const fetchMock = vi.fn(async () => jsonResponse(200, { data: { staff: [] } }))

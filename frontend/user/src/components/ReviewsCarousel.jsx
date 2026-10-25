@@ -179,7 +179,6 @@ function ReviewsCarousel({ reviews }) {
             >
               <div className="w-full [&>article]:h-full">
                 <ReviewCard
-                  avatar={review.avatar}
                   category={review.category}
                   date={review.date}
                   images={review.images}

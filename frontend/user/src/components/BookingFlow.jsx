@@ -1,7 +1,21 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Dialog from './Dialog.jsx'
 import SafeImage from './SafeImage.jsx'
-import { ApiError, createAppointment, fetchEligibleStaff, fetchMatching } from '../lib/api.js'
+import {
+  ApiError,
+  createAppointment,
+  fetchBusinessHours,
+  fetchEligibleStaff,
+  fetchMatching,
+} from '../lib/api.js'
+import {
+  hoursForDate,
+  isBookableDate,
+  manilaTodayIso,
+  slotProblem,
+  validSlots,
+  weekdayName,
+} from '../lib/hours.js'
 
 /* The progress indicator maps 1:1 onto the booking flow's real states:
    1 = details form, 2 = review, 3 = confirmation screen. */
@@ -17,9 +31,23 @@ function formatPeso(amount) {
 }
 
 function todayIso() {
-  const now = new Date()
-  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000)
-  return local.toISOString().slice(0, 10)
+  // The salon's clock (Asia/Manila), not the browser's: a slot is "past"
+  // when the salon says it is.
+  return manilaTodayIso()
+}
+
+// A2: show the server's own reason for a failed booking. A staffId detail
+// means no stylist was sent — map it to a stylist prompt; anything else keeps
+// the server's message verbatim; generic only when there is no message.
+function bookingErrorMessage(err) {
+  if (err instanceof ApiError) {
+    const details = Array.isArray(err.details) ? err.details : []
+    if (details.some((detail) => detail && detail.path === 'staffId')) {
+      return 'Please choose a stylist before booking.'
+    }
+    if (err.message) return err.message
+  }
+  return 'Your booking could not be completed. Please try again.'
 }
 
 // Human summary for a non-recommended stylist: coverage first ("covers X of
@@ -53,6 +81,12 @@ function BookingFlow({ service, user, onClose }) {
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [confirmation, setConfirmation] = useState(null) // { appointmentCode }
+  // Shop hours drive the slot picker (GET /schedules/business-hours).
+  const [hours, setHours] = useState(null) // business-hours rows, or null unknown
+  const [hoursStatus, setHoursStatus] = useState('idle') // idle | loading | ready | error
+  const [pickerOpen, setPickerOpen] = useState(false)
+  // Bumped to force a fresh matching call without moving the date/time.
+  const [matchNonce, setMatchNonce] = useState(0)
   const transitioningRef = useRef(false)
   const slideTimerRef = useRef(null)
   const contentRef = useRef(null)
@@ -80,6 +114,28 @@ function BookingFlow({ service, user, onClose }) {
     if (slideTimerRef.current) window.clearTimeout(slideTimerRef.current)
     slideTimerRef.current = null
   }, [])
+
+  // Opening hours: fetched when the flow opens and re-fetched whenever the
+  // picker opens (A6) and again just before submit. A failed fetch leaves the
+  // last known hours in place — the server is the final authority anyway.
+  const loadHours = useCallback(() => {
+    return fetchBusinessHours().then(
+      (data) => {
+        const rows = data?.businessHours ?? []
+        setHours(rows)
+        setHoursStatus('ready')
+        return rows
+      },
+      () => {
+        setHoursStatus((current) => (current === 'ready' ? 'ready' : 'error'))
+        return null
+      },
+    )
+  }, [])
+
+  useEffect(() => {
+    void loadHours()
+  }, [loadHours])
 
   // Eligible staff for this service — the manual choices when no matching has
   // run yet (POST /appointments requires staffId).
@@ -136,7 +192,31 @@ function BookingFlow({ service, user, onClose }) {
     return () => {
       stale = true
     }
-  }, [form.date, form.time, service.id])
+  }, [form.date, form.time, service.id, matchNonce])
+
+  // Total minutes the booking will occupy — the slot must fit inside hours.
+  const durationMinutes = Number(service.durationMinutes) || 0
+
+  // Starts the customer may book for the selected date (A3): inside hours,
+  // whole appointment before closing, and in the future per Asia/Manila.
+  const dateValid = isBookableDate(form.date)
+  const slots = hours && dateValid ? validSlots({ rows: hours, date: form.date, durationMinutes }) : []
+  const dayRow = hours && dateValid ? hoursForDate(hours, form.date) : null
+  const closedDay = Boolean(hours && dateValid && (!dayRow || !dayRow.isOpen))
+
+  // A selected time that stopped being bookable (date change, refreshed
+  // hours) is dropped instead of silently submitted — the same reset a date
+  // change performs.
+  useEffect(() => {
+    if (!form.time || !hours || !form.date) return
+    if (!validSlots({ rows: hours, date: form.date, durationMinutes }).includes(form.time)) {
+      setForm((current) => ({ ...current, time: '', ...(pickModeRef.current === 'recommended' ? { staffId: '' } : {}) }))
+      setMatch(null)
+      setMatchStatus('idle')
+      setShowAlternatives(false)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hours, form.date, durationMinutes])
 
   // Known staff entries from both sources, deduplicated — the dropdown may
   // show anyone the customer could pick.
@@ -204,6 +284,22 @@ function BookingFlow({ service, user, onClose }) {
     update('staffId', '')
   }
 
+  // A6: every open of the picker re-fetches the shop hours and re-asks
+  // matching for the current slot, so the list reflects live availability.
+  function togglePicker() {
+    setPickerOpen((open) => !open)
+    void loadHours()
+    if (form.date && form.time) setMatchNonce((nonce) => nonce + 1)
+  }
+
+  // A stale rendered slot can never be selected: the click re-validates it
+  // against the freshest known hours before it reaches the form.
+  function chooseSlot(slot) {
+    if (!slots.includes(slot)) return
+    setPickerOpen(false)
+    update('time', slot)
+  }
+
   // Horizontal swipe between steps: the outgoing step slides out toward the
   // direction of travel while the new step slides in from the opposite side.
   // The guard makes rapid clicks a no-op instead of overlapping transitions.
@@ -236,8 +332,14 @@ function BookingFlow({ service, user, onClose }) {
 
   function continueToReview(event) {
     event.preventDefault()
-    if (!form.date || !form.time) {
+    if (!dateValid || !form.time) {
       setError('Please complete the required fields before continuing.')
+      return
+    }
+    // Blocked with the specific reason (closed day, too early, too late, past).
+    const problem = slotProblem({ rows: hours, date: form.date, time: form.time, durationMinutes })
+    if (problem) {
+      setError(problem)
       return
     }
     const staffId = resolveStaffId()
@@ -259,12 +361,55 @@ function BookingFlow({ service, user, onClose }) {
     goToStep(2)
   }
 
-  function confirmBooking() {
+  async function confirmBooking() {
     if (submitting) return
     setSubmitting(true)
     setError('')
+    // A6: shop hours and matching are re-fetched just before the POST; a slot
+    // that became invalid blocks the submit with the specific reason.
+    const [freshHours, freshMatch] = await Promise.all([
+      loadHours(),
+      form.date && form.time
+        ? fetchMatching({ serviceIds: [service.id], date: form.date, startTime: form.time }).then(
+            (data) => ({
+              recommended: data?.recommended ?? null,
+              alternatives: data?.alternatives ?? [],
+              reason: data?.reason ?? '',
+              covers: data?.covers ?? 0,
+              needed: data?.needed ?? 0,
+            }),
+            () => null,
+          )
+        : Promise.resolve(null),
+    ])
+    const problem = slotProblem({
+      rows: freshHours ?? hours,
+      date: form.date,
+      time: form.time,
+      durationMinutes,
+    })
+    if (problem) {
+      setSubmitting(false)
+      setError(problem)
+      return
+    }
+    const matchNow = freshMatch ?? match
+    if (freshMatch) setMatch(freshMatch)
+    // Never POST a missing staffId. 'No preference' resolves against the
+    // freshest recommendation/alternative; with nobody left the submit is
+    // blocked and the matching reason is shown.
+    const staffId =
+      pickModeRef.current === 'none'
+        ? matchNow?.recommended?.id ?? matchNow?.alternatives?.[0]?.id ?? null
+        : form.staffId || null
+    if (!staffId) {
+      setSubmitting(false)
+      setError(matchNow?.reason || 'Please choose a stylist before booking.')
+      return
+    }
+    setForm((current) => ({ ...current, staffId }))
     createAppointment({
-      staffId: form.staffId,
+      staffId,
       appointmentDate: form.date,
       startTime: form.time,
       serviceIds: [service.id],
@@ -276,13 +421,7 @@ function BookingFlow({ service, user, onClose }) {
       },
       (err) => {
         setSubmitting(false)
-        setError(
-          err instanceof ApiError && err.kind === 'validation'
-            ? 'Please choose a valid date and time during opening hours.'
-            : err instanceof ApiError
-              ? err.message
-              : 'Your booking could not be completed. Please try again.',
-        )
+        setError(bookingErrorMessage(err))
       },
     )
   }
@@ -320,8 +459,54 @@ function BookingFlow({ service, user, onClose }) {
           <form className="grid gap-4" onSubmit={continueToReview}>
             <div className="grid grid-cols-2 gap-3">
               <label className="grid gap-1 text-xs uppercase tracking-wider text-[#bcb5a9]">Date<input required type="date" min={todayIso()} value={form.date} onChange={(e) => update('date', e.target.value)} className="rounded border border-[#3a3835] bg-[#1c1b18] p-3 text-sm text-white outline-none focus:border-(--gold)" /></label>
-              <label className="grid gap-1 text-xs uppercase tracking-wider text-[#bcb5a9]">Time<input required type="time" value={form.time} onChange={(e) => update('time', e.target.value)} className="rounded border border-[#3a3835] bg-[#1c1b18] p-3 text-sm text-white outline-none focus:border-(--gold)" /></label>
+              <div className="grid gap-1">
+                <span className="text-xs uppercase tracking-wider text-[#bcb5a9]" id="booking-time-label">Time</span>
+                <button
+                  aria-controls="booking-slot-picker"
+                  aria-expanded={pickerOpen}
+                  aria-labelledby="booking-time-label"
+                  className="cursor-pointer rounded border border-[#3a3835] bg-[#1c1b18] p-3 text-left text-sm text-white outline-none focus:border-(--gold)"
+                  onClick={togglePicker}
+                  type="button"
+                >
+                  {form.time || 'Select a time'}
+                </button>
+              </div>
             </div>
+            {pickerOpen && (
+              <div className="rounded border border-[#3a3835] bg-[#1c1b18] p-3" id="booking-slot-picker">
+                {!dateValid ? (
+                  <p className="m-0 text-xs leading-5 text-[#bcb5a9]">Pick a date to see available times.</p>
+                ) : !hours && hoursStatus !== 'error' ? (
+                  <p className="m-0 text-xs leading-5 text-[#bcb5a9]" role="status">Loading opening hours…</p>
+                ) : hoursStatus === 'error' && !hours ? (
+                  <div className="grid gap-2">
+                    <p className="m-0 text-xs leading-5 text-[#e9a68c]" role="alert">
+                      Opening hours are unavailable right now — please try again.
+                    </p>
+                    <button type="button" onClick={() => void loadHours()} className="btn-pill w-fit cursor-pointer rounded-full border border-[#635b4c] px-4 py-2 text-xs font-bold uppercase text-[#d5cdbf]">Retry</button>
+                  </div>
+                ) : closedDay ? (
+                  <p className="m-0 text-xs leading-5 text-[#e9a68c]" role="status">{`Closed on ${weekdayName(form.date)}`}</p>
+                ) : slots.length === 0 ? (
+                  <p className="m-0 text-xs leading-5 text-[#bcb5a9]">{`No available times on ${weekdayName(form.date)} — try another date.`}</p>
+                ) : (
+                  <div aria-label="Available start times" className="grid grid-cols-4 gap-2 max-[420px]:grid-cols-3" role="group">
+                    {slots.map((slot) => (
+                      <button
+                        aria-pressed={form.time === slot}
+                        className={`btn-pill cursor-pointer rounded border px-2 py-2 text-center text-xs tabular-nums ${form.time === slot ? 'border-(--gold) bg-(--gold) text-[#111]' : 'border-[#3a3835] text-white hover:border-(--gold)'}`}
+                        key={slot}
+                        onClick={() => chooseSlot(slot)}
+                        type="button"
+                      >
+                        {slot}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             <div className="grid gap-2">
               <label className="grid gap-1 text-xs uppercase tracking-wider text-[#bcb5a9]">Preferred stylist
                 <select value={form.staffId} onChange={(e) => onStaffChange(e.target.value)} className="rounded border border-[#3a3835] bg-[#1c1b18] p-3 text-sm normal-case tracking-normal text-white outline-none focus:border-(--gold)">

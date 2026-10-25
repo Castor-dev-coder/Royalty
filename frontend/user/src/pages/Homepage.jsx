@@ -29,7 +29,6 @@ function toCardReview(row) {
   return {
     id: row.id,
     name: 'Verified customer',
-    avatar: undefined,
     date: formatReviewDate(row.createdAt),
     rating: row.overallRating ?? row.rating,
     category: row.appointment?.services?.[0]?.serviceName ?? '',

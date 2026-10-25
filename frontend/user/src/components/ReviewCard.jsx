@@ -1,4 +1,5 @@
 import SafeImage from './SafeImage.jsx'
+import CustomerInitials from './CustomerInitials.jsx'
 
 import { useState } from 'react'
 import ImageLightbox from './ImageLightBox.jsx'
@@ -48,7 +49,7 @@ function RatingStars({ value }) {
   )
 }
 
-function ReviewCard({ name, avatar, date, rating, category, text, images = [] }) {
+function ReviewCard({ name, date, rating, category, text, images = [] }) {
   const [zoomedImage, setZoomedImage] = useState(null)
 
   return (
@@ -76,11 +77,8 @@ function ReviewCard({ name, avatar, date, rating, category, text, images = [] })
       <div className="p-[18px_18px_16px]">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">
-            <SafeImage
-              alt={`${name} avatar`}
-              className="size-11 rounded-full object-cover ring-2 ring-line"
-              src={avatar}
-            />
+            {/* Reviewers are customers: initials only, never a photo. */}
+            <CustomerInitials className="size-11 text-base" name={name} />
             <div>
               <div className="text-lg font-semibold text-(--text)">{name}</div>
               {date && (

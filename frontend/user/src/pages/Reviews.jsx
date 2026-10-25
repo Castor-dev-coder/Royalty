@@ -20,7 +20,6 @@ function toCardReview(row) {
   return {
     id: row.id,
     name: 'Verified customer',
-    avatar: undefined,
     date: formatReviewDate(row.createdAt),
     rating: row.overallRating ?? row.rating,
     category: row.appointment?.services?.[0]?.serviceName ?? '',
@@ -120,7 +119,6 @@ function Reviews() {
             <div className="mt-[14px] grid gap-[18px] md:grid-cols-2 xl:grid-cols-3">
               {rows.map((review) => (
                 <ReviewCard
-                  avatar={review.avatar}
                   category={review.category}
                   date={review.date}
                   images={review.images}
