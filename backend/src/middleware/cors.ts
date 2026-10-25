@@ -25,7 +25,9 @@ export function corsMiddleware(req: Request, res: Response, next: NextFunction):
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Vary', 'Origin');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Auth-Mode, X-Requested-With');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Auth-Mode, X-Requested-With, If-None-Match');
+    // Conditional requests: clients must be able to read the ETag header.
+    res.setHeader('Access-Control-Expose-Headers', 'ETag');
     res.setHeader('Access-Control-Max-Age', '600');
     // Credentials (refresh cookie) are enabled for allowlisted origins only —
     // never with a wildcard, which browsers reject alongside credentials.

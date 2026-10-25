@@ -28,7 +28,8 @@ test('an allowed origin receives CORS headers', async () => {
   const response = await fetch(`${baseUrl}/ping`, { headers: { origin } });
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('access-control-allow-origin'), origin);
-  assert.equal(response.headers.get('access-control-allow-headers'), 'Content-Type, Authorization, X-Auth-Mode, X-Requested-With');
+  assert.equal(response.headers.get('access-control-allow-headers'), 'Content-Type, Authorization, X-Auth-Mode, X-Requested-With, If-None-Match');
+  assert.equal(response.headers.get('access-control-expose-headers'), 'ETag', 'clients can read the ETag for conditional requests');
   assert.equal(response.headers.get('access-control-allow-credentials'), 'true', 'credentials are enabled for allowlisted origins');
 });
 
