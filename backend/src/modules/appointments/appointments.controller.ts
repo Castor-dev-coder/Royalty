@@ -38,7 +38,7 @@ export async function listMyAppointmentsWithReviewController(req: AuthenticatedR
   try {
     const { page, limit } = validated<AppointmentListQuery>(req, 'validatedQuery');
     const result = await AppointmentsService.listMineWithReviewStatus(req.user!.userId, req.user!.role, page, limit);
-    res.json({ data: { ...result, page, limit, totalPages: Math.ceil(result.total / limit) } });
+    jsonWithEtag(req, res, { data: { ...result, page, limit, totalPages: Math.ceil(result.total / limit) } });
   } catch (error) {
     next(error);
   }
