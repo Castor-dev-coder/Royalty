@@ -27,13 +27,15 @@ import {
 export const schedulesRouter = Router();
 
 // All routes require authentication
+// Public: the customer-facing slot picker reads the shop hours (display data).
+schedulesRouter.get('/business-hours', getBusinessHoursController);
+
 schedulesRouter.use(authenticate);
 
 // ============================================================
 // Business Hours
 // ============================================================
 
-schedulesRouter.get('/business-hours', requireRole('ADMIN', 'MANAGER'), getBusinessHoursController);
 schedulesRouter.patch('/business-hours', requireRole('ADMIN', 'MANAGER'), validateRequest(businessHoursWeekSchema), replaceBusinessHoursController);
 
 // ============================================================

@@ -27,7 +27,7 @@ test(
   { skip: REAL_DB ? false : 'no real DATABASE_URL - integration skipped' },
   async () => {
     const { db } = await import('../../prisma/db.js');
-    const { AttendanceService } = await import('./attendance.service.js');
+    const { AttendanceService } = await import('../../modules/attendance/attendance.service.js');
 
     const accounts = await db.orm.public.Account.all();
     const manager = accounts.find((a: any) => a.role === 'MANAGER' && !a.isSystem);

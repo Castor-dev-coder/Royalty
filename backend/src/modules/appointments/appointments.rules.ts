@@ -147,3 +147,8 @@ function minutesToTime(minutes: number): string {
 export function canTransitionStatus(current: AppointmentStatus, next: AppointmentStatus): boolean {
   return transitions[current].includes(next);
 }
+
+/** Postgres weekday (0 = Sunday … 6 = Saturday) as a readable name. */
+export function weekdayName(dayOfWeek: number): string {
+  return ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][dayOfWeek] ?? String(dayOfWeek);
+}

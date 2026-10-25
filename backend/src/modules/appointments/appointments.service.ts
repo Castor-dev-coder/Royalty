@@ -36,6 +36,7 @@ import {
   localDateAndTime,
   sumDecimalStrings,
   timeRangesOverlap,
+  weekdayName,
 } from './appointments.rules.js';
 type AppointmentRecord = {
   id: string;
@@ -69,6 +70,8 @@ interface BookingPlan {
   totalAmount: string;
   services: BookingService[];
   available: boolean;
+  /** First clear rule message when available is false. */
+  unavailableReason?: string;
 }
 
 type EligibleCalendarStaff = EligibleStaffInfo;
@@ -242,7 +245,11 @@ export class AppointmentsService {
 
     const plan = await this.getBookingPlan(data);
     if (!plan.available) {
-      throw new ConflictError('The requested staff member is not available for this appointment');
+      const reason = plan.unavailableReason ?? 'The requested staff member is not available for this appointment';
+      if (reason === 'The chosen stylist already has a booking at that time.') {
+        throw new ConflictError(reason);
+      }
+      throw new BadRequestError(reason);
     }
 
     // Server-side re-validation (never trust the client's recommendation):
@@ -592,14 +599,21 @@ export class AppointmentsService {
       throw new BadRequestError('The selected staff member is not assigned to every selected service');
     }
 
-    let available = staff.workStatus === 'ON_DUTY';
+    // Booking rules (Asia/Manila wall clock throughout). Each failure gets its
+    // own clear reason; the first reason is what the caller sees.
+    const reasons: string[] = [];
     const dayOfWeek = isoWeekdayToPostgres(isoDayOfWeek(data.appointmentDate));
+    const weekday = weekdayName(dayOfWeek);
     const businessHour = await db.orm.public.BusinessHour.where({ dayOfWeek }).first();
     const businessOpen = businessHour?.openTime ? fromPrismaTime(businessHour.openTime) : null;
     const businessClose = businessHour?.closeTime ? fromPrismaTime(businessHour.closeTime) : null;
     if (!businessHour || !businessHour.isOpen || !businessHour.openTime || !businessHour.closeTime ||
-      !businessOpen || !businessClose || data.startTime < businessOpen || endTime > businessClose) {
-      available = false;
+      !businessOpen || !businessClose) {
+      reasons.push(`The salon is closed on ${weekday}.`);
+    } else if (data.startTime < businessOpen) {
+      reasons.push(`The salon opens at ${businessOpen} on ${weekday}.`);
+    } else if (endTime > businessClose) {
+      reasons.push(`The appointment must end by ${businessClose} on ${weekday}.`);
     }
 
     const schedules = await db.orm.public.StaffSchedule.where({ staffId: staff.id, dayOfWeek, isActive: true }).all();
@@ -610,7 +624,22 @@ export class AppointmentsService {
         (!scheduleEndDate || scheduleEndDate >= data.appointmentDate) &&
         data.startTime >= fromPrismaTime(schedule.startTime) && endTime <= fromPrismaTime(schedule.endTime);
     });
-    if (!hasMatchingSchedule || !Number.isFinite(dateValue)) available = false;
+    if (!hasMatchingSchedule || !Number.isFinite(dateValue)) {
+      reasons.push('The chosen stylist is not scheduled at that time.');
+    }
+
+    // Approved time off (full day or a time window) excludes the stylist.
+    const timeOffRequests = await db.orm.public.ScheduleRequest.where({ staffId: staff.id, status: 'APPROVED' }).all();
+    const onTimeOff = timeOffRequests.some((request) => {
+      if (fromPrismaDateString(request.requestedDate) !== data.appointmentDate) return false;
+      const offStart = request.requestedStartTime ? fromPrismaTime(request.requestedStartTime) : null;
+      const offEnd = request.requestedEndTime ? fromPrismaTime(request.requestedEndTime) : null;
+      if (!offStart || !offEnd) return true;
+      return timeRangesOverlap(data.startTime, endTime, offStart, offEnd);
+    });
+    if (onTimeOff) {
+      reasons.push('The chosen stylist is on approved time off that day.');
+    }
 
     const staffAppointments = await db.orm.public.Appointment.where(staffWhere({ staffId: staff.id })).all();
     const hasConflict = staffAppointments.some((appointment) => {
@@ -618,14 +647,17 @@ export class AppointmentsService {
       if (appointment.status !== 'RESERVED' && appointment.status !== 'CONFIRMED') return false;
       return timeRangesOverlap(data.startTime, endTime, fromPrismaTime(appointment.startTime), fromPrismaTime(appointment.endTime));
     });
-    if (hasConflict) available = false;
+    if (hasConflict) {
+      reasons.push('The chosen stylist already has a booking at that time.');
+    }
 
     return {
       appointmentDate: dateString(requestedDate),
       endTime,
       totalAmount: sumDecimalStrings(serviceRows.map((service) => service.price)),
       services: serviceRows,
-      available,
+      available: reasons.length === 0,
+      unavailableReason: reasons[0],
     };
   }
 

@@ -11,7 +11,8 @@ import { validateRequest } from '../../middleware/validator.js';
 // GET /schedules/business-hours - List all business hours
 export const getBusinessHoursController = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
-    const hours = await SchedulesService.getBusinessHours(req.user!.role);
+    // Public endpoint: anonymous callers read the guest view.
+    const hours = await SchedulesService.getBusinessHours(req.user?.role ?? 'CUSTOMER');
     res.json({ data: { businessHours: hours } });
   } catch (error) {
     next(error);

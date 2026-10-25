@@ -258,12 +258,8 @@ export class SchedulesService {
   // Business Hours
   // ============================================================
 
-  /** Get all business hours */
-  static async getBusinessHours(requestingRole: string): Promise<BusinessHoursInfo[]> {
-    if (requestingRole !== 'ADMIN' && requestingRole !== 'MANAGER') {
-      throw new ForbiddenError('Only administrators can view business hours');
-    }
-
+  /** Get all business hours. Public display data: the customer slot picker needs it. */
+  static async getBusinessHours(_requestingRole: string): Promise<BusinessHoursInfo[]> {
     const hours = await db.orm.public.BusinessHour.orderBy((b) => b.dayOfWeek.asc()).all();
     return hours.map(mapBusinessHourFromPrisma).sort((left, right) => left.dayOfWeek - right.dayOfWeek);
   }

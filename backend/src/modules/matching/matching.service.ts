@@ -84,6 +84,7 @@ export async function matchStaff(input: {
 
   const allStaff = await db.orm.public.Staff.all()
   const entries: MatchStaffEntry[] = []
+  const excluded: { schedule: boolean; timeOff: boolean; busy: boolean } = { schedule: false, timeOff: false, busy: false }
 
   for (const member of allStaff) {
     const account = await db.orm.public.Account.where({ id: member.accountId }).first()
@@ -94,6 +95,30 @@ export async function matchStaff(input: {
     const covered = links.map((link) => String(link.categoryId))
     const coversCategories = neededCategories.filter((categoryId) => covered.includes(categoryId)).length
 
+    // Scheduled that weekday, slot fully inside one shift (effective range).
+    // 0 = Sunday … 6 = Saturday (same convention as business_hours/staff_schedules).
+    const dayOfWeek = new Date(`${input.date}T12:00:00Z`).getUTCDay()
+    const schedules = await db.orm.public.StaffSchedule.where({ staffId: member.id, dayOfWeek, isActive: true }).all()
+    const scheduled = schedules.some((schedule) => {
+      const from = String(schedule.effectiveFrom).slice(0, 10)
+      const until = schedule.effectiveUntil ? String(schedule.effectiveUntil).slice(0, 10) : null
+      return from <= input.date && (!until || until >= input.date) &&
+        slotStart >= toMinutes(String(schedule.startTime).slice(0, 5)) &&
+        slotEnd <= toMinutes(String(schedule.endTime).slice(0, 5))
+    })
+    if (!scheduled) { excluded.schedule = true; continue }
+
+    // Approved time off (full day or overlapping window) excludes the stylist.
+    const timeOff = await db.orm.public.ScheduleRequest.where({ staffId: member.id, status: 'APPROVED' }).all()
+    const onTimeOff = timeOff.some((request) => {
+      if (String(request.requestedDate).slice(0, 10) !== input.date) return false
+      const offStart = request.requestedStartTime ? toMinutes(String(request.requestedStartTime).slice(0, 5)) : null
+      const offEnd = request.requestedEndTime ? toMinutes(String(request.requestedEndTime).slice(0, 5)) : null
+      if (offStart === null || offEnd === null) return true
+      return overlaps(slotStart, slotEnd, offStart, offEnd)
+    })
+    if (onTimeOff) { excluded.timeOff = true; continue }
+
     // Free at the slot: no RESERVED/CONFIRMED appointment may overlap.
     const dayAppointments = await db.orm.public.Appointment.where({ staffId: member.id, appointmentDate: toPlainDate(input.date) }).all()
     const busy = dayAppointments.some((appointment) => {
@@ -101,7 +126,7 @@ export async function matchStaff(input: {
       if (status !== 'RESERVED' && status !== 'CONFIRMED') return false
       return overlaps(slotStart, slotEnd, toMinutes(String(appointment.startTime)), toMinutes(String(appointment.endTime)))
     })
-    if (busy) continue
+    if (busy) { excluded.busy = true; continue }
 
     const rating = await staffRating(String(member.id))
     entries.push({
@@ -149,10 +174,20 @@ export async function matchStaff(input: {
     }
   }
 
-  // Nobody covers everything: partial matches, never auto-select.
+  // Nobody covers everything: partial matches, never auto-select. Say WHY the
+  // list is empty when every candidate was excluded by scheduling rules.
+  const reason = partial.length > 0
+    ? `No stylist covers every category (${needed} needed) — choose one to see coverage.`
+    : excluded.timeOff
+      ? 'The stylists are on approved time off at that time.'
+      : excluded.schedule
+        ? 'No stylist is scheduled at that time.'
+        : excluded.busy
+          ? 'The stylists are already booked at that time.'
+          : 'No stylist is available for this slot.'
   return {
     recommended: null,
-    reason: `No stylist covers every category (${needed} needed) — choose one to see coverage.`,
+    reason,
     alternatives: partial,
     partial: true,
     covers: 0,

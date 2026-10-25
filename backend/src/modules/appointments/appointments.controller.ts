@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { AuthenticatedRequest } from '../../middleware/auth.js';
 import { AppointmentsService } from './appointments.service.js';
+import { jsonWithEtag } from '../../utils/http.js';
 import {
   AppointmentAvailabilityQuery,
   CalendarAvailabilityQuery,
@@ -17,7 +18,7 @@ export async function listAppointmentsController(req: AuthenticatedRequest, res:
   try {
     const { page, limit } = validated<AppointmentListQuery>(req, 'validatedQuery');
     const result = await AppointmentsService.listAll(page, limit);
-    res.json({ data: { ...result, page, limit, totalPages: Math.ceil(result.total / limit) } });
+    jsonWithEtag(req, res, { data: { ...result, page, limit, totalPages: Math.ceil(result.total / limit) } });
   } catch (error) {
     next(error);
   }
@@ -27,7 +28,7 @@ export async function listMyAppointmentsController(req: AuthenticatedRequest, re
   try {
     const { page, limit } = validated<AppointmentListQuery>(req, 'validatedQuery');
     const result = await AppointmentsService.listMine(req.user!.userId, req.user!.role, page, limit);
-    res.json({ data: { ...result, page, limit, totalPages: Math.ceil(result.total / limit) } });
+    jsonWithEtag(req, res, { data: { ...result, page, limit, totalPages: Math.ceil(result.total / limit) } });
   } catch (error) {
     next(error);
   }

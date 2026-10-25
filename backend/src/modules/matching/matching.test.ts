@@ -25,6 +25,8 @@ interface Fixture {
   appointments: Array<Record<string, unknown>>
   reviews: Array<Record<string, unknown>>
   reviewRatings: Array<Record<string, unknown>>
+  staffSchedules: Array<Record<string, unknown>>
+  scheduleRequests: Array<Record<string, unknown>>
 }
 
 const world: Fixture = {
@@ -39,6 +41,8 @@ const world: Fixture = {
   appointments: [],
   reviews: [],
   reviewRatings: [],
+  staffSchedules: [],
+  scheduleRequests: [],
 };
 
 function resetWorld(): void {
@@ -48,6 +52,8 @@ function resetWorld(): void {
   world.appointments = [];
   world.reviews = [];
   world.reviewRatings = [];
+  world.staffSchedules = [];
+  world.scheduleRequests = [];
 }
 
 function addStaff(id: string, opts: {
@@ -55,6 +61,9 @@ function addStaff(id: string, opts: {
   workStatus?: string
   ratings?: number[]
   bookings?: Array<{ date: string; start: string; end: string; status?: string }>
+  /** Shifts for the week; default is every day 08:00-18:00 so existing cases stay scheduled. */
+  schedules?: Array<{ dayOfWeek: number; start: string; end: string; from?: string; until?: string; active?: boolean }>
+  timeOff?: Array<{ date: string; start?: string; end?: string; status?: string }>
 } = {}): void {
   world.accounts.push({ id: `acc-${id}`, status: 'ACTIVE', isSystem: false });
   world.staff.push({
@@ -96,6 +105,31 @@ function addStaff(id: string, opts: {
       status: booking.status ?? 'CONFIRMED',
     });
   }
+  const shifts = opts.schedules ?? Array.from({ length: 7 }, (_, dayOfWeek) => ({
+    dayOfWeek, start: '08:00', end: '18:00', from: '2026-01-01', until: null, active: true,
+  }));
+  for (const [index, shift] of shifts.entries()) {
+    world.staffSchedules.push({
+      id: `sch-${id}-${index}`,
+      staffId: id,
+      dayOfWeek: shift.dayOfWeek,
+      startTime: `${shift.start}:00`,
+      endTime: `${shift.end}:00`,
+      effectiveFrom: shift.from ?? '2026-01-01',
+      effectiveUntil: shift.until ?? null,
+      isActive: shift.active ?? true,
+    });
+  }
+  for (const [index, off] of (opts.timeOff ?? []).entries()) {
+    world.scheduleRequests.push({
+      id: `off-${id}-${index}`,
+      staffId: id,
+      requestedDate: off.date,
+      requestedStartTime: off.start ? `${off.start}:00` : null,
+      requestedEndTime: off.end ? `${off.end}:00` : null,
+      status: off.status ?? 'APPROVED',
+    });
+  }
 }
 
 function matches(row: Record<string, unknown>, filter: Record<string, unknown>): boolean {
@@ -126,6 +160,8 @@ function table(getRows: () => Array<Record<string, unknown>>) {
     Appointment: table(() => world.appointments),
     Review: table(() => world.reviews),
     ReviewRating: table(() => world.reviewRatings),
+    StaffSchedule: table(() => world.staffSchedules),
+    ScheduleRequest: table(() => world.scheduleRequests),
   },
 };
 
@@ -210,4 +246,33 @@ test('fewer than 3 staff ratings ranks as neutral', async () => {
   assert.equal(fresh?.avgStaffRating, null);
   assert.ok(NEUTRAL_RATING === 3.0);
   assert.ok(['s-mid', 's-new'].includes(String(fresh?.id)));
+});
+
+test('a4: right specialty but off that day is excluded', async () => {
+  resetWorld();
+  // Monday slot, but the only stylist works Tuesday.
+  addStaff('s-offday', { categories: [CAT_CUT], schedules: [{ dayOfWeek: 2, start: '09:00', end: '17:00' }] });
+  const result = await matchStaff({ serviceIds: ['svc-cut'], ...SLOT });
+  assert.equal(result.recommended, null);
+  assert.equal(result.alternatives.length, 0);
+  assert.equal(result.reason, 'No stylist is scheduled at that time.');
+});
+
+test('a4: a shift that ends before the slot ends is excluded', async () => {
+  resetWorld();
+  // 45-minute service at 10:00 ends 10:45; the shift ends 10:30.
+  addStaff('s-shortshift', { categories: [CAT_CUT], schedules: [{ dayOfWeek: 1, start: '09:00', end: '10:30' }] });
+  const result = await matchStaff({ serviceIds: ['svc-cut'], ...SLOT });
+  assert.equal(result.recommended, null);
+  assert.equal(result.reason, 'No stylist is scheduled at that time.');
+});
+
+test('a4: approved time off excludes the stylist', async () => {
+  resetWorld();
+  addStaff('s-timeoff', { categories: [CAT_CUT], timeOff: [{ date: SLOT.date }] });
+  addStaff('s-pending', { categories: [CAT_CUT], timeOff: [{ date: SLOT.date, status: 'PENDING' }] });
+  const result = await matchStaff({ serviceIds: ['svc-cut'], ...SLOT });
+  // Only the approved-time-off stylist is excluded; the pending one matches.
+  assert.equal(result.recommended?.id, 's-pending');
+  assert.equal(result.reason.includes('0 bookings that day'), true);
 });

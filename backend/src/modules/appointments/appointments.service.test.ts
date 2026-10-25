@@ -84,6 +84,7 @@ test('single-time booking availability also queries PostgreSQL Sunday as zero', 
     }] };
   });
   const appointments = mock.method(db.orm.public.Appointment, 'where', () => ({ all: async () => [] }));
+  const timeOff = mock.method(db.orm.public.ScheduleRequest, 'where', () => ({ all: async () => [] }));
   context.after(() => {
     serviceLookup.mock.restore();
     categoryLookup.mock.restore();
@@ -92,6 +93,7 @@ test('single-time booking availability also queries PostgreSQL Sunday as zero', 
     businessHours.mock.restore();
     schedules.mock.restore();
     appointments.mock.restore();
+    timeOff.mock.restore();
   });
 
   const result = await AppointmentsService.checkAvailability({
