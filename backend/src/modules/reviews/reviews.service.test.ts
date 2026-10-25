@@ -35,6 +35,7 @@ test('review service uses the authenticated customer and returns safe appointmen
   }));
   const transaction = mock.method(db, 'transaction', (fn: (tx: unknown) => Promise<unknown>) => fn({ orm: db.orm }));
   const appointmentServicesWhere = mock.method(db.orm.public.AppointmentService, 'where', () => ({ all: async () => [] }));
+  const photosWhere = mock.method(db.orm.public.ReviewPhoto, 'where', () => ({ all: async () => [] }));
 
   context.after(() => {
     customerWhere.mock.restore();
@@ -45,6 +46,7 @@ test('review service uses the authenticated customer and returns safe appointmen
     ratingWhere.mock.restore();
     transaction.mock.restore();
     appointmentServicesWhere.mock.restore();
+    photosWhere.mock.restore();
   });
 
   const result = await ReviewsService.create(

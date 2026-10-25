@@ -34,7 +34,7 @@ import type {
 } from '@prisma/orm-postgres/contract/types';
 
 export type StorageHash =
-  StorageHashBase<'c61d33568910197e566ed84ebf6b0123d9801d4f1b311da5274ddd8a65f95dcb'>;
+  StorageHashBase<'c7b3293465ca258d93a3f9dfe9f47ce1250d386d01ca29a5ee85ecac3b0f03fa'>;
 export type ExecutionHash = ExecutionHashBase<string>;
 export type ProfileHash =
   ProfileHashBase<'3916f444a8a17ad749191acf9e08dad97d1a327b88c2f1d45d12f240296aa8b2'>;
@@ -364,6 +364,15 @@ export type FieldOutputTypes = {
       readonly rating: CodecTypes['pg/int2@1']['output'];
       readonly updatedAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
     };
+    readonly ReviewPhoto: {
+      readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
+      readonly hidden: CodecTypes['pg/bool@1']['output'];
+      readonly id: CodecTypes['pg/uuid@1']['output'];
+      readonly position: CodecTypes['pg/int2@1']['output'];
+      readonly reviewId: CodecTypes['pg/uuid@1']['output'];
+      readonly storagePath: Varchar<500>;
+      readonly url: Varchar<500>;
+    };
     readonly ReviewRating: {
       readonly category: 'SERVICE' | 'PRODUCTS' | 'STAFF' | 'TIME_MANAGEMENT';
       readonly id: CodecTypes['pg/uuid@1']['output'];
@@ -568,6 +577,15 @@ export type FieldInputTypes = {
       readonly rating: CodecTypes['pg/int2@1']['input'];
       readonly updatedAt: CodecTypes['pg/timestamptz-temporal@1']['input'];
     };
+    readonly ReviewPhoto: {
+      readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['input'];
+      readonly hidden: CodecTypes['pg/bool@1']['input'];
+      readonly id: CodecTypes['pg/uuid@1']['input'];
+      readonly position: CodecTypes['pg/int2@1']['input'];
+      readonly reviewId: CodecTypes['pg/uuid@1']['input'];
+      readonly storagePath: CodecTypes['sql/varchar@1']['input'];
+      readonly url: CodecTypes['sql/varchar@1']['input'];
+    };
     readonly ReviewRating: {
       readonly category: 'SERVICE' | 'PRODUCTS' | 'STAFF' | 'TIME_MANAGEMENT';
       readonly id: CodecTypes['pg/uuid@1']['input'];
@@ -744,6 +762,15 @@ export type StorageColumnTypes = {
       readonly id: CodecTypes['pg/int4@1']['output'];
       readonly image_url: Varchar<500>;
       readonly user_id: CodecTypes['pg/int4@1']['output'];
+    };
+    readonly review_photos: {
+      readonly created_at: CodecTypes['pg/timestamptz-temporal@1']['output'];
+      readonly hidden: CodecTypes['pg/bool@1']['output'];
+      readonly id: CodecTypes['pg/uuid@1']['output'];
+      readonly position: CodecTypes['pg/int2@1']['output'];
+      readonly review_id: CodecTypes['pg/uuid@1']['output'];
+      readonly storage_path: Varchar<500>;
+      readonly url: Varchar<500>;
     };
     readonly review_ratings: {
       readonly category: 'SERVICE' | 'PRODUCTS' | 'STAFF' | 'TIME_MANAGEMENT';
@@ -948,6 +975,15 @@ export type StorageColumnInputTypes = {
       readonly id: CodecTypes['pg/int4@1']['input'];
       readonly image_url: CodecTypes['sql/varchar@1']['input'];
       readonly user_id: CodecTypes['pg/int4@1']['input'];
+    };
+    readonly review_photos: {
+      readonly created_at: CodecTypes['pg/timestamptz-temporal@1']['input'];
+      readonly hidden: CodecTypes['pg/bool@1']['input'];
+      readonly id: CodecTypes['pg/uuid@1']['input'];
+      readonly position: CodecTypes['pg/int2@1']['input'];
+      readonly review_id: CodecTypes['pg/uuid@1']['input'];
+      readonly storage_path: CodecTypes['sql/varchar@1']['input'];
+      readonly url: CodecTypes['sql/varchar@1']['input'];
     };
     readonly review_ratings: {
       readonly category: 'SERVICE' | 'PRODUCTS' | 'STAFF' | 'TIME_MANAGEMENT';
@@ -1216,8 +1252,20 @@ export namespace Models {
     updatedAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
     appointment: public_Appointment;
     customer: public_Customer;
+    reviewPhotos: public_ReviewPhoto[];
     reviewRatings: public_ReviewRating[];
-    readonly [RelationKeys]?: 'appointment' | 'customer' | 'reviewRatings';
+    readonly [RelationKeys]?: 'appointment' | 'customer' | 'reviewPhotos' | 'reviewRatings';
+  };
+  export type public_ReviewPhoto = {
+    createdAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
+    hidden: CodecTypes['pg/bool@1']['output'];
+    id: CodecTypes['pg/uuid@1']['output'];
+    position: CodecTypes['pg/int2@1']['output'];
+    reviewId: CodecTypes['pg/uuid@1']['output'];
+    storagePath: Varchar<500>;
+    url: Varchar<500>;
+    review: public_Review;
+    readonly [RelationKeys]?: 'review';
   };
   export type public_ReviewRating = {
     category: 'SERVICE' | 'PRODUCTS' | 'STAFF' | 'TIME_MANAGEMENT';
@@ -1358,6 +1406,7 @@ export declare const models: {
     ExternalUsers: Models.public_ExternalUsers;
     Payment: Models.public_Payment;
     Review: Models.public_Review;
+    ReviewPhoto: Models.public_ReviewPhoto;
     ReviewRating: Models.public_ReviewRating;
     ScheduleRequest: Models.public_ScheduleRequest;
     Service: Models.public_Service;
@@ -2172,6 +2221,89 @@ type ContractBase = Omit<
                     readonly columns: readonly ['id'];
                   };
                   readonly name: 'posts_user_id_fkey';
+                },
+              ];
+            };
+            readonly review_photos: {
+              columns: {
+                readonly created_at: {
+                  readonly nativeType: 'timestamptz';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                  readonly nullable: false;
+                  readonly default: { readonly kind: 'function'; readonly expression: 'now()' };
+                };
+                readonly hidden: {
+                  readonly nativeType: 'bool';
+                  readonly codecId: 'pg/bool@1';
+                  readonly nullable: false;
+                  readonly default: {
+                    readonly kind: 'literal';
+                    readonly value: DefaultLiteralValue<'pg/bool@1', false>;
+                  };
+                };
+                readonly id: {
+                  readonly nativeType: 'uuid';
+                  readonly codecId: 'pg/uuid@1';
+                  readonly nullable: false;
+                  readonly default: {
+                    readonly kind: 'function';
+                    readonly expression: 'gen_random_uuid()';
+                  };
+                };
+                readonly position: {
+                  readonly nativeType: 'int2';
+                  readonly codecId: 'pg/int2@1';
+                  readonly nullable: false;
+                };
+                readonly review_id: {
+                  readonly nativeType: 'uuid';
+                  readonly codecId: 'pg/uuid@1';
+                  readonly nullable: false;
+                };
+                readonly storage_path: {
+                  readonly nativeType: 'character varying';
+                  readonly codecId: 'sql/varchar@1';
+                  readonly nullable: false;
+                  readonly typeParams: { readonly length: 500 };
+                };
+                readonly url: {
+                  readonly nativeType: 'character varying';
+                  readonly codecId: 'sql/varchar@1';
+                  readonly nullable: false;
+                  readonly typeParams: { readonly length: 500 };
+                };
+              };
+              primaryKey: {
+                readonly columns: readonly ['id'];
+                readonly name: 'review_photos_pkey';
+              };
+              uniques: readonly [
+                {
+                  readonly columns: readonly ['review_id', 'position'];
+                  readonly name: 'review_photos_review_position_key';
+                },
+              ];
+              indexes: readonly [
+                {
+                  readonly name: 'review_photos_review_id_idx_af4d2e86';
+                  readonly prefix: 'review_photos_review_id_idx';
+                  readonly columns: readonly ['review_id'];
+                  readonly unique: false;
+                },
+              ];
+              foreignKeys: readonly [
+                {
+                  readonly source: {
+                    readonly namespaceId: 'public' & NamespaceId;
+                    readonly tableName: 'review_photos';
+                    readonly columns: readonly ['review_id'];
+                  };
+                  readonly target: {
+                    readonly namespaceId: 'public' & NamespaceId;
+                    readonly tableName: 'reviews';
+                    readonly columns: readonly ['id'];
+                  };
+                  readonly name: 'fk_review_photo_review';
                 },
               ];
             };
@@ -3204,6 +3336,10 @@ type ContractBase = Omit<
     readonly payments: { readonly namespace: 'public' & NamespaceId; readonly model: 'Payment' };
     readonly post: { readonly namespace: 'public' & NamespaceId; readonly model: 'ExternalPost' };
     readonly posts: { readonly namespace: 'public' & NamespaceId; readonly model: 'ExternalPosts' };
+    readonly review_photos: {
+      readonly namespace: 'public' & NamespaceId;
+      readonly model: 'ReviewPhoto';
+    };
     readonly review_ratings: {
       readonly namespace: 'public' & NamespaceId;
       readonly model: 'ReviewRating';
@@ -4270,6 +4406,17 @@ type ContractBase = Omit<
                   readonly targetFields: readonly ['id'];
                 };
               };
+              readonly reviewPhotos: {
+                readonly to: {
+                  readonly namespace: 'public' & NamespaceId;
+                  readonly model: 'ReviewPhoto';
+                };
+                readonly cardinality: '1:N';
+                readonly on: {
+                  readonly localFields: readonly ['id'];
+                  readonly targetFields: readonly ['reviewId'];
+                };
+              };
               readonly reviewRatings: {
                 readonly to: {
                   readonly namespace: 'public' & NamespaceId;
@@ -4293,6 +4440,76 @@ type ContractBase = Omit<
                 readonly id: { readonly column: 'id' };
                 readonly rating: { readonly column: 'rating' };
                 readonly updatedAt: { readonly column: 'updated_at' };
+              };
+            };
+          };
+          readonly ReviewPhoto: {
+            readonly fields: {
+              readonly createdAt: {
+                readonly nullable: false;
+                readonly type: {
+                  readonly kind: 'scalar';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                };
+              };
+              readonly hidden: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/bool@1' };
+              };
+              readonly id: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/uuid@1' };
+              };
+              readonly position: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/int2@1' };
+              };
+              readonly reviewId: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/uuid@1' };
+              };
+              readonly storagePath: {
+                readonly nullable: false;
+                readonly type: {
+                  readonly kind: 'scalar';
+                  readonly codecId: 'sql/varchar@1';
+                  readonly typeParams: { readonly length: 500 };
+                };
+              };
+              readonly url: {
+                readonly nullable: false;
+                readonly type: {
+                  readonly kind: 'scalar';
+                  readonly codecId: 'sql/varchar@1';
+                  readonly typeParams: { readonly length: 500 };
+                };
+              };
+            };
+            readonly relations: {
+              readonly review: {
+                readonly to: {
+                  readonly namespace: 'public' & NamespaceId;
+                  readonly model: 'Review';
+                };
+                readonly cardinality: 'N:1';
+                readonly nullable: false;
+                readonly on: {
+                  readonly localFields: readonly ['reviewId'];
+                  readonly targetFields: readonly ['id'];
+                };
+              };
+            };
+            readonly storage: {
+              readonly table: 'review_photos';
+              readonly namespaceId: 'public';
+              readonly fields: {
+                readonly createdAt: { readonly column: 'created_at' };
+                readonly hidden: { readonly column: 'hidden' };
+                readonly id: { readonly column: 'id' };
+                readonly position: { readonly column: 'position' };
+                readonly reviewId: { readonly column: 'review_id' };
+                readonly storagePath: { readonly column: 'storage_path' };
+                readonly url: { readonly column: 'url' };
               };
             };
           };

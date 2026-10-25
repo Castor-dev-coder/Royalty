@@ -339,11 +339,30 @@ namespace public {
     appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Restrict, map: "fk_review_appointment")
     customer      Customer    @relation(fields: [customerId], references: [id], onDelete: Restrict, map: "fk_review_customer")
     reviewRatings ReviewRating[]
+    reviewPhotos  ReviewPhoto[]
 
     @@index([customerId], map: "idx_reviews_customer_id")
     @@check(expression: "((rating >= 1) AND (rating <= 5))", map: "valid_rating")
     @@rls
     @@map("reviews")
+  }
+
+  // Customer-uploaded photos for a review (max 3: the database enforces the
+  // cap via the position range and the unique (review_id, position) index).
+  model ReviewPhoto {
+    id          Uuid      @id(map: "review_photos_pkey") @default(sql`gen_random_uuid()`)
+    reviewId    Uuid      @map("review_id")
+    position    SmallInt
+    storagePath VarChar(500) @map("storage_path")
+    url         VarChar(500)
+    hidden      Boolean   @default(false)
+    createdAt   Timestamptz @default(now()) @map("created_at")
+    review      Review    @relation(fields: [reviewId], references: [id], onDelete: Cascade, map: "fk_review_photo_review")
+
+    @@unique([reviewId, position], map: "review_photos_review_position_key")
+    @@check(expression: "((\"position\" >= 1) AND (\"position\" <= 3))", map: "review_photo_position_range")
+    @@rls
+    @@map("review_photos")
   }
 
   model ReviewRating {

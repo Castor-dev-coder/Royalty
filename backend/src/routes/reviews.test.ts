@@ -142,6 +142,7 @@ function installFakeOrm(data: FakeData): FakeData {
         return { id: `rr-${ratingCreateCalls}`, ...input };
       },
     },
+    ReviewPhoto: { where: () => ({ all: async () => [] }) },
     Staff: { where: () => ({ first: async () => null }) },
   };
   (db as unknown as { orm: unknown }).orm = { public: publicSchema };

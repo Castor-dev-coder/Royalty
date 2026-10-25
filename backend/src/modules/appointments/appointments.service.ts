@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { db } from '../../prisma/db.js';
 import { categoryRatingsFromRows, computeOverallRating, type CategoryRatings } from '../reviews/reviews.rules.js';
+import { ReviewPhotosService } from '../reviews/photos.service.js';
 import {
   pgNumeric,
   pgVarchar,
@@ -117,6 +118,8 @@ export interface MineAppointmentInfo extends AppointmentInfo {
     /** Four category ratings, or null for grandfathered reviews (overall-only). */
     ratings: CategoryRatings | null;
     comment: string | null;
+    /** Visible photos only: { position, url }. */
+    photos: Array<{ position: number; url: string }>;
   } | null;
 }
 
@@ -423,6 +426,7 @@ export class AppointmentsService {
             overallRating: ratings ? computeOverallRating(ratings) : review.rating,
             ratings,
             comment: review.comment,
+            photos: await ReviewPhotosService.visiblePhotos(String(review.id)),
           },
         };
       })),

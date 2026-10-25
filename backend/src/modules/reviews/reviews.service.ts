@@ -29,6 +29,8 @@ export interface ReviewInfo {
   /** Four category ratings, or null for grandfathered reviews (overall-only). */
   ratings: CategoryRatings | null;
   comment: string | null;
+  /** Visible photos only: { position, url }. Hidden photos never appear. */
+  photos: Array<{ position: number; url: string }>;
   createdAt: Date;
   appointment: {
     id: string;
@@ -64,6 +66,8 @@ function isUniqueViolation(error: unknown): boolean {
   if (typeof error !== 'object' || error === null || !('code' in error)) return false;
   return ['P2002', '23505'].includes(String(error.code));
 }
+
+import { ReviewPhotosService } from './photos.service.js'
 
 export class ReviewsService {
   static async create(input: CreateReviewInput, requestingAccountId: string): Promise<ReviewInfo> {
@@ -148,6 +152,7 @@ export class ReviewsService {
       db.orm.public.ReviewRating.where({ reviewId: review.id }).all(),
     ]);
     const ratings = categoryRatingsFromRows(ratingRows.map((row) => ({ category: row.category, rating: row.rating })));
+    const photos = await ReviewPhotosService.visiblePhotos(String(review.id));
 
     return {
       id: review.id,
@@ -155,6 +160,7 @@ export class ReviewsService {
       overallRating: ratings ? computeOverallRating(ratings) : review.rating,
       ratings,
       comment: review.comment,
+      photos,
       createdAt: review.createdAt,
       appointment: {
         id: appointment.id,

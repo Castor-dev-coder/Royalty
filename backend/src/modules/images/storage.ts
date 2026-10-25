@@ -6,7 +6,7 @@ import { env } from '../../config/env.js'
 import type { ImageFormat } from './image-pipeline.js'
 
 export const BUCKET = 'salon-media'
-export type MediaKind = 'staff' | 'services'
+export type MediaKind = 'staff' | 'services' | 'reviews'
 
 const base = (): string => {
   if (!env.SUPABASE_URL) throw new Error('SUPABASE_URL is not configured')

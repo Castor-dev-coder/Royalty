@@ -1084,6 +1084,16 @@ async function seed(): Promise<void> {
  * Refuses to run without explicit confirmation, and refuses to delete rows
  * that do not match the expected SEED_VERSION.
  */
+async function deleteStorageObject(storagePath: string): Promise<void> {
+  // Best-effort storage cleanup: an already-missing object is fine.
+  try {
+    const { deleteObject } = await import('../src/modules/images/storage.js');
+    await deleteObject(storagePath);
+  } catch {
+    /* storage may be unconfigured in some dev setups */
+  }
+}
+
 async function remove(): Promise<void> {
   const supplied = process.env['SEED_REMOVE_CONFIRM'];
   if (supplied !== REMOVE_CONFIRMATION_VALUE) {
@@ -1123,7 +1133,15 @@ async function remove(): Promise<void> {
 
     // 2. reviews — MUST precede appointments: reviews.appointment_id is
     //    ON DELETE RESTRICT. review_ratings follow via ON DELETE CASCADE.
+    //    Review-photo storage objects are deleted first (rows cascade).
     for (const id of [ID.apptFutureReserved, ID.apptPastConfirmed, ID.apptPastCompleted, ID.apptFutureReserved2, ID.apptPastCompleted2]) {
+      const review = await tx.orm.public.Review.where({ appointmentId: id }).first();
+      if (review) {
+        const photos = await tx.orm.public.ReviewPhoto.where({ reviewId: review.id }).all();
+        for (const photo of photos) {
+          await deleteStorageObject(String(photo.storagePath));
+        }
+      }
       await tx.orm.public.Review.where({ appointmentId: id }).delete();
     }
 
