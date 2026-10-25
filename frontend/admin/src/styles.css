@@ -563,6 +563,32 @@ small { font-size: var(--text-2xs); line-height: var(--leading-snug); }
 .bottom-profile { margin-top: 18px; }
 .profile-card { display: inline-flex; align-items: center; gap: 12px; background: var(--surface-raised); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 10px 14px; }
 .avatar, .user-avatar { width: 34px; height: 34px; flex: 0 0 34px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; color: var(--text-inverse); background: var(--surface-inverse); font-size: var(--text-2xs); font-weight: 700; }
+
+/* Customer identity mark: initials, gold on dark.
+   A customer has no photo, so every customer slot shows the person's
+   initials on this disc with their name as real text beside it. The values
+   are deliberately theme-independent (like the sign-in photography panel):
+   the mark must read gold-on-dark in both themes, so it does not resolve
+   through the inverse tokens, which flip with the theme. */
+.customer-avatar {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #242321;
+  color: #d9b46e;
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+/* The initials mark beside a person's name: name as real text, mark as
+   decoration. Works inline in definition lists and as a row wrapper in
+   lists and table cells. */
+.person-inline { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
 .sidebar-profile { width: 100%; margin-top: auto; text-align: left; cursor: pointer; }
 .profile-card strong, .user-cell strong { display: block; font-size: var(--text-sm); color: var(--text-primary); }
 .profile-card span, .user-cell small { display: block; font-size: var(--text-2xs); color: var(--text-muted); }
@@ -908,6 +934,7 @@ tbody tr:hover td { background: var(--surface-hover); }
 .payment-table-scroll table { min-width: 770px; margin-top: 10px; }
 .payment-table-scroll thead th { padding-top: 4px; }
 .payment-table-scroll tbody td { padding-top: 11px; padding-bottom: 11px; }
+.payment-customer { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .payment-customer strong, .payment-customer small, .payment-method { display: block; }
 .payment-customer small, .payment-method, .payment-date { color: var(--text-muted); font-size: var(--text-2xs); margin-top: 3px; }
 .payment-table-scroll td .status-badge { white-space: nowrap; padding: 0.32rem 0.55rem; font-size: var(--text-2xs); }

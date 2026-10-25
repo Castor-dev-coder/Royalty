@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useDialogBehavior } from '../components/useDialogBehavior';
+import { CustomerAvatar } from '../components/CustomerAvatar';
 import {
   EmptyState,
   ErrorState,
@@ -163,9 +164,14 @@ export function StaffAppointmentsPanel() {
                     <td role="cell" data-label="Date" data-primary>{formatDate(appointment.appointmentDate)}</td>
                     <td role="cell" data-label="Time">{formatTime(appointment.startTime)}</td>
                     <td role="cell" data-label="Client">
-                      {appointment.customer
-                        ? `${appointment.customer.firstName} ${appointment.customer.lastName}`
-                        : 'Client not recorded'}
+                      <span className="person-inline">
+                        <CustomerAvatar name={appointment.customer ? `${appointment.customer.firstName} ${appointment.customer.lastName}` : 'Customer'} />
+                        <span>
+                          {appointment.customer
+                            ? `${appointment.customer.firstName} ${appointment.customer.lastName}`
+                            : 'Client not recorded'}
+                        </span>
+                      </span>
                     </td>
                     <td role="cell" data-label="Service">{appointment.services.map((service) => service.serviceName).join(', ') || 'Salon appointment'}</td>
                     <td role="cell" data-label="Status"><StatusBadge status={appointment.status} /></td>
@@ -190,7 +196,7 @@ export function StaffAppointmentsPanel() {
             <div className="modal-subtitle">{formatDate(selected.appointmentDate)}</div>
             <dl className="appointment-detail-list">
               <div><dt>Time</dt><dd>{formatTime(selected.startTime)} – {formatTime(selected.endTime)}</dd></div>
-              <div><dt>Client</dt><dd>{selected.customer ? `${selected.customer.firstName} ${selected.customer.lastName}` : 'Not recorded'}</dd></div>
+              <div><dt>Client</dt><dd><span className="person-inline"><CustomerAvatar name={selected.customer ? `${selected.customer.firstName} ${selected.customer.lastName}` : 'Customer'} /><span>{selected.customer ? `${selected.customer.firstName} ${selected.customer.lastName}` : 'Not recorded'}</span></span></dd></div>
               {selected.customer?.phone && <div><dt>Phone</dt><dd>{selected.customer.phone}</dd></div>}
               <div><dt>Service</dt><dd>{selected.services.map((service) => service.serviceName).join(', ') || 'Salon appointment'}</dd></div>
               <div><dt>Total</dt><dd>{formatMoney(selected.totalAmount)}</dd></div>

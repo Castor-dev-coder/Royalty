@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { apiFetch, getAccessToken } from '../api';
+import { CustomerAvatar } from './CustomerAvatar';
 import { formatTime, localDateKey } from '../shared/ui';
 
 /**
@@ -111,7 +112,10 @@ export function SidebarStatusPanel() {
               <li key={booking.id}>
                 <span className="sidebar-schedule-time">{booking.time}</span>
                 <span className="sidebar-schedule-detail">
-                  <strong>{booking.customerName}</strong>
+                  <span className="person-inline">
+                    <CustomerAvatar name={booking.customerName} />
+                    <strong>{booking.customerName}</strong>
+                  </span>
                   <small>{booking.serviceName}</small>
                 </span>
               </li>

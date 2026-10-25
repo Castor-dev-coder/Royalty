@@ -26,12 +26,15 @@ import { SignOutControl } from './components/SignOutControl';
 import { BrandShowcase } from './components/BrandShowcase';
 import { SidebarStatusPanel } from './components/SidebarStatusPanel';
 import { CalendarSkeleton, ChartSkeleton, FieldError, invalidField, ListSkeleton, Skeleton, SkeletonRegion, StatCardSkeleton, TableSkeleton } from './shared/ui';
-import { CategoryBars, DataOriginNote, LineChart, type LineAxisPoint, type LineSeries } from './components/charts';
+import { DataOriginNote, LineChart, type LineAxisPoint, type LineSeries } from './components/charts';
 import { AccountsIcon, AttendanceIcon, CalendarIcon, DashboardIcon, PaymentsIcon, StaffIcon } from './components/icons';
 import { useDialogBehavior } from './components/useDialogBehavior';
 import { clearAccountSession, currentSession, readLoginSession, storeAccountSession, type AccountRole } from './session';
 import { ImageUploadField, type ImageUploadHandle } from './shared/imageUpload';
 import { CheckboxMultiSelect, TagMultiSelect, ToggleSwitch } from './shared/profileFields';
+import { CustomerAvatar } from './components/CustomerAvatar';
+import { useAppointmentsQuery, type AppointmentRow } from './appointmentsQuery';
+import { currentManilaDateKey, currentManilaMonthKey, manilaDateKey, selectMonthBookings } from './dashboard-month';
 import { AttendancePanel } from './attendance/AttendancePanel';
 import { StaffShell } from './staff/StaffShell';
 import { StaffOverviewPanel } from './staff/StaffOverviewPanel';
@@ -90,21 +93,6 @@ type StaffRow = {
   accountStatus: 'Active' | 'Deactivated';
   /** Availability: whether the staff member is working, off, or unavailable. */
   status: 'Active' | 'On Vacation' | 'Day Off';
-};
-
-type AppointmentRow = {
-  id?: string;
-  code: string;
-  appointmentDate: string;
-  startTime: string;
-  endTime: string;
-  status: string;
-  serviceNames: string;
-  customerName?: string;
-  customerEmail?: string;
-  customerPhone?: string;
-  staffName?: string;
-  totalAmount?: number;
 };
 
 const navSections = [
@@ -194,10 +182,6 @@ function appointmentStatusBadge(status: string): string {
 
 function isPastNonterminal(appointment: { appointmentDate: string; status: string }, todayKey: string): boolean {
   return appointment.appointmentDate < todayKey && (appointment.status === 'CONFIRMED' || appointment.status === 'RESERVED');
-}
-
-function localDateKey(date: Date): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
 function normalizeWeeklySchedule(days: any[] = []): Array<{ dayOfWeek: number; enabled: boolean; startTime: string; endTime: string }> {
@@ -469,50 +453,6 @@ function useStaffData() {
   return [data, setData, status] as const;
 }
 
-function useAppointmentData() {
-  const [data, setData] = useState<AppointmentRow[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const token = getAccessToken();
-    if (!token) { setLoading(false); return; }
-    const controller = new AbortController();
-    const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
-    apiFetch(`${baseUrl}/appointments?page=1&limit=100`, {
-      signal: controller.signal,
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then(async (response) => {
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload.message ?? 'Unable to load appointments.');
-        setData((payload?.data?.appointments ?? []).map((appointment: any) => ({
-          id: String(appointment.id),
-          code: appointment.appointmentCode ?? String(appointment.id).slice(0, 8),
-          appointmentDate: appointment.appointmentDate,
-          startTime: appointment.startTime,
-          endTime: appointment.endTime,
-          status: appointment.status,
-          serviceNames: appointment.services?.map((service: any) => service.serviceName).join(', ') || 'Salon appointment',
-          customerName: `${appointment.customer?.firstName ?? ''} ${appointment.customer?.lastName ?? ''}`.trim() || 'Customer',
-          customerEmail: appointment.customer?.account?.email ?? '',
-          customerPhone: appointment.customer?.phone ?? '',
-          staffName: `${appointment.staff?.firstName ?? ''} ${appointment.staff?.lastName ?? ''}`.trim() || 'Staff not assigned',
-          totalAmount: Number(appointment.totalAmount ?? 0),
-        })));
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setData([]);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-
-    return () => controller.abort();
-  }, []);
-
-  return [data, setData, loading] as const;
-}
-
 function Shell() {
   const location = useLocation();
   const [isAuthenticated, setIsAuthenticated] = useState(Boolean(getAccessToken()));
@@ -656,62 +596,45 @@ function Shell() {
 
 function BusinessDashboardPage() {
   const reviewData = useReviewData();
-  const [appointments, setAppointments] = useState<any[]>([]);
-  const [payments, setPayments] = useState<any[]>([]);
-  const [appointmentsAvailable, setAppointmentsAvailable] = useState(false);
-  const [paymentsAvailable, setPaymentsAvailable] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const monthLabel = new Date().toLocaleDateString('en-US', { month: 'long' }).toUpperCase();
-
-  useEffect(() => {
-    const token = getAccessToken();
-    if (!token) return;
-    const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
-    const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
-    const controller = new AbortController();
-    Promise.all([
-      apiFetch(`${baseUrl}/appointments?page=1&limit=100`, { signal: controller.signal, headers }),
-      apiFetch(`${baseUrl}/payments?page=1&limit=100`, { signal: controller.signal, headers }),
-    ])
-      .then(async ([appointmentResponse, paymentResponse]) => {
-        const [appointmentPayload, paymentPayload] = await Promise.all([appointmentResponse.json(), paymentResponse.json()]);
-        if (appointmentResponse.ok) {
-          setAppointments(appointmentPayload?.data?.appointments ?? []);
-          setAppointmentsAvailable(true);
-        }
-        if (paymentResponse.ok) {
-          setPayments(paymentPayload?.data?.payments ?? []);
-          setPaymentsAvailable(true);
-        }
-      })
-      .catch(() => undefined)
-      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
-    return () => controller.abort();
-  }, []);
-
-  const today = new Date();
-  const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-  const startOfMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
-  const monthAppointments = appointments.filter((item) => item.appointmentDate >= startOfMonth && item.appointmentDate.slice(0, 7) === todayKey.slice(0, 7));
-  const verifiedPayments = payments.filter((payment) => payment.status === 'VERIFIED');
+  // One live query feeds the whole page: the summary cards and the month
+  // panel below both render from the same selector over these bookings.
+  const { appointments, loading } = useAppointmentsQuery();
+  const monthKey = currentManilaMonthKey();
+  const todayKey = currentManilaDateKey();
+  const monthLabel = new Date(`${monthKey}-01T12:00:00`).toLocaleDateString('en-US', { month: 'long' }).toUpperCase();
+  // The one selector both views read from: the month's bookings, their
+  // count, and the sum of their prices. The summary cards and the month
+  // panel can never disagree because they read the same output.
+  const monthSelection = selectMonthBookings(appointments, monthKey);
+  const monthAppointments = monthSelection.bookings;
+  const monthCount = monthSelection.count;
+  const monthRevenue = monthSelection.totalAmount;
+  const completedRevenue = monthAppointments
+    .filter((item) => item.status === 'COMPLETED')
+    .reduce((sum, item) => sum + Number(item.totalAmount ?? 0), 0);
+  const outstandingRevenue = monthAppointments
+    .filter((item) => item.status === 'RESERVED' || item.status === 'CONFIRMED')
+    .reduce((sum, item) => sum + Number(item.totalAmount ?? 0), 0);
   const averageRating = reviewData.length ? (reviewData.reduce((total, review) => total + review.rating, 0) / reviewData.length).toFixed(1) : '—';
   const dashboardMetrics = [
     // A cancelled appointment is not a booking, so it is left out of the
     // count. This keeps the figure in step with today's schedule in the
     // sidebar, which lists the bookings that are still going ahead.
-    { label: "TODAY'S BOOKINGS", value: appointmentsAvailable ? appointments.filter((item) => item.appointmentDate === todayKey && item.status !== 'CANCELLED').length : '—', suffix: 'EXCL. CANCELLED' },
-    { label: 'TOTAL APPOINTMENTS', value: appointmentsAvailable ? monthAppointments.length : '—', suffix: monthLabel },
-    { label: 'COMPLETED', value: appointmentsAvailable ? monthAppointments.filter((item) => item.status === 'COMPLETED').length : '—', suffix: monthLabel },
-    { label: 'CANCELLED', value: appointmentsAvailable ? monthAppointments.filter((item) => item.status === 'CANCELLED').length : '—', suffix: monthLabel },
-    { label: 'REVENUE', value: paymentsAvailable ? `₱${verifiedPayments.reduce((sum, payment) => sum + Number(payment.amount ?? 0), 0).toLocaleString()}` : '—', suffix: paymentsAvailable ? 'VERIFIED' : 'NOT CONNECTED' },
+    { label: "TODAY'S BOOKINGS", value: appointments.filter((item) => item.appointmentDate === todayKey && item.status !== 'CANCELLED').length, suffix: 'EXCL. CANCELLED' },
+    { label: 'TOTAL APPOINTMENTS', value: monthCount, suffix: monthLabel },
+    { label: 'COMPLETED', value: monthAppointments.filter((item) => item.status === 'COMPLETED').length, suffix: monthLabel },
+    { label: 'CANCELLED', value: monthAppointments.filter((item) => item.status === 'CANCELLED').length, suffix: monthLabel },
+    // Revenue is the booked value of the month: the price of every booking
+    // in it, summed by the same selector that counts the bookings.
+    { label: 'REVENUE', value: `₱${monthRevenue.toLocaleString()}`, suffix: monthLabel },
     { label: 'AVG RATINGS', value: averageRating, suffix: 'RECENT REVIEWS' },
   ];
   // One point per day, read from the appointment records. The axis carries
-  // the calendar date so the tooltip can name the day it belongs to.
+  // the calendar date so the tooltip can name the day it belongs to. The
+  // days are taken in Asia/Manila, the studio's operating timezone.
   const bookingAxis: LineAxisPoint[] = Array.from({ length: 7 }, (_, index) => {
-    const date = new Date();
-    date.setDate(date.getDate() - (6 - index));
-    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    const key = manilaDateKey(new Date(Date.now() - (6 - index) * 86400000)) ?? '';
+    const date = new Date(`${key}T12:00:00`);
     return {
       key,
       label: date.toLocaleDateString('en-US', { weekday: 'short' }),
@@ -738,37 +661,6 @@ function BusinessDashboardPage() {
     .sort((left, right) => right.count - left.count)
     .slice(0, 5);
   const maxServiceCount = Math.max(1, ...serviceScores.map((service) => service.count));
-  const pendingPayments = payments.filter((payment) => payment.status === 'UNVERIFIED');
-  // How the recorded payment value splits by state. Each bar is the solid
-  // version of the hue its badge uses, so a bar and its badge mean the same
-  // thing. The bar is sized by the amount, and the amount is written out
-  // beside it.
-  const paymentStates = [
-    { key: 'VERIFIED', label: 'Verified', badge: 'success', color: '--chart-verified' },
-    { key: 'UNVERIFIED', label: 'Unverified', badge: 'warning', color: '--chart-unverified' },
-    { key: 'REJECTED', label: 'Rejected', badge: 'danger', color: '--chart-rejected' },
-  ] as const;
-  const paymentTotals = paymentStates.map((state) => {
-    const records = payments.filter((payment) => payment.status === state.key);
-    const amount = records.reduce((sum, payment) => sum + Number(payment.amount ?? 0), 0);
-    return { ...state, records, amount };
-  });
-  const paymentTotalAmount = paymentTotals.reduce((sum, state) => sum + state.amount, 0);
-  const paymentBars = paymentTotals
-    .filter((state) => state.records.length > 0)
-    .map((state) => ({
-      key: state.key,
-      label: state.label,
-      badge: state.badge,
-      color: state.color,
-      value: `₱${state.amount.toLocaleString()}`,
-      share: paymentTotalAmount > 0 ? `${Math.round((state.amount / paymentTotalAmount) * 100)}%` : undefined,
-      percent: paymentTotalAmount > 0 ? (state.amount / paymentTotalAmount) * 100 : 0,
-      detail: `${state.records.length} payment${state.records.length === 1 ? '' : 's'} · ₱${state.amount.toLocaleString()} of ₱${paymentTotalAmount.toLocaleString()} (${Math.round((state.amount / paymentTotalAmount) * 100)}%)`,
-    }));
-  const monthRevenue = verifiedPayments
-    .filter((payment) => String(payment.createdAt).slice(0, 7) === todayKey.slice(0, 7))
-    .reduce((sum, payment) => sum + Number(payment.amount ?? 0), 0);
 
   return (
     <>
@@ -824,20 +716,15 @@ function BusinessDashboardPage() {
             </SkeletonRegion>
           )}
           {!loading && <ul className="summary-list">
-            <li><span>Total Verified</span><strong>{paymentsAvailable ? `₱${verifiedPayments.reduce((sum, payment) => sum + Number(payment.amount ?? 0), 0).toLocaleString()}` : '—'}</strong></li>
-            <li><span>This Month</span><strong>{paymentsAvailable ? `₱${monthRevenue.toLocaleString()}` : '—'}</strong></li>
-            <li><span>Pending Payments</span><strong>{paymentsAvailable ? pendingPayments.length : '—'}</strong></li>
-            <li><span>Needs verification</span><strong>{paymentsAvailable ? `₱${pendingPayments.reduce((sum, payment) => sum + Number(payment.amount ?? 0), 0).toLocaleString()}` : '—'}</strong></li>
+            {/* Every figure here is one row of the same month selection the
+                summary cards render from — one selector, no second query. */}
+            <li><span>Bookings</span><strong>{monthCount}</strong></li>
+            <li><span>This Month</span><strong>₱{monthRevenue.toLocaleString()}</strong></li>
+            <li><span>Completed value</span><strong>₱{completedRevenue.toLocaleString()}</strong></li>
+            <li><span>Outstanding value</span><strong>₱{outstandingRevenue.toLocaleString()}</strong></li>
           </ul>}
-          {paymentsAvailable && paymentBars.length > 0 && (
-            <div className="payment-status-breakdown">
-              <h4 className="breakdown-title">
-                Recorded payment value, all statuses
-                <span className="breakdown-total">₱{paymentTotalAmount.toLocaleString()} recorded</span>
-              </h4>
-              <CategoryBars items={paymentBars} emptyMessage="" />
-              <DataOriginNote>Read from the payment records on this page.</DataOriginNote>
-            </div>
+          {!loading && (
+            <DataOriginNote>Booking prices read from the appointment records on this page.</DataOriginNote>
           )}
         </section>
       </div>
@@ -873,7 +760,7 @@ function BusinessDashboardPage() {
             {reviewData.map((review) => (
               <div key={review.id} className="review-item">
                 <div className="review-head">
-                  <strong>{review.customer}</strong>
+                  <span className="person-inline"><CustomerAvatar name={review.customer} /><strong>{review.customer}</strong></span>
                   <span>{review.date}</span>
                 </div>
                 <div className="stars" aria-label={`Rated ${review.rating} stars`}>
@@ -1420,7 +1307,9 @@ function AccountManagementPage() {
                   <tr role="row" key={row.email}>
                     <td role="cell" data-label="User / Email" data-primary>
                       <div className="user-cell">
-                        <span className="user-avatar">{row.id}</span>
+                        {/* Person marks are initials — gold on dark, hidden
+                            from assistive technology with the name beside. */}
+                        <CustomerAvatar name={row.user} />
                         <div>
                           <strong>{row.user}</strong>
                           <small>{row.email}</small>
@@ -1774,7 +1663,7 @@ function StaffManagementPage() {
                 <tr role="row" key={row.email}>
                   <td role="cell" data-label="User / Email" data-primary>
                     <div className="user-cell">
-                      <span className="user-avatar">{row.user.slice(0, 2).toUpperCase()}</span>
+                      <CustomerAvatar name={row.user} />
                       <div>
                         <strong>{row.user}</strong>
                         <small className="user-cell-email">{row.email}</small>
@@ -2336,14 +2225,18 @@ function TimeOffModal({ entry, onClose, onSave }: {
 }
 
 function AppointmentPage() {
-  const [appointments, setAppointments, appointmentsLoading] = useAppointmentData();
   const [selectedAppointment, setSelectedAppointment] = useState<AppointmentRow | null>(null);
   const [confirmation, setConfirmation] = useState<{ appointment: AppointmentRow; status: string } | null>(null);
-  const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
-  const [selectedDate, setSelectedDate] = useState(() => {
-    const date = new Date();
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  // Background refresh is skipped entirely while a dialog is open, so a
+  // poll response can never overwrite the appointment being reviewed.
+  const { appointments, setAppointments, loading: appointmentsLoading } = useAppointmentsQuery({
+    paused: selectedAppointment !== null || confirmation !== null,
   });
+  const [month, setMonth] = useState(() => {
+    const [year, monthNumber] = currentManilaMonthKey().split('-').map(Number);
+    return new Date(year, monthNumber - 1, 1);
+  });
+  const [selectedDate, setSelectedDate] = useState(() => currentManilaDateKey());
   const [message, setMessage] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'other' | (typeof SIDEBAR_STATUS_ORDER)[number]>('all');
   const token = getAccessToken();
@@ -2356,7 +2249,7 @@ function AppointmentPage() {
     const day = index - monthStart.getDay() + 1;
     return day > 0 && day <= daysInMonth ? day : null;
   });
-  const todayKey = localDateKey(new Date());
+  const todayKey = currentManilaDateKey();
   const daysInMonthPrefix = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}`;
   const monthAppointments = appointments.filter((item) => item.appointmentDate.startsWith(daysInMonthPrefix));
   const monthStatusSequence = ['CONFIRMED', 'COMPLETED', 'CANCELLED', 'RESERVED', 'NO_SHOW'] as const;
@@ -2493,11 +2386,14 @@ function AppointmentPage() {
             <div className="sidebar-appointment-list">
               {section.items.map((appt) => (
                 <button key={appt.code} type="button" className="sidebar-appointment-item" onClick={() => handleSidebarClick(appt)}>
-                  <div>
-                    <strong>{appt.customerName || 'Customer'}</strong>
-                    <small>{appt.appointmentDate} · {appt.startTime}</small>
-                    <small>{appt.staffName || 'Staff'}</small>
-                  </div>
+                  <span className="person-inline">
+                    <CustomerAvatar name={appt.customerName || 'Customer'} />
+                    <div>
+                      <strong>{appt.customerName || 'Customer'}</strong>
+                      <small>{appt.appointmentDate} · {appt.startTime}</small>
+                      <small>{appt.staffName || 'Staff'}</small>
+                    </div>
+                  </span>
                   <span>
                     <span className={`status-badge ${appointmentStatusBadge(appt.status)}`}>{appointmentStatusText(appt.status)}</span>
                     {isPastNonterminal(appt, todayKey) && <span className="past-review-tag">Past — needs review</span>}
@@ -2567,10 +2463,13 @@ function AppointmentPage() {
           )}
           {!appointmentsLoading && selectedAppointments.map((appointment) => (
             <button type="button" key={appointment.code} className="selected-appointment" onClick={() => setSelectedAppointment(appointment)}>
-              <span>
-                <strong>{appointment.customerName || 'Customer'} · {appointment.staffName || 'Staff'}</strong>
-                <small>{appointment.serviceNames} · {appointment.startTime}–{appointment.endTime} · {appointment.code}</small>
-                <small className="past-review-tag-wrap">{isPastNonterminal(appointment, todayKey) && <span className="past-review-tag">Past — needs review</span>}</small>
+              <span className="person-inline">
+                <CustomerAvatar name={appointment.customerName || 'Customer'} />
+                <span>
+                  <strong>{appointment.customerName || 'Customer'} · {appointment.staffName || 'Staff'}</strong>
+                  <small>{appointment.serviceNames} · {appointment.startTime}–{appointment.endTime} · {appointment.code}</small>
+                  <small className="past-review-tag-wrap">{isPastNonterminal(appointment, todayKey) && <span className="past-review-tag">Past — needs review</span>}</small>
+                </span>
               </span>
               <span className={`status-badge ${appointmentStatusBadge(appointment.status)}`}>{appointmentStatusText(appointment.status)}</span>
             </button>
@@ -2607,7 +2506,7 @@ function AppointmentPage() {
             <div className="modal-header"><h3 id="appointment-detail-title">Appointment Details</h3><button type="button" className="close-button" aria-label="Close appointment details" onClick={() => setSelectedAppointment(null)}>×</button></div>
             <dl className="appointment-detail-list">
               <div><dt>Booking reference</dt><dd>{selectedAppointment.code}</dd></div>
-              <div><dt>Customer</dt><dd>{selectedAppointment.customerName || 'Customer'}{selectedAppointment.customerEmail ? ` · ${selectedAppointment.customerEmail}` : ''}</dd></div>
+              <div><dt>Customer</dt><dd><span className="person-inline"><CustomerAvatar name={selectedAppointment.customerName || 'Customer'} /><span>{selectedAppointment.customerName || 'Customer'}</span></span>{selectedAppointment.customerEmail ? ` · ${selectedAppointment.customerEmail}` : ''}</dd></div>
               {selectedAppointment.customerPhone && <div><dt>Phone</dt><dd>{selectedAppointment.customerPhone}</dd></div>}
               <div><dt>Service</dt><dd>{selectedAppointment.serviceNames}</dd></div>
               <div><dt>Staff</dt><dd>{selectedAppointment.staffName || 'Staff not assigned'}</dd></div>
@@ -2781,7 +2680,7 @@ function PaymentPage() {
                 <tbody role="rowgroup">
                   {displayedPayments.map((payment) => (
                     <tr role="row" key={payment.id}>
-                      <td role="cell" data-label="Reference / Customer" data-primary><div className="payment-customer"><strong>{payment.customerName}</strong><small>{payment.appointmentCode} · {payment.customerEmail}</small></div></td>
+                      <td role="cell" data-label="Reference / Customer" data-primary><div className="payment-customer"><CustomerAvatar name={payment.customerName} /><div><strong>{payment.customerName}</strong><small>{payment.appointmentCode} · {payment.customerEmail}</small></div></div></td>
                       <td role="cell" data-label="Service">{payment.serviceName}</td>
                       <td role="cell" data-label="Amount"><strong>₱{Number(payment.amount).toLocaleString()}</strong><small className="payment-method">{payment.paymentMethod}</small></td>
                       <td role="cell" data-label="Booking"><span className={`status-badge ${appointmentStatusBadge(String(payment.bookingStatus ?? 'RESERVED'))}`}>{appointmentStatusText(String(payment.bookingStatus ?? 'RESERVED'))}</span></td>
@@ -2817,7 +2716,7 @@ function PaymentPage() {
             <p className="form-hint">Enter the five-digit payment code supplied for this appointment. This development verification does not process a real payment.</p>
             <dl className="payment-details">
               <div><dt>Reference</dt><dd>{selectedPayment.appointmentCode}</dd></div>
-              <div><dt>Customer</dt><dd>{selectedPayment.customerName}</dd></div>
+              <div><dt>Customer</dt><dd><span className="person-inline"><CustomerAvatar name={selectedPayment.customerName} /><span>{selectedPayment.customerName}</span></span></dd></div>
               <div><dt>Service</dt><dd>{selectedPayment.serviceName}</dd></div>
               <div><dt>Amount</dt><dd>₱{Number(selectedPayment.amount).toLocaleString()}</dd></div>
               <div><dt>Method</dt><dd>{selectedPayment.paymentMethod}</dd></div>
@@ -2934,7 +2833,7 @@ function PaymentVerificationPage() {
       <div className="payment-verify-grid">
         <dl className="payment-details">
           <div><dt>Reference</dt><dd>{payment.appointmentCode}</dd></div>
-          <div><dt>Customer</dt><dd>{payment.customerName}</dd></div>
+          <div><dt>Customer</dt><dd><span className="person-inline"><CustomerAvatar name={payment.customerName} /><span>{payment.customerName}</span></span></dd></div>
           <div><dt>Service</dt><dd>{payment.serviceName}</dd></div>
           <div><dt>Amount</dt><dd>₱{Number(payment.amount).toLocaleString()}</dd></div>
           <div><dt>Method</dt><dd>{payment.paymentMethod}</dd></div>
