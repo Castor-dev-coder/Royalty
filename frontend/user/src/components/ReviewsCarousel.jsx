@@ -181,9 +181,10 @@ function ReviewsCarousel({ reviews }) {
                 <ReviewCard
                   category={review.category}
                   date={review.date}
-                  images={review.images}
                   name={review.name}
+                  photos={review.photos}
                   rating={review.rating}
+                  reviewerName={review.reviewerName}
                   text={review.text}
                 />
               </div>

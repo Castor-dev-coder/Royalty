@@ -177,7 +177,7 @@ function AppointmentCard({ item, customerName, onCancel, onOpenReview, onReviewS
           <ReviewForm
             appointmentId={item.id}
             onDone={onCloseReview}
-            onSuccess={(review) => onReviewSuccess(item.id, review)}
+            onSuccess={(review, options) => onReviewSuccess(item.id, review, options)}
           />
         </div>
       )}
@@ -285,8 +285,10 @@ function Appointments() {
     }
   }
 
-  function handleReviewSuccess(itemId, review) {
-    setReviewOpenId(null)
+  function handleReviewSuccess(itemId, review, options = {}) {
+    // With a photo phase pending, the panel stays open so failed photos can
+    // be retried — the saved review is never resubmitted either way.
+    if (!options.photoPhase) setReviewOpenId(null)
     if (!review) {
       // 409 "already reviewed": tell the user, then refresh the item state.
       showToast('info', 'You already reviewed this visit.')

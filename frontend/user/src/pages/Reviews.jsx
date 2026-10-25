@@ -15,7 +15,8 @@ function formatReviewDate(iso) {
 }
 
 // GET /reviews rows -> ReviewCard props. The API carries no reviewer identity,
-// so cards show a neutral label instead of a fabricated name.
+// so cards show a neutral label instead of a fabricated name (and photo alt
+// text falls back to `a customer`).
 function toCardReview(row) {
   return {
     id: row.id,
@@ -24,6 +25,7 @@ function toCardReview(row) {
     rating: row.overallRating ?? row.rating,
     category: row.appointment?.services?.[0]?.serviceName ?? '',
     text: row.comment ?? '',
+    photos: row.photos ?? [],
   }
 }
 
@@ -121,9 +123,9 @@ function Reviews() {
                 <ReviewCard
                   category={review.category}
                   date={review.date}
-                  images={review.images}
                   key={review.id}
                   name={review.name}
+                  photos={review.photos}
                   rating={review.rating}
                   text={review.text}
                 />

@@ -329,6 +329,63 @@ export function submitReviewRequest(body) {
   return apiFetch('/reviews', { method: 'POST', body })
 }
 
+/**
+ * Upload ONE review photo as raw bytes (one file per request). The server
+ * sniffs the magic bytes itself; `contentType` is the sniffed PNG/JPEG type.
+ * XHR carries real upload progress (fetch cannot report request progress) and
+ * mirrors apiFetch's refresh-once-on-401 behavior. Resolves to
+ * `{ photo: { id, position, url } }`.
+ */
+export function uploadReviewPhoto(reviewId, file, contentType, { onProgress } = {}) {
+  const send = () =>
+    new Promise((resolve, reject) => {
+      const request = new XMLHttpRequest()
+      request.open('POST', `${BASE}/reviews/${encodeURIComponent(reviewId)}/photos`, true)
+      request.withCredentials = true
+      request.setRequestHeader('Content-Type', contentType)
+      if (memoryToken) request.setRequestHeader('Authorization', `Bearer ${memoryToken}`)
+      if (onProgress && request.upload) {
+        request.upload.addEventListener('progress', (event) => {
+          const percent =
+            event.lengthComputable && event.total > 0 ? Math.round((event.loaded / event.total) * 100) : 0
+          onProgress(percent)
+        })
+      }
+      request.addEventListener('load', () => {
+        let payload = null
+        try {
+          payload = JSON.parse(request.responseText)
+        } catch {
+          /* non-JSON error body */
+        }
+        if (request.status >= 500) noteFailure()
+        else noteResponse()
+        if (request.status >= 200 && request.status < 300) {
+          resolve(payload && typeof payload === 'object' && 'data' in payload ? payload.data : payload)
+          return
+        }
+        reject(errorFromResponse(request.status, payload))
+      })
+      request.addEventListener('error', () => {
+        lastRefreshFailure = 'transient'
+        noteFailure()
+        reject(new NetworkError())
+      })
+      request.addEventListener('abort', () => {
+        reject(new NetworkError('The upload was cancelled. Try again.'))
+      })
+      request.send(file)
+    })
+
+  return send().catch(async (error) => {
+    if (error instanceof AuthError && error.status === 401) {
+      const refreshed = await tryRefresh()
+      if (refreshed) return send()
+    }
+    throw error
+  })
+}
+
 export function fetchServices() {
   return apiFetch('/services?limit=100')
 }

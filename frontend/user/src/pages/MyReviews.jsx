@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import CustomerInitials from '../components/CustomerInitials.jsx'
 import EmptyState from '../components/EmptyState.jsx'
+import ReviewPhotos from '../components/ReviewPhotos.jsx'
 import { useAuth } from '../context/useAuth.jsx'
 import { useRecoveryTick } from '../lib/useOutage.js'
 import { useAutoRefresh } from '../lib/useAutoRefresh.js'
@@ -47,6 +48,7 @@ function toMyReview(item) {
     rating: review.overallRating ?? review.rating,
     stylist: item.staff ? `${item.staff.firstName} ${item.staff.lastName}`.trim() : 'Unassigned',
     text: review.comment ?? '',
+    photos: review.photos ?? [],
   }
 }
 
@@ -179,6 +181,7 @@ function MyReviews() {
                   <p className="m-0 text-[12px] tracking-[0.12em] text-[#918c82] uppercase">
                     {review.date} · with {review.stylist}
                   </p>
+                  <ReviewPhotos photos={review.photos} reviewerName={customerName} />
                   {review.text && (
                     <p className="m-0 text-[14px] leading-[1.7] text-[#c2beb6]">{review.text}</p>
                   )}

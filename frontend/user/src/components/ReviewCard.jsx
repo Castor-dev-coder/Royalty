@@ -1,8 +1,5 @@
-import SafeImage from './SafeImage.jsx'
 import CustomerInitials from './CustomerInitials.jsx'
-
-import { useState } from 'react'
-import ImageLightbox from './ImageLightBox.jsx'
+import ReviewPhotos from './ReviewPhotos.jsx'
 
 function StarIcon({ filled = true }) {
   return (
@@ -49,28 +46,12 @@ function RatingStars({ value }) {
   )
 }
 
-function ReviewCard({ name, date, rating, category, text, images = [] }) {
-  const [zoomedImage, setZoomedImage] = useState(null)
-
+function ReviewCard({ name, date, rating, category, text, photos = [], reviewerName }) {
   return (
     <article className="overflow-hidden rounded-2xl border border-(--line) bg-(--review-panel) shadow-[0_0_0_1px_rgba(212,180,92,0.06)]">
-      {images.length > 0 && (
-      <div className="grid grid-cols-3 gap-2 border-b border-[rgba(212,180,92,0.2)] p-2.5">
-        {images.map((image, index) => (
-          <button
-            aria-label={`Enlarge ${name} review image ${index + 1}`}
-            className="block cursor-zoom-in overflow-hidden rounded-lg p-0"
-            key={`${name}-${index}`}
-            onClick={() => setZoomedImage({ src: image, alt: `${name} review image ${index + 1}` })}
-            type="button"
-          >
-            <SafeImage
-              alt={`${name} review image ${index + 1}`}
-              className="aspect-[4/3] w-full object-cover transition-transform duration-300 hover:scale-[1.06]"
-              src={image}
-            />
-          </button>
-        ))}
+      {photos.length > 0 && (
+      <div className="border-b border-[rgba(212,180,92,0.2)] p-2.5">
+        <ReviewPhotos photos={photos} reviewerName={reviewerName} />
       </div>
       )}
 
@@ -100,14 +81,6 @@ function ReviewCard({ name, date, rating, category, text, images = [] }) {
 
         <p className="mt-4 text-[16px] leading-[1.75] text-[#d5d0c8]">{text}</p>
       </div>
-
-      {zoomedImage && (
-        <ImageLightbox
-          alt={zoomedImage.alt}
-          onClose={() => setZoomedImage(null)}
-          src={zoomedImage.src}
-        />
-      )}
     </article>
   )
 }

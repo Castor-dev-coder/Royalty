@@ -2,12 +2,7 @@
 // no customer photos anywhere. Gold on dark, aria-hidden: the person's name
 // is rendered as real text next to the mark (never only inside it).
 
-function initialsFor(name) {
-  const parts = String(name ?? '').trim().split(/\s+/).filter(Boolean)
-  const first = parts[0]?.[0] ?? ''
-  const last = parts.length > 1 ? parts[parts.length - 1][0] : ''
-  return `${first}${last}`.toUpperCase() || '?'
-}
+import { initialsFor } from '../lib/initials.js'
 
 function CustomerInitials({ name, className = '' }) {
   return (

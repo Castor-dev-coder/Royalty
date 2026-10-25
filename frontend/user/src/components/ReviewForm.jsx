@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { ApiError, ConflictError, ValidationError, submitReviewRequest } from '../lib/api.js'
+import { ApiError, ConflictError, ValidationError, submitReviewRequest, uploadReviewPhoto } from '../lib/api.js'
+import { MAX_PHOTOS, makePreviewUrl, photoFailureMessage, validatePhotoFile } from '../lib/reviewPhotos.js'
 
 const CATEGORIES = [
   { key: 'service', label: 'Service', aria: 'Rate the service' },
@@ -11,7 +12,8 @@ const CATEGORIES = [
 const MAX_COMMENT = 2000
 
 // In-progress drafts live in memory only: a 401/refresh recovery (or a
-// re-login) must not lose what the customer already typed.
+// re-login) must not lose what the customer already typed. Photo drafts are
+// memory-only too (File + object URL in component state) — never web storage.
 const draftStore = new Map()
 const emptyDraft = {
   ratings: { service: 0, products: 0, staff: 0, timeManagement: 0 },
@@ -57,27 +59,198 @@ function StarGroup({ category, value, error, onRate }) {
   )
 }
 
-// Visit review: four required category ratings + optional comment.
-// Comments render as text only (no dangerouslySetInnerHTML anywhere).
+// One chosen photo. `status` walks queued -> uploading -> done | failed.
+// A failed photo keeps its preview and gets a per-photo RETRY; the saved
+// review is never touched again.
+function PhotoDraft({ entry, index, onRemove, onRetry }) {
+  const removable = entry.status !== 'done' && entry.status !== 'uploading'
+  return (
+    <li className="relative m-0 w-[112px] list-none p-0">
+      <div className="overflow-hidden rounded-[8px] border border-[#3a3835]">
+        <img
+          alt={`Photo ${index + 1} preview`}
+          className="block aspect-[4/3] w-full object-cover"
+          draggable={false}
+          src={entry.previewUrl}
+        />
+      </div>
+      {removable && (
+        <button
+          aria-label={`Remove photo ${index + 1}`}
+          className="absolute top-[5px] right-[5px] grid size-6 cursor-pointer place-items-center rounded-full border border-[#3a3835] bg-black/75 text-[13px] leading-none text-[#c9c5bb] hover:border-[#e9a68c] hover:text-[#e9a68c]"
+          onClick={() => onRemove(entry.key)}
+          type="button"
+        >
+          <span aria-hidden="true">×</span>
+        </button>
+      )}
+      {entry.status === 'uploading' && (
+        <>
+          <div
+            aria-label={`Upload progress for photo ${index + 1}`}
+            aria-valuemax={100}
+            aria-valuemin={0}
+            aria-valuenow={entry.progress}
+            className="mt-[6px] h-[3px] w-full overflow-hidden rounded-full bg-[#2a2825]"
+            role="progressbar"
+          >
+            <div className="h-full rounded-full bg-[var(--gold)] transition-[width] duration-200" style={{ width: `${entry.progress}%` }} />
+          </div>
+          <p className="m-0 mt-[4px] text-[0.62rem] text-[#aaa7a0]">Uploading… {entry.progress}%</p>
+        </>
+      )}
+      {entry.status === 'queued' && (
+        <p className="m-0 mt-[6px] text-[0.62rem] text-[#aaa7a0]">Waiting…</p>
+      )}
+      {entry.status === 'done' && (
+        <p className="m-0 mt-[6px] text-[0.62rem] font-semibold tracking-[0.1em] text-[#9fd0a5] uppercase">Uploaded</p>
+      )}
+      {entry.status === 'failed' && (
+        <>
+          <p className="m-0 mt-[6px] text-[0.62rem] leading-[1.45] text-[#e9a68c]" role="alert">
+            {entry.error}
+          </p>
+          <button
+            aria-label={`Retry upload of photo ${index + 1}`}
+            className="mt-[6px] cursor-pointer rounded-full border border-[#e9a68c] bg-transparent px-[0.85rem] py-[0.35rem] text-[0.6rem] font-bold tracking-[0.12em] text-[#e9a68c] uppercase hover:border-[var(--gold)] hover:text-[var(--gold)]"
+            onClick={() => onRetry(entry.key)}
+            type="button"
+          >
+            Retry
+          </button>
+        </>
+      )}
+    </li>
+  )
+}
+
+// Visit review: four required category ratings + optional comment + up to 3
+// photos. The review is submitted FIRST; photos then upload ONE BY ONE. If a
+// photo fails it keeps its preview with a per-photo RETRY and the rest keep
+// going — the saved review is never resubmitted. Comments render as text only
+// (no dangerouslySetInnerHTML anywhere).
 function ReviewForm({ appointmentId, onSuccess, onDone }) {
   const initial = draftFor(appointmentId)
   const [ratings, setRatings] = useState(initial.ratings)
   const [comment, setComment] = useState(initial.comment)
   const [errors, setErrors] = useState({})
   const [message, setMessage] = useState('')
-  const [status, setStatus] = useState('idle') // idle | submitting | done
+  const [status, setStatus] = useState('idle') // idle | submitting | photos | done
+  const [photos, setPhotos] = useState([]) // in-memory photo drafts only
+  const [rejections, setRejections] = useState([])
   const submitRef = useRef(false)
+  const savedRef = useRef(null) // saved review — once set, NEVER resubmitted
+  const photosRef = useRef([])
+  const uploadingRef = useRef(false)
+  const nextKeyRef = useRef(1)
 
   // Keep the draft in memory across re-mounts (session recovery, 401 retry).
   useEffect(() => {
     draftStore.set(appointmentId, { ratings, comment })
   }, [appointmentId, ratings, comment])
 
+  // Preview object URLs are memory-only and released on unmount.
+  useEffect(() => {
+    return () => {
+      for (const entry of photosRef.current) {
+        if (entry.previewUrl) URL.revokeObjectURL(entry.previewUrl)
+      }
+    }
+  }, [])
+
   const rate = (key) => (star) => setRatings((current) => ({ ...current, [key]: star }))
+  const saved = status === 'photos' || status === 'done'
+
+  function setPhotoList(next) {
+    const value = typeof next === 'function' ? next(photosRef.current) : next
+    photosRef.current = value
+    setPhotos(value)
+  }
+
+  function updatePhoto(key, patch) {
+    setPhotoList((current) => current.map((entry) => (entry.key === key ? { ...entry, ...patch } : entry)))
+  }
+
+  function removePhoto(key) {
+    const entry = photosRef.current.find((item) => item.key === key)
+    if (entry?.previewUrl) URL.revokeObjectURL(entry.previewUrl)
+    setPhotoList((current) => current.filter((item) => item.key !== key))
+  }
+
+  async function handleFiles(fileList) {
+    const chosen = Array.from(fileList ?? [])
+    if (chosen.length === 0) return
+    const rejected = []
+    for (const file of chosen) {
+      if (photosRef.current.length >= MAX_PHOTOS) {
+        rejected.push(`${file.name}: a review can have at most ${MAX_PHOTOS} photos.`)
+        continue
+      }
+      const result = await validatePhotoFile(file)
+      if (!result.ok) {
+        rejected.push(`${file.name}: ${result.error}`)
+        continue
+      }
+      setPhotoList((current) => [
+        ...current,
+        {
+          key: nextKeyRef.current++,
+          file,
+          mime: result.mime,
+          previewUrl: makePreviewUrl(file),
+          status: 'queued',
+          progress: 0,
+          error: null,
+        },
+      ])
+    }
+    setRejections(rejected)
+    // Photos chosen after the review was saved upload immediately.
+    if (savedRef.current) runUploads()
+  }
+
+  function uploadOne(entry) {
+    const reviewId = savedRef.current?.id
+    updatePhoto(entry.key, { status: 'uploading', progress: 0, error: null })
+    return uploadReviewPhoto(reviewId, entry.file, entry.mime, {
+      onProgress: (percent) => updatePhoto(entry.key, { progress: percent }),
+    }).then(
+      () => {
+        updatePhoto(entry.key, { status: 'done', progress: 100, error: null })
+      },
+      (error) => {
+        // Keep the saved review and this photo's preview; the loop below
+        // continues with the remaining photos.
+        updatePhoto(entry.key, { status: 'failed', progress: 0, error: photoFailureMessage(error) })
+      },
+    )
+  }
+
+  // Sequential queue: one photo per request, in order. A failure never stops
+  // the queue and never re-touches the review.
+  function runUploads() {
+    if (uploadingRef.current || !savedRef.current) return
+    uploadingRef.current = true
+    const step = () => {
+      const next = photosRef.current.find((entry) => entry.status === 'queued')
+      if (!next) {
+        uploadingRef.current = false
+        return undefined
+      }
+      return uploadOne(next).then(step)
+    }
+    step()
+  }
+
+  function handleRetry(key) {
+    updatePhoto(key, { status: 'queued', progress: 0, error: null })
+    runUploads()
+  }
 
   async function handleSubmit(event) {
     event.preventDefault()
     if (submitRef.current) return
+    if (savedRef.current) return // the review is saved — never resubmit it
 
     const nextErrors = {}
     for (const category of CATEGORIES) {
@@ -101,11 +274,23 @@ function ReviewForm({ appointmentId, onSuccess, onDone }) {
         },
         ...(comment.trim() ? { comment: comment.trim() } : {}),
       }
-      const saved = await submitReviewRequest(payload)
-      setStatus('done')
-      setMessage('Thank you — your review was saved.')
+      const raw = await submitReviewRequest(payload)
+      const review = raw && raw.review ? raw.review : raw
+      const normalized = {
+        ...(review && typeof review === 'object' ? review : {}),
+        id: review?.id ?? raw?.id ?? null,
+      }
+      savedRef.current = normalized
       draftStore.delete(appointmentId) // submitted — the draft is spent
-      onSuccess(saved && saved.review ? saved.review : saved)
+      setMessage('Thank you — your review was saved.')
+      if (photosRef.current.length > 0) {
+        setStatus('photos')
+        onSuccess(normalized, { photoPhase: true })
+        runUploads()
+      } else {
+        setStatus('done')
+        onSuccess(normalized, { photoPhase: false })
+      }
     } catch (error) {
       setStatus('idle')
       if (error instanceof ConflictError) {
@@ -129,6 +314,10 @@ function ReviewForm({ appointmentId, onSuccess, onDone }) {
       submitRef.current = false
     }
   }
+
+  const uploadedCount = photos.filter((entry) => entry.status === 'done').length
+  const failedCount = photos.filter((entry) => entry.status === 'failed').length
+  const activeCount = photos.filter((entry) => entry.status === 'queued' || entry.status === 'uploading').length
 
   return (
     <form className="flex w-full flex-col gap-[14px]" noValidate onSubmit={handleSubmit}>
@@ -167,6 +356,67 @@ function ReviewForm({ appointmentId, onSuccess, onDone }) {
           )}
         </div>
       </div>
+
+      <div className="flex w-full flex-col gap-[7px]">
+        <span className="text-[0.62rem] font-semibold tracking-[0.12em] text-[#918c82] uppercase">
+          Photos (optional — up to {MAX_PHOTOS})
+        </span>
+        {!saved && (
+          <p className="m-0 text-[0.68rem] leading-[1.5] text-[#898783]">
+            PNG or JPG, 10 MB max each. Your review is saved first; photos upload right after, one by one.
+          </p>
+        )}
+        {photos.length > 0 && (
+          <ul className="m-0 flex list-none flex-wrap gap-[10px] p-0">
+            {photos.map((entry, index) => (
+              <PhotoDraft
+                entry={entry}
+                index={index}
+                key={entry.key}
+                onRemove={removePhoto}
+                onRetry={handleRetry}
+              />
+            ))}
+          </ul>
+        )}
+        {photos.length < MAX_PHOTOS && (
+          <>
+            <input
+              accept="image/png,image/jpeg"
+              aria-label="Add photo"
+              className="sr-only"
+              id="review-photos-input"
+              multiple
+              onChange={(event) => {
+                void handleFiles(event.target.files)
+                event.target.value = ''
+              }}
+              type="file"
+            />
+            <label
+              className="inline-flex w-fit cursor-pointer items-center rounded-full border border-[#3a3835] bg-transparent px-[1.1rem] py-[0.6rem] text-[0.66rem] font-semibold tracking-[0.12em] text-[#c9c5bb] uppercase hover:border-[var(--gold)] hover:text-[#f0efed]"
+              htmlFor="review-photos-input"
+            >
+              + Add photo
+            </label>
+          </>
+        )}
+        {rejections.map((rejection) => (
+          <p className="m-0 text-[0.68rem] leading-[1.5] text-[#e9a68c]" key={rejection} role="alert">
+            {rejection}
+          </p>
+        ))}
+        {saved && photos.length > 0 && (
+          <p className="m-0 text-[0.72rem] leading-[1.5] text-[#d8d4cb]" role="status">
+            {activeCount > 0
+              ? `Uploading photos… ${uploadedCount} of ${photos.length} uploaded.`
+              : failedCount > 0
+                ? `${uploadedCount} of ${photos.length} photos uploaded. ${failedCount} failed — your review is saved; retry below.`
+                : `All ${photos.length} photos uploaded.`}
+          </p>
+        )}
+      </div>
+
       {errors.form && (
         <p className="m-0 text-[0.68rem] leading-[1.5] text-[#e9a68c]" role="alert">
           {errors.form}
@@ -180,10 +430,10 @@ function ReviewForm({ appointmentId, onSuccess, onDone }) {
       <div className="flex flex-wrap items-center gap-[10px]">
         <button
           className="btn-pill inline-flex min-h-[42px] cursor-pointer items-center justify-center rounded-full border border-[var(--gold)] bg-[var(--gold)] px-[1.35rem] py-[0.72rem] text-[0.68rem] font-bold tracking-[0.13em] text-[#111] uppercase hover:bg-[var(--gold-bright)] disabled:cursor-default disabled:opacity-60"
-          disabled={status === 'submitting' || status === 'done'}
+          disabled={status === 'submitting' || saved}
           type="submit"
         >
-          {status === 'submitting' ? 'SUBMITTING…' : 'SUBMIT REVIEW'}
+          {saved ? 'REVIEW SAVED' : status === 'submitting' ? 'SUBMITTING…' : 'SUBMIT REVIEW'}
         </button>
         {onDone && (
           <button
