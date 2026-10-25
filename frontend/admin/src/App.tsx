@@ -33,6 +33,14 @@ import { clearAccountSession, currentSession, readLoginSession, storeAccountSess
 import { ImageUploadField, type ImageUploadHandle } from './shared/imageUpload';
 import { CheckboxMultiSelect, TagMultiSelect, ToggleSwitch } from './shared/profileFields';
 import { CustomerAvatar } from './components/CustomerAvatar';
+import { ReviewPhotos } from './components/ReviewPhotos';
+import {
+  canManageReviewPhotos,
+  insertPhoto,
+  removePhoto,
+  sortPhotos,
+  type ReviewPhoto,
+} from './reviewPhotos';
 import { useAppointmentsQuery, type AppointmentRow } from './appointmentsQuery';
 import { currentManilaDateKey, currentManilaMonthKey, manilaDateKey, selectMonthBookings } from './dashboard-month';
 import { AttendancePanel } from './attendance/AttendancePanel';
@@ -47,9 +55,14 @@ import { StaffCredentialsPanel, issueStaffPassword, type StaffCredentials } from
 type Review = {
   id: string;
   customer: string;
+  /** The reviewer's name as the API gave it, empty when it is not available.
+   *  Photo alt text derives initials from it, with a fallback when empty. */
+  reviewerName: string;
   rating: number;
   date: string;
   text: string;
+  /** The review's visible photos, ordered; hidden ones never arrive in reads. */
+  photos: ReviewPhoto[];
 };
 
 type TableRow = {
@@ -292,7 +305,7 @@ function useReviewData() {
 
     apiFetch(`${baseUrl}/reviews?page=1&limit=3`, {
       signal: controller.signal,
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      headers: authHeader(token),
     })
       .then((res) => {
         if (!res.ok) throw new Error('Unavailable');
@@ -304,9 +317,23 @@ function useReviewData() {
           const mapped = records.map((item: any) => ({
             id: String(item.id ?? item.appointment?.id ?? ''),
             customer: item.customer ?? item.customerName ?? 'Verified Customer',
+            // The display name above falls back to a label; alt text must fall
+            // back differently, so the raw name (when any) is kept alongside.
+            reviewerName: String(item.customer ?? item.customerName ?? ''),
             rating: Number(item.rating ?? 5),
             date: item.createdAt ? new Date(item.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Recent',
             text: item.comment || 'Customer review',
+            // Reads only ever carry visible photos, in review order.
+            photos: sortPhotos(
+              (Array.isArray(item.photos) ? item.photos : [])
+                .filter((photo: any) => photo && photo.url && !photo.hidden)
+                .map((photo: any, index: number) => ({
+                  id: String(photo.id ?? `${item.id}-${index}`),
+                  position: Number(photo.position ?? index),
+                  url: String(photo.url),
+                  hidden: false,
+                })),
+            ),
           }));
           setData(mapped);
         }
@@ -316,7 +343,49 @@ function useReviewData() {
     return () => controller.abort();
   }, []);
 
-  return data;
+  /**
+   * Hide or unhide one review photo through the audited moderation endpoint.
+   *
+   * The response confirms the photo's new state; that state drives the list.
+   * A hidden photo is removed locally (the API filters it out of reads), and
+   * unhiding puts it back at its position.
+   */
+  const togglePhotoHidden = useCallback(
+    async (reviewId: string, photo: ReviewPhoto, hidden: boolean): Promise<boolean> => {
+      const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+      const token = getAccessToken();
+      try {
+        const res = await apiFetch(`${baseUrl}/reviews/${reviewId}/photos/${photo.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+          body: JSON.stringify({ hidden }),
+        });
+        if (!res.ok) return false;
+        const payload = await res.json().catch(() => null);
+        const confirmed = payload?.data?.photo;
+        const confirmedHidden =
+          confirmed && typeof confirmed.hidden === 'boolean' ? confirmed.hidden : hidden;
+        setData((previous) =>
+          previous.map((review) =>
+            review.id !== reviewId
+              ? review
+              : {
+                  ...review,
+                  photos: confirmedHidden
+                    ? removePhoto(review.photos, photo.id)
+                    : insertPhoto(review.photos, { ...photo, hidden: false }),
+                },
+          ),
+        );
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [],
+  );
+
+  return { reviews: data, togglePhotoHidden };
 }
 
 type LoadState = 'loading' | 'ready' | 'error';
@@ -595,7 +664,32 @@ function Shell() {
 }
 
 function BusinessDashboardPage() {
-  const reviewData = useReviewData();
+  const { reviews: reviewData, togglePhotoHidden } = useReviewData();
+  // Photo moderation is offered to the roles the API allows it for; the
+  // endpoint re-checks whatever the interface chose to show.
+  const canManagePhotos = canManageReviewPhotos(currentSession(getAccessToken())?.role ?? null);
+  const [photoNotice, setPhotoNotice] = useState<
+    { message: string; reviewId?: string; photo?: ReviewPhoto } | null
+  >(null);
+
+  /**
+   * Hide or unhide one review photo and report the API-confirmed outcome.
+   * A hidden photo leaves the review's list, so the notice offers the way
+   * back (unhide) until the next load.
+   */
+  async function handleTogglePhotoHidden(reviewId: string, photo: ReviewPhoto, hidden: boolean) {
+    const confirmed = await togglePhotoHidden(reviewId, photo, hidden);
+    if (confirmed) {
+      setPhotoNotice(
+        hidden
+          ? { message: 'Photo hidden — it no longer appears in this review.', reviewId, photo }
+          : { message: 'Photo visible again.' },
+      );
+    } else {
+      setPhotoNotice({ message: 'The photo could not be updated. Please try again.' });
+    }
+    return confirmed;
+  }
   // One live query feeds the whole page: the summary cards and the month
   // panel below both render from the same selector over these bookings.
   const { appointments, loading } = useAppointmentsQuery();
@@ -767,9 +861,36 @@ function BusinessDashboardPage() {
                   {'★★★★★'.slice(0, review.rating)}
                 </div>
                 <p>{review.text}</p>
+                <ReviewPhotos
+                  reviewId={review.id}
+                  reviewerName={review.reviewerName}
+                  photos={review.photos}
+                  canManage={canManagePhotos}
+                  onTogglePhotoHidden={handleTogglePhotoHidden}
+                />
               </div>
             ))}
+            {reviewData.length === 0 && <p className="empty-list">No reviews to show yet.</p>}
+            {reviewData.length > 0 && reviewData.every((review) => review.photos.length === 0) && (
+              <p className="empty-list">No review photos yet.</p>
+            )}
           </div>
+          {photoNotice && (
+            <p className="review-photo-notice" role="status">
+              {photoNotice.message}{' '}
+              {photoNotice.reviewId && photoNotice.photo && (
+                <button
+                  type="button"
+                  className="link-button"
+                  onClick={() =>
+                    handleTogglePhotoHidden(photoNotice.reviewId!, photoNotice.photo!, false)
+                  }
+                >
+                  Unhide
+                </button>
+              )}
+            </p>
+          )}
         </section>
       </div>
 

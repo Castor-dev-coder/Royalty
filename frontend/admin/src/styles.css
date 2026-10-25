@@ -559,6 +559,32 @@ small { font-size: var(--text-2xs); line-height: var(--leading-snug); }
 .stars { color: var(--accent-text); letter-spacing: 0; font-size: 0.8rem; margin-bottom: 5px; }
 .review-item p { margin: 0; font-size: 0.77rem; color: var(--text-secondary); }
 
+/* Review photos: fixed 4:3 lazy thumbnails that open the photo lightbox.
+   The crop is set on the image itself so a pending upload can never change
+   the height of the review it sits in. */
+.review-photos { margin-top: 10px; }
+.review-photo-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; }
+.review-photo-cell { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.review-photo-thumb { display: block; width: 100%; padding: 0; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); overflow: hidden; background: var(--surface-sunken); cursor: zoom-in; }
+.review-photo-thumb img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
+.review-photo-hide { align-self: flex-start; border: 1px solid var(--control-border); background: var(--surface-raised); color: var(--text-secondary); font-size: var(--text-2xs); font-weight: 600; padding: 3px 9px; border-radius: var(--radius-pill); cursor: pointer; }
+.review-photo-hide:hover { color: var(--text-primary); }
+.review-photo-hide:disabled { opacity: 0.6; cursor: not-allowed; }
+.review-photo-notice { margin: 10px 0 0; font-size: var(--text-2xs); color: var(--text-secondary); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* The photo lightbox: one large photo of a review at a time. */
+.photo-lightbox-overlay { z-index: 60; }
+.photo-lightbox { --modal-gutter: 18px; width: min(720px, 100%); }
+.photo-lightbox .modal-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.photo-lightbox .modal-header h3 { font-size: var(--text-sm); font-weight: 600; color: var(--text-secondary); }
+.lightbox-close { border: 1px solid var(--control-border); background: var(--surface-raised); color: var(--text-primary); border-radius: var(--radius-sm); font-weight: 600; font-size: var(--text-2xs); padding: 6px 12px; cursor: pointer; }
+.lightbox-stage { display: flex; justify-content: center; background: var(--surface-sunken); border-radius: var(--radius-sm); overflow: hidden; }
+.lightbox-image { display: block; max-width: 100%; max-height: min(58vh, 480px); width: auto; height: auto; object-fit: contain; }
+.lightbox-controls { display: flex; align-items: center; justify-content: center; gap: 12px; padding-top: 12px; }
+.lightbox-controls button { border: 1px solid var(--control-border); background: var(--surface-raised); color: var(--text-primary); border-radius: var(--radius-sm); font-weight: 600; font-size: var(--text-2xs); padding: 8px 14px; min-height: 38px; cursor: pointer; }
+.lightbox-controls button:disabled { opacity: 0.5; cursor: not-allowed; }
+.lightbox-count { font-size: var(--text-2xs); color: var(--text-muted); }
+
 /* Profile and sign-out */
 .bottom-profile { margin-top: 18px; }
 .profile-card { display: inline-flex; align-items: center; gap: 12px; background: var(--surface-raised); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 10px 14px; }
