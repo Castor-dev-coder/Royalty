@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "tsx src/server.ts",
     "build": "tsc",
-    "test": "tsx --test src/modules/appointments/*.test.ts src/modules/accounts/*.test.ts src/modules/auth/*.test.ts src/modules/customers/*.test.ts src/modules/services/*.test.ts src/modules/staff/*.test.ts src/modules/schedules/*.test.ts src/modules/reviews/*.test.ts src/modules/images/*.test.ts src/modules/matching/*.test.ts src/modules/attendance/*.test.ts src/routes/*.test.ts src/utils/*.test.ts",
+    "test": "tsx --test src/modules/appointments/*.test.ts src/modules/accounts/*.test.ts src/modules/auth/*.test.ts src/modules/customers/*.test.ts src/modules/services/*.test.ts src/modules/staff/*.test.ts src/modules/schedules/*.test.ts src/modules/reviews/*.test.ts src/modules/images/*.test.ts src/modules/matching/*.test.ts src/modules/attendance/*.test.ts src/modules/payments/*.test.ts src/routes/*.test.ts src/utils/*.test.ts",
     "test:integration": "tsx --test --test-force-exit --test-concurrency=4 src/test/integration/*.test.ts",
     "start": "node dist/server.js",
     "contract:emit": "prisma contract emit",
@@ -28,6 +28,7 @@
     "bcryptjs": "^3.0.3",
     "dotenv": "^18.0.0",
     "express": "^5.2.1",
+    "google-auth-library": "^11.3.1",
     "jsonwebtoken": "^9.0.3",
     "sharp": "^0.35.5",
     "zod": "^4.6.5"

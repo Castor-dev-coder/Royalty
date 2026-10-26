@@ -14,6 +14,7 @@ import { appointmentsRouter } from './routes/appointments.js';
 import { reviewsRouter } from './routes/reviews.js';
 import { matchingRouter } from './routes/matching.js';
 import { attendanceRouter } from './routes/attendance.js';
+import { paymentsRouter } from './routes/payments.js';
 
 export function createApp() {
   const app = express();
@@ -53,6 +54,7 @@ export function createApp() {
   app.use('/reviews', reviewsRouter);
   app.use('/matching', matchingRouter);
   app.use('/attendance', attendanceRouter);
+  app.use('/payments', paymentsRouter);
 
   // Protected test route (to verify auth works)
   app.get('/api/me', authenticate, (req: AuthenticatedRequest, res) => {

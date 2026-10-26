@@ -86,7 +86,10 @@ export class AuthService {
       throw new UnauthorizedError('Account is deactivated');
     }
 
-    // Verify password
+    // Verify password (Google-only accounts have no password hash at all).
+    if (!account.passwordHash) {
+      throw new UnauthorizedError('Invalid email or password');
+    }
     const validPassword = await bcrypt.compare(password, account.passwordHash);
     if (!validPassword) {
       throw new UnauthorizedError('Invalid email or password');

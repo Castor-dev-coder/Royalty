@@ -239,6 +239,9 @@ export class AccountService {
 
     // Verify current password if changing own password
     if (accountId === requestingUserId) {
+      if (!account.passwordHash) {
+        throw new BadRequestError('Current password is incorrect');
+      }
       const valid = await bcrypt.compare(currentPassword, account.passwordHash);
       if (!valid) {
         throw new BadRequestError('Current password is incorrect');

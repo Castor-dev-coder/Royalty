@@ -28,6 +28,10 @@
       "model": "Customer",
       "namespace": "public"
     },
+    "payment_settings": {
+      "model": "PaymentSetting",
+      "namespace": "public"
+    },
     "payments": {
       "model": "Payment",
       "namespace": "public"
@@ -116,6 +120,16 @@
                   }
                 }
               },
+              "googleId": {
+                "nullable": true,
+                "type": {
+                  "codecId": "sql/varchar@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "length": 255
+                  }
+                }
+              },
               "id": {
                 "nullable": false,
                 "type": {
@@ -131,7 +145,7 @@
                 }
               },
               "passwordHash": {
-                "nullable": false,
+                "nullable": true,
                 "type": {
                   "codecId": "pg/text@1",
                   "kind": "scalar"
@@ -197,6 +211,21 @@
                   "namespace": "public"
                 }
               },
+              "paymentSettings": {
+                "cardinality": "1:N",
+                "on": {
+                  "localFields": [
+                    "id"
+                  ],
+                  "targetFields": [
+                    "updatedBy"
+                  ]
+                },
+                "to": {
+                  "model": "PaymentSetting",
+                  "namespace": "public"
+                }
+              },
               "payments": {
                 "cardinality": "1:N",
                 "on": {
@@ -205,6 +234,21 @@
                   ],
                   "targetFields": [
                     "verifiedBy"
+                  ]
+                },
+                "to": {
+                  "model": "Payment",
+                  "namespace": "public"
+                }
+              },
+              "recordedPayments": {
+                "cardinality": "1:N",
+                "on": {
+                  "localFields": [
+                    "id"
+                  ],
+                  "targetFields": [
+                    "recordedBy"
                   ]
                 },
                 "to": {
@@ -266,6 +310,9 @@
                 },
                 "email": {
                   "column": "email"
+                },
+                "googleId": {
+                  "column": "google_id"
                 },
                 "id": {
                   "column": "id"
@@ -413,8 +460,7 @@
                 }
               },
               "payments": {
-                "cardinality": "1:1",
-                "nullable": true,
+                "cardinality": "1:N",
                 "on": {
                   "localFields": [
                     "id"
@@ -1372,6 +1418,16 @@
                   "kind": "scalar"
                 }
               },
+              "channel": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/enum@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "typeName": "payment_channel"
+                  }
+                }
+              },
               "createdAt": {
                 "nullable": false,
                 "type": {
@@ -1393,6 +1449,43 @@
                   "kind": "scalar",
                   "typeParams": {
                     "typeName": "payment_method"
+                  }
+                }
+              },
+              "proofStoragePath": {
+                "nullable": true,
+                "type": {
+                  "codecId": "sql/varchar@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "length": 500
+                  }
+                }
+              },
+              "proofUrl": {
+                "nullable": true,
+                "type": {
+                  "codecId": "sql/varchar@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "length": 500
+                  }
+                }
+              },
+              "recordedBy": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/uuid@1",
+                  "kind": "scalar"
+                }
+              },
+              "referenceNo": {
+                "nullable": true,
+                "type": {
+                  "codecId": "sql/varchar@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "length": 100
                   }
                 }
               },
@@ -1460,6 +1553,22 @@
                   "model": "Appointment",
                   "namespace": "public"
                 }
+              },
+              "recorder": {
+                "cardinality": "N:1",
+                "nullable": true,
+                "on": {
+                  "localFields": [
+                    "recordedBy"
+                  ],
+                  "targetFields": [
+                    "id"
+                  ]
+                },
+                "to": {
+                  "model": "Account",
+                  "namespace": "public"
+                }
               }
             },
             "storage": {
@@ -1470,6 +1579,9 @@
                 "appointmentId": {
                   "column": "appointment_id"
                 },
+                "channel": {
+                  "column": "channel"
+                },
                 "createdAt": {
                   "column": "created_at"
                 },
@@ -1478,6 +1590,18 @@
                 },
                 "paymentMethod": {
                   "column": "payment_method"
+                },
+                "proofStoragePath": {
+                  "column": "proof_storage_path"
+                },
+                "proofUrl": {
+                  "column": "proof_url"
+                },
+                "recordedBy": {
+                  "column": "recorded_by"
+                },
+                "referenceNo": {
+                  "column": "reference_no"
                 },
                 "status": {
                   "column": "status"
@@ -1494,6 +1618,153 @@
               },
               "namespaceId": "public",
               "table": "payments"
+            }
+          },
+          "PaymentSetting": {
+            "fields": {
+              "accountNumberMasked": {
+                "nullable": true,
+                "type": {
+                  "codecId": "sql/varchar@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "length": 30
+                  }
+                }
+              },
+              "createdAt": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "kind": "scalar"
+                }
+              },
+              "downPaymentKind": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/enum@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "typeName": "down_payment_kind"
+                  }
+                }
+              },
+              "downPaymentValue": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/numeric@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "precision": 10,
+                    "scale": 2
+                  }
+                }
+              },
+              "gcashQrStoragePath": {
+                "nullable": true,
+                "type": {
+                  "codecId": "sql/varchar@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "length": 500
+                  }
+                }
+              },
+              "gcashQrUrl": {
+                "nullable": true,
+                "type": {
+                  "codecId": "sql/varchar@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "length": 500
+                  }
+                }
+              },
+              "id": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/uuid@1",
+                  "kind": "scalar"
+                }
+              },
+              "receiverName": {
+                "nullable": true,
+                "type": {
+                  "codecId": "sql/varchar@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "length": 100
+                  }
+                }
+              },
+              "updatedAt": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "kind": "scalar"
+                }
+              },
+              "updatedBy": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/uuid@1",
+                  "kind": "scalar"
+                }
+              }
+            },
+            "relations": {
+              "updater": {
+                "cardinality": "N:1",
+                "nullable": true,
+                "on": {
+                  "localFields": [
+                    "updatedBy"
+                  ],
+                  "targetFields": [
+                    "id"
+                  ]
+                },
+                "to": {
+                  "model": "Account",
+                  "namespace": "public"
+                }
+              }
+            },
+            "storage": {
+              "fields": {
+                "accountNumberMasked": {
+                  "column": "account_number_masked"
+                },
+                "createdAt": {
+                  "column": "created_at"
+                },
+                "downPaymentKind": {
+                  "column": "down_payment_kind"
+                },
+                "downPaymentValue": {
+                  "column": "down_payment_value"
+                },
+                "gcashQrStoragePath": {
+                  "column": "gcash_qr_storage_path"
+                },
+                "gcashQrUrl": {
+                  "column": "gcash_qr_url"
+                },
+                "id": {
+                  "column": "id"
+                },
+                "receiverName": {
+                  "column": "receiver_name"
+                },
+                "updatedAt": {
+                  "column": "updated_at"
+                },
+                "updatedBy": {
+                  "column": "updated_by"
+                }
+              },
+              "namespaceId": "public",
+              "table": "payment_settings"
             }
           },
           "Review": {
@@ -2946,6 +3217,15 @@
               ],
               "typeName": "appointment_status"
             },
+            "down_payment_kind": {
+              "kind": "postgres-enum",
+              "members": [
+                "NONE",
+                "FIXED",
+                "PERCENT"
+              ],
+              "typeName": "down_payment_kind"
+            },
             "employment_type": {
               "kind": "postgres-enum",
               "members": [
@@ -2953,6 +3233,14 @@
                 "PART_TIME"
               ],
               "typeName": "employment_type"
+            },
+            "payment_channel": {
+              "kind": "postgres-enum",
+              "members": [
+                "ONLINE",
+                "IN_PERSON"
+              ],
+              "typeName": "payment_channel"
             },
             "payment_method": {
               "kind": "postgres-enum",
@@ -3030,6 +3318,11 @@
               "kind": "rls",
               "namespaceId": "public",
               "tableName": "customers"
+            },
+            "payment_settings": {
+              "kind": "rls",
+              "namespaceId": "public",
+              "tableName": "payment_settings"
             },
             "payments": {
               "kind": "rls",
@@ -3122,6 +3415,14 @@
                     "length": 255
                   }
                 },
+                "google_id": {
+                  "codecId": "sql/varchar@1",
+                  "nativeType": "character varying",
+                  "nullable": true,
+                  "typeParams": {
+                    "length": 255
+                  }
+                },
                 "id": {
                   "codecId": "pg/uuid@1",
                   "default": {
@@ -3143,7 +3444,7 @@
                 "password_hash": {
                   "codecId": "pg/text@1",
                   "nativeType": "text",
-                  "nullable": false
+                  "nullable": true
                 },
                 "role": {
                   "codecId": "pg/enum@1",
@@ -3228,6 +3529,12 @@
                     "email"
                   ],
                   "name": "accounts_email_key"
+                },
+                {
+                  "columns": [
+                    "google_id"
+                  ],
+                  "name": "accounts_google_id_key"
                 }
               ]
             },
@@ -3862,8 +4169,154 @@
                 }
               ]
             },
+            "payment_settings": {
+              "checks": [
+                {
+                  "expression": "(down_payment_value >= (0)::numeric)",
+                  "name": "payment_settings_value_positive"
+                }
+              ],
+              "columns": {
+                "account_number_masked": {
+                  "codecId": "sql/varchar@1",
+                  "nativeType": "character varying",
+                  "nullable": true,
+                  "typeParams": {
+                    "length": 30
+                  }
+                },
+                "created_at": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "default": {
+                    "expression": "now()",
+                    "kind": "function"
+                  },
+                  "nativeType": "timestamptz",
+                  "nullable": false
+                },
+                "down_payment_kind": {
+                  "codecId": "pg/enum@1",
+                  "default": {
+                    "kind": "literal",
+                    "value": "PERCENT"
+                  },
+                  "nativeType": "down_payment_kind",
+                  "nullable": false,
+                  "typeParams": {
+                    "typeName": "down_payment_kind"
+                  },
+                  "valueSet": {
+                    "entityKind": "valueSet",
+                    "entityName": "DownPaymentKind",
+                    "namespaceId": "public",
+                    "plane": "storage"
+                  }
+                },
+                "down_payment_value": {
+                  "codecId": "pg/numeric@1",
+                  "default": {
+                    "expression": "50",
+                    "kind": "function"
+                  },
+                  "nativeType": "numeric",
+                  "nullable": false,
+                  "typeParams": {
+                    "precision": 10,
+                    "scale": 2
+                  }
+                },
+                "gcash_qr_storage_path": {
+                  "codecId": "sql/varchar@1",
+                  "nativeType": "character varying",
+                  "nullable": true,
+                  "typeParams": {
+                    "length": 500
+                  }
+                },
+                "gcash_qr_url": {
+                  "codecId": "sql/varchar@1",
+                  "nativeType": "character varying",
+                  "nullable": true,
+                  "typeParams": {
+                    "length": 500
+                  }
+                },
+                "id": {
+                  "codecId": "pg/uuid@1",
+                  "default": {
+                    "expression": "gen_random_uuid()",
+                    "kind": "function"
+                  },
+                  "nativeType": "uuid",
+                  "nullable": false
+                },
+                "receiver_name": {
+                  "codecId": "sql/varchar@1",
+                  "nativeType": "character varying",
+                  "nullable": true,
+                  "typeParams": {
+                    "length": 100
+                  }
+                },
+                "updated_at": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "default": {
+                    "expression": "now()",
+                    "kind": "function"
+                  },
+                  "nativeType": "timestamptz",
+                  "nullable": false
+                },
+                "updated_by": {
+                  "codecId": "pg/uuid@1",
+                  "nativeType": "uuid",
+                  "nullable": true
+                }
+              },
+              "foreignKeys": [
+                {
+                  "name": "fk_payment_settings_updater",
+                  "onDelete": "setNull",
+                  "source": {
+                    "columns": [
+                      "updated_by"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "payment_settings"
+                  },
+                  "target": {
+                    "columns": [
+                      "id"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "accounts"
+                  }
+                }
+              ],
+              "indexes": [
+                {
+                  "columns": [
+                    "updated_by"
+                  ],
+                  "name": "payment_settings_updated_by_idx_65a72f86",
+                  "prefix": "payment_settings_updated_by_idx",
+                  "unique": false
+                }
+              ],
+              "primaryKey": {
+                "columns": [
+                  "id"
+                ],
+                "name": "payment_settings_pkey"
+              },
+              "uniques": []
+            },
             "payments": {
               "checks": [
+                {
+                  "expression": "((channel <> 'ONLINE'::payment_channel) OR ((reference_no IS NOT NULL) AND (proof_url IS NOT NULL)))",
+                  "name": "online_payment_requires_proof"
+                },
                 {
                   "expression": "(amount >= (0)::numeric)",
                   "name": "payment_amount_positive"
@@ -3887,6 +4340,20 @@
                   "codecId": "pg/uuid@1",
                   "nativeType": "uuid",
                   "nullable": false
+                },
+                "channel": {
+                  "codecId": "pg/enum@1",
+                  "nativeType": "payment_channel",
+                  "nullable": false,
+                  "typeParams": {
+                    "typeName": "payment_channel"
+                  },
+                  "valueSet": {
+                    "entityKind": "valueSet",
+                    "entityName": "PaymentChannel",
+                    "namespaceId": "public",
+                    "plane": "storage"
+                  }
                 },
                 "created_at": {
                   "codecId": "pg/timestamptz-temporal@1",
@@ -3918,6 +4385,35 @@
                     "entityName": "PaymentMethod",
                     "namespaceId": "public",
                     "plane": "storage"
+                  }
+                },
+                "proof_storage_path": {
+                  "codecId": "sql/varchar@1",
+                  "nativeType": "character varying",
+                  "nullable": true,
+                  "typeParams": {
+                    "length": 500
+                  }
+                },
+                "proof_url": {
+                  "codecId": "sql/varchar@1",
+                  "nativeType": "character varying",
+                  "nullable": true,
+                  "typeParams": {
+                    "length": 500
+                  }
+                },
+                "recorded_by": {
+                  "codecId": "pg/uuid@1",
+                  "nativeType": "uuid",
+                  "nullable": true
+                },
+                "reference_no": {
+                  "codecId": "sql/varchar@1",
+                  "nativeType": "character varying",
+                  "nullable": true,
+                  "typeParams": {
+                    "length": 100
                   }
                 },
                 "status": {
@@ -3994,9 +4490,34 @@
                     "namespaceId": "public",
                     "tableName": "accounts"
                   }
+                },
+                {
+                  "name": "fk_payment_recorder",
+                  "onDelete": "restrict",
+                  "source": {
+                    "columns": [
+                      "recorded_by"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "payments"
+                  },
+                  "target": {
+                    "columns": [
+                      "id"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "accounts"
+                  }
                 }
               ],
               "indexes": [
+                {
+                  "columns": [
+                    "appointment_id"
+                  ],
+                  "name": "idx_payments_appointment_id",
+                  "unique": false
+                },
                 {
                   "columns": [
                     "created_at"
@@ -4028,9 +4549,9 @@
               "uniques": [
                 {
                   "columns": [
-                    "appointment_id"
+                    "reference_no"
                   ],
-                  "name": "payments_appointment_id_key"
+                  "name": "payments_reference_no_key"
                 }
               ]
             },
@@ -5617,11 +6138,26 @@
                 "NO_SHOW"
               ]
             },
+            "DownPaymentKind": {
+              "kind": "valueSet",
+              "values": [
+                "NONE",
+                "FIXED",
+                "PERCENT"
+              ]
+            },
             "EmploymentType": {
               "kind": "valueSet",
               "values": [
                 "FULL_TIME",
                 "PART_TIME"
+              ]
+            },
+            "PaymentChannel": {
+              "kind": "valueSet",
+              "values": [
+                "ONLINE",
+                "IN_PERSON"
               ]
             },
             "PaymentMethod": {
@@ -5670,7 +6206,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "c7b3293465ca258d93a3f9dfe9f47ce1250d386d01ca29a5ee85ecac3b0f03fa"
+    "storageHash": "3aec5a97c479eb3cc479b1fde9ab9d2c61bef24a4f81b3f6d5e57db40eca2356"
   },
   "capabilities": {
     "postgres": {

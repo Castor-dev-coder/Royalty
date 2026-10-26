@@ -58,6 +58,12 @@ namespace public {
     @@map("payment_method")
   }
 
+  native_enum PaymentChannel {
+    ONLINE = "ONLINE"
+    IN_PERSON = "IN_PERSON"
+    @@map("payment_channel")
+  }
+
   native_enum PaymentStatus {
     UNVERIFIED = "UNVERIFIED"
     VERIFIED = "VERIFIED"
@@ -90,7 +96,11 @@ namespace public {
   model Account {
     id               Uuid                   @id(map: "accounts_pkey") @default(sql`gen_random_uuid()`)
     email            VarChar(255)           @unique(map: "accounts_email_key")
-    passwordHash     String                 @map("password_hash")
+    // Google Identity link (stable `sub` claim). Nullable: password accounts
+    // have none. Accounts are never merged silently — linking is explicit.
+    googleId         VarChar(255)?          @unique(map: "accounts_google_id_key") @map("google_id")
+    // Nullable for Google-only accounts (no password).
+    passwordHash     String?                @map("password_hash")
     role             pg.enum(AccountRole)   @default("CUSTOMER")
     status           pg.enum(AccountStatus) @default("ACTIVE")
     isSystem         Boolean                @default(false) @map("is_system")
@@ -98,7 +108,9 @@ namespace public {
     updatedAt        Timestamptz            @default(now()) @map("updated_at")
     auditLogs        AuditLog[]
     customers        Customer?
-    payments         Payment[]
+    payments         Payment[]              @relation("PaymentVerifier")
+    recordedPayments Payment[]              @relation("PaymentRecorder")
+    paymentSettings  PaymentSetting[]
     scheduleRequests ScheduleRequest[]
     staff            Staff?
     staffAttendance  StaffAttendance[]
@@ -141,7 +153,7 @@ namespace public {
     updatedAt           Timestamptz                @default(now()) @map("updated_at")
     staffId             Uuid?                      @map("staff_id")
     appointmentServices AppointmentService[]
-    payments            Payment?
+    payments            Payment[]
     reviews             Review?
     customer            Customer                  @relation(fields: [customerId], references: [id], onDelete: Restrict, map: "fk_appointment_customer")
     staff               Staff?                    @relation(fields: [staffId], references: [id], onDelete: Restrict, map: "fk_appointment_staff", index: false)
@@ -246,26 +258,67 @@ namespace public {
     @@map("business_hours")
   }
 
+  // One row per TRANSACTION: an online GCash deposit and later in-person
+  // balance payments are separate rows on the same appointment. The old
+  // one-payment-per-appointment unique is replaced by an index.
   model Payment {
-    id            Uuid                   @id(map: "payments_pkey") @default(sql`gen_random_uuid()`)
-    appointmentId Uuid                   @unique(map: "payments_appointment_id_key") @map("appointment_id")
-    amount        Numeric(10, 2)
-    paymentMethod pg.enum(PaymentMethod) @map("payment_method")
-    status        pg.enum(PaymentStatus) @default("UNVERIFIED")
-    verifiedBy    Uuid?                  @map("verified_by")
-    verifiedAt    Timestamptz?           @map("verified_at")
-    createdAt     Timestamptz            @default(now()) @map("created_at")
-    updatedAt     Timestamptz            @default(now()) @map("updated_at")
-    appointment   Appointment           @relation(fields: [appointmentId], references: [id], onDelete: Restrict, map: "fk_payment_appointment")
-    accounts      Account?              @relation(fields: [verifiedBy], references: [id], onDelete: Restrict, map: "fk_payment_verifier", index: false)
+    id               Uuid                   @id(map: "payments_pkey") @default(sql`gen_random_uuid()`)
+    appointmentId    Uuid                   @map("appointment_id")
+    amount           Numeric(10, 2)
+    paymentMethod    pg.enum(PaymentMethod) @map("payment_method")
+    channel          pg.enum(PaymentChannel) @map("channel")
+    status           pg.enum(PaymentStatus) @default("UNVERIFIED")
+    // GCash reference number (online submissions require one; unique across
+    // payments so the same reference can never be credited twice).
+    referenceNo      VarChar(100)?          @unique(map: "payments_reference_no_key") @map("reference_no")
+    proofUrl         VarChar(500)?          @map("proof_url")
+    proofStoragePath VarChar(500)?          @map("proof_storage_path")
+    recordedBy       Uuid?                  @map("recorded_by")
+    verifiedBy       Uuid?                  @map("verified_by")
+    verifiedAt       Timestamptz?           @map("verified_at")
+    createdAt        Timestamptz            @default(now()) @map("created_at")
+    updatedAt        Timestamptz            @default(now()) @map("updated_at")
+    appointment      Appointment            @relation(fields: [appointmentId], references: [id], onDelete: Restrict, map: "fk_payment_appointment")
+    accounts         Account?               @relation("PaymentVerifier", fields: [verifiedBy], references: [id], onDelete: Restrict, map: "fk_payment_verifier", index: false)
+    recorder         Account?               @relation("PaymentRecorder", fields: [recordedBy], references: [id], onDelete: Restrict, map: "fk_payment_recorder", index: false)
 
+    @@index([appointmentId], map: "idx_payments_appointment_id")
     @@index([createdAt], map: "idx_payments_created_at")
     @@index([status], map: "idx_payments_status")
     @@index([verifiedBy], map: "idx_payments_verified_by")
     @@check(expression: "(amount >= (0)::numeric)", map: "payment_amount_positive")
     @@check(expression: "((status <> 'VERIFIED'::payment_status) OR ((verified_by IS NOT NULL) AND (verified_at IS NOT NULL)))", map: "valid_verified_payment")
+    @@check(expression: "((channel <> 'ONLINE'::payment_channel) OR ((reference_no IS NOT NULL) AND (proof_url IS NOT NULL)))", map: "online_payment_requires_proof")
     @@rls
     @@map("payments")
+  }
+
+  native_enum DownPaymentKind {
+    NONE = "NONE"
+    FIXED = "FIXED"
+    PERCENT = "PERCENT"
+    @@map("down_payment_kind")
+  }
+
+  // Single-row salon payment configuration (GCash QR display + online
+  // down-payment policy). Written by ADMIN only; every change is audited.
+  model PaymentSetting {
+    id                  Uuid            @id(map: "payment_settings_pkey") @default(sql`gen_random_uuid()`)
+    gcashQrUrl          VarChar(500)?   @map("gcash_qr_url")
+    gcashQrStoragePath  VarChar(500)?   @map("gcash_qr_storage_path")
+    receiverName        VarChar(100)?   @map("receiver_name")
+    accountNumberMasked VarChar(30)?    @map("account_number_masked")
+    // Policy is configurable; the approved configuration is PERCENT = 50.
+    downPaymentKind     pg.enum(DownPaymentKind) @default("PERCENT") @map("down_payment_kind")
+    downPaymentValue    Numeric(10, 2)  @default(sql`50`) @map("down_payment_value")
+    updatedBy           Uuid?           @map("updated_by")
+    createdAt           Timestamptz     @default(now()) @map("created_at")
+    updatedAt           Timestamptz     @default(now()) @map("updated_at")
+    updater             Account?        @relation(fields: [updatedBy], references: [id], onDelete: SetNull, map: "fk_payment_settings_updater")
+
+    @@check(expression: "(down_payment_value >= (0)::numeric)", map: "payment_settings_value_positive")
+    @@rls
+    @@map("payment_settings")
   }
 
   model ExternalUser {
