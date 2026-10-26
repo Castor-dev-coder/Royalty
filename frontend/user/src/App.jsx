@@ -10,6 +10,7 @@ import {
 import { AuthProvider } from './context/AuthContext.jsx'
 import { ThemeProvider } from './context/ThemeContext.jsx'
 import { ToastProvider } from './components/ToastProvider.jsx'
+import GoogleOneTap from './components/GoogleOneTap.jsx'
 import Homepage from './pages/Homepage.jsx'
 
 // Inner routes load as separate chunks; while a chunk arrives, a page-shaped
@@ -33,6 +34,7 @@ function App() {
       <ToastProvider>
         <AuthProvider>
           <ScrollToTop />
+          <GoogleOneTap />
           <Routes>
             <Route element={<AppShell />}>
               <Route path="/" element={<Homepage />} />

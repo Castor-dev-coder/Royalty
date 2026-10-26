@@ -11,9 +11,12 @@ import {
   NOT_MODIFIED,
   cancelAppointmentRequest,
   fetchMyAppointments,
+  fetchMyPayments,
   sessionDispositionAfter401,
 } from '../lib/api.js'
 import ReviewForm from '../components/ReviewForm.jsx'
+import GCashPaymentDialog from '../components/GCashPaymentDialog.jsx'
+import { formatAmount, groupPaymentsByAppointment, paymentStatusLabel } from '../lib/payments.js'
 
 const PAGE_SIZE = 10
 
@@ -61,11 +64,36 @@ function StatusBadge({ status, className = '' }) {
   )
 }
 
+const PAYMENT_BADGE_STYLES = {
+  UNVERIFIED: 'border-[rgba(212,180,92,0.45)] text-[var(--gold)]',
+  VERIFIED: 'border-[#2f4a33] text-[#9fd0a5]',
+  REJECTED: 'border-[#4a2f28] text-[#e9a68c]',
+}
+
+// Text label plus color — never colour alone.
+function PaymentStatusChip({ status }) {
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-semibold tracking-[0.12em] uppercase ${PAYMENT_BADGE_STYLES[status] ?? 'border-[#3a352c] text-[#b3ada2]'}`}
+    >
+      {paymentStatusLabel(status)}
+    </span>
+  )
+}
+
 function peso(amount) {
   return `₱${Number(amount).toLocaleString('en-PH', { minimumFractionDigits: 2 })}`
 }
 
-function AppointmentCard({ item, customerName, onCancel, onOpenReview, onReviewSuccess, cancelMessage, cancelBusy, reviewOpen, onCloseReview }) {
+function formatTimestamp(iso) {
+  if (!iso) return ''
+  const date = new Date(iso)
+  return Number.isNaN(date.getTime())
+    ? ''
+    : date.toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' })
+}
+
+function AppointmentCard({ item, customerName, onCancel, onOpenPayment, onOpenReview, onReviewSuccess, cancelMessage, cancelBusy, reviewOpen, onCloseReview }) {
   const { month, day, weekdayShort } = formatDateParts(item.appointmentDate)
   const staffName = item.staff ? `${item.staff.firstName} ${item.staff.lastName}`.trim() : 'Unassigned'
   const reviewed = item.alreadyReviewed && item.review
@@ -73,7 +101,10 @@ function AppointmentCard({ item, customerName, onCancel, onOpenReview, onReviewS
   const moreCount = item.services.length - 1
   const showReviewButton = item.status === 'COMPLETED' && !item.alreadyReviewed && !reviewOpen
   const showCancel = item.status === 'RESERVED' || item.status === 'CONFIRMED'
-  const hasActions = Boolean(showReviewButton || reviewed || showCancel)
+  // Every appointment offers the GCash payment dialog; the server quote gates
+  // what can actually be paid.
+  const showPay = true
+  const hasActions = Boolean(showPay || showReviewButton || reviewed || showCancel)
   return (
     <article className="rounded-lg border border-[#27241f] bg-[#151515] px-6 py-6 max-[640px]:px-4 max-[640px]:py-4">
       {/* Customer identity is initials only — never a photo; the name is
@@ -138,6 +169,15 @@ function AppointmentCard({ item, customerName, onCancel, onOpenReview, onReviewS
 
           {hasActions && (
             <div className="mt-2 flex flex-wrap items-center justify-end gap-2 max-[640px]:col-span-2 max-[640px]:row-start-6">
+              {showPay && (
+                <button
+                  className="btn-pill min-h-[40px] cursor-pointer rounded-full border border-[var(--gold)] px-5 text-[12px] font-semibold tracking-[0.12em] text-[var(--gold)] uppercase hover:bg-[var(--gold)] hover:text-[#111] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--gold)] max-[640px]:min-h-[44px] max-[640px]:w-full"
+                  onClick={() => onOpenPayment(item)}
+                  type="button"
+                >
+                  PAY WITH GCASH
+                </button>
+              )}
               {showReviewButton && (
                 <button
                   className="btn-pill min-h-[40px] cursor-pointer rounded-full border border-[var(--gold)] bg-[var(--gold)] px-5 text-[12px] font-semibold tracking-[0.12em] text-[#111] uppercase hover:bg-[var(--gold-bright)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--gold)] max-[640px]:min-h-[44px] max-[640px]:w-full"
@@ -200,6 +240,10 @@ function Appointments() {
   const [activeTab, setActiveTab] = useState('upcoming')
   const [cancelState, setCancelState] = useState({}) // id -> { busy, message }
   const [reviewOpenId, setReviewOpenId] = useState(null)
+  const [payItem, setPayItem] = useState(null) // appointment opened in the GCash dialog
+  const [payments, setPayments] = useState([])
+  const [paymentsLoading, setPaymentsLoading] = useState(true)
+  const [paymentsError, setPaymentsError] = useState(null)
 
   // Customer-only screen: other roles keep their session but get no data.
   const noAccess = Boolean(user) && user.role !== 'CUSTOMER'
@@ -207,6 +251,7 @@ function Appointments() {
   // Rows are on screen after the first successful load — background refreshes
   // update them in place and never replace them with a skeleton or an error.
   const hasDataRef = useRef(false)
+  const hasPaymentsRef = useRef(false)
 
   // The synchronous body never sets state (only promise callbacks do), so the
   // effect below cannot trigger cascading renders. Resolves true on success
@@ -250,16 +295,52 @@ function Appointments() {
     )
   }, [user, page, resolveAuthFailure])
 
+  // Payment history loader — same FE-01 discipline as `load`: setState only
+  // in promise callbacks, keep rows on screen through transient failures.
+  const loadPayments = useCallback(() => {
+    if (!user || user.role !== 'CUSTOMER') return Promise.resolve(true)
+    return fetchMyPayments().then(
+      (result) => {
+        setPayments(result?.payments ?? [])
+        setPaymentsError(null)
+        hasPaymentsRef.current = true
+        setPaymentsLoading(false)
+        return true
+      },
+      (err) =>
+        (async () => {
+          if (err instanceof AuthError && err.status === 401) {
+            const disposition = await sessionDispositionAfter401(user.role)
+            await resolveAuthFailure(disposition)
+            setPaymentsLoading(false)
+            return false
+          }
+          if (!hasPaymentsRef.current) {
+            setPaymentsError(err instanceof ApiError ? err.message : 'Could not load your payments.')
+          }
+          setPaymentsLoading(false)
+          return false
+        })(),
+    )
+  }, [user, resolveAuthFailure])
+
+  // Appointments and payments share one lifecycle (auto-refresh, outage
+  // recovery) — the combined callback keeps both fresh together.
+  const refreshAll = useCallback(
+    () => Promise.all([load(), loadPayments()]).then((results) => results.every(Boolean)),
+    [load, loadPayments],
+  )
+
   useEffect(() => {
-    load()
-  }, [load, recoveryTick])
+    refreshAll()
+  }, [refreshAll, recoveryTick])
 
   // Signed-in background refresh (focus / online / 45s ±5s jitter). Skipped
-  // while a review form/draft is open or a cancel is in flight.
+  // while a review form/draft, the payment dialog, or a cancel is in flight.
   const cancelBusy = Object.values(cancelState).some((entry) => entry?.busy)
-  useAutoRefresh(load, {
+  useAutoRefresh(refreshAll, {
     enabled: Boolean(user) && user.role === 'CUSTOMER',
-    paused: reviewOpenId !== null || cancelBusy,
+    paused: reviewOpenId !== null || payItem !== null || cancelBusy,
   })
 
   async function handleCancel(item) {
@@ -443,6 +524,7 @@ function Appointments() {
                         item={item}
                         onCancel={handleCancel}
                         onCloseReview={() => setReviewOpenId(null)}
+                        onOpenPayment={setPayItem}
                         onOpenReview={(id) => setReviewOpenId(id)}
                         onReviewSuccess={handleReviewSuccess}
                         reviewOpen={reviewOpenId === item.id}
@@ -475,6 +557,96 @@ function Appointments() {
                   Next
                 </button>
               </div>
+            )}
+
+            <section aria-labelledby="payment-history-heading" className="mt-12">
+              <h2 className="m-0 font-[var(--serif)] text-[26px] leading-tight text-[var(--gold)] max-[680px]:text-[22px]" id="payment-history-heading">
+                Payment history
+              </h2>
+              {paymentsLoading && (
+                <div aria-busy="true" className="mt-4 h-[120px] animate-pulse rounded-lg border border-[rgba(212,180,92,.35)] bg-[#151515]" />
+              )}
+              {!paymentsLoading && paymentsError && (
+                <div className="mt-4 flex flex-col items-start gap-4 rounded-lg border border-[rgba(212,180,92,.35)] bg-[#151515] px-6 py-5">
+                  <p className="m-0 text-[15px] text-[#e9a68c]" role="alert">
+                    {paymentsError}
+                  </p>
+                  <button
+                    className="cursor-pointer rounded-full border border-[#635b4c] px-6 py-2.5 text-[12px] font-semibold tracking-[0.12em] text-[#d5cdbf] uppercase hover:border-[var(--gold)] hover:text-[#eeeae2]"
+                    onClick={() => {
+                      setPaymentsLoading(true)
+                      loadPayments()
+                    }}
+                    type="button"
+                  >
+                    Try again
+                  </button>
+                </div>
+              )}
+              {!paymentsLoading && !paymentsError && payments.length === 0 && (
+                <p className="mt-4 text-[15px] text-[#d8d4cb]" role="status">
+                  No payments yet.
+                </p>
+              )}
+              {!paymentsLoading && !paymentsError && payments.length > 0 && (
+                <ul className="m-0 mt-4 flex list-none flex-col gap-3 p-0">
+                  {groupPaymentsByAppointment(payments).map((group) => (
+                    <li className="list-none" key={group.appointmentId ?? group.appointmentCode}>
+                      <article className="rounded-lg border border-[#27241f] bg-[#151515] px-6 py-5 max-[640px]:px-4">
+                        <h3 className="m-0 text-[13px] font-semibold tracking-[0.14em] text-[#8d877c] uppercase">
+                          {group.appointmentCode || 'Appointment'}
+                        </h3>
+                        {/* Balance summary — the server's numbers, copied verbatim. */}
+                        <dl className="m-0 mt-3 flex flex-col gap-2 border-b border-[#27241f] pb-3">
+                          {[
+                            ['Total', group.appointmentTotal],
+                            ['Verified received', group.verifiedTotal],
+                            ['Outstanding', group.outstanding],
+                          ]
+                            .filter(([, value]) => value !== null && value !== undefined)
+                            .map(([label, value]) => (
+                              <div className="flex items-baseline justify-between gap-4" key={label}>
+                                <dt className="m-0 text-[12px] tracking-[0.14em] text-[#8d877c] uppercase">{label}</dt>
+                                <dd className="m-0 text-[14px] tabular-nums text-[#d8d4cb]">{formatAmount(value)}</dd>
+                              </div>
+                            ))}
+                        </dl>
+                        <ul className="m-0 mt-3 flex list-none flex-col gap-3 p-0">
+                          {group.transactions.map((payment) => (
+                            <li className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2" key={payment.id}>
+                              <span className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-[13px]">
+                                <strong className="text-[15px] font-semibold tabular-nums text-[#eeeae2]">{formatAmount(payment.amount)}</strong>
+                                <span className="text-[#b3ada2]">
+                                  {payment.paymentMethod}
+                                  {payment.channel ? ` · ${payment.channel === 'ONLINE' ? 'Online' : 'At the salon'}` : ''}
+                                </span>
+                                {payment.referenceNo && <span className="text-[12px] text-[#8d877c]">Ref {payment.referenceNo}</span>}
+                                {payment.createdAt && (
+                                  <time className="text-[12px] text-[#8d877c]" dateTime={payment.createdAt}>
+                                    {formatTimestamp(payment.createdAt)}
+                                  </time>
+                                )}
+                              </span>
+                              <PaymentStatusChip status={payment.status} />
+                            </li>
+                          ))}
+                        </ul>
+                      </article>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            {payItem && (
+              <GCashPaymentDialog
+                item={payItem}
+                onClose={() => setPayItem(null)}
+                onSubmitted={() => {
+                  load()
+                  loadPayments()
+                }}
+              />
             )}
           </>
         )}

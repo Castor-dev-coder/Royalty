@@ -292,6 +292,20 @@ export function registerRequest(payload) {
   })
 }
 
+/**
+ * Google Identity Services sign-in (customer app only): exchanges a Google ID
+ * token for the same hybrid session as password login (httpOnly refresh cookie
+ * + in-memory access token). 200/201 -> { id, email, role, accessToken, created }.
+ */
+export function googleAuthRequest(idToken, rememberMe = true) {
+  return apiFetch('/auth/google', {
+    method: 'POST',
+    body: { idToken, ...(rememberMe ? { rememberMe: true } : {}) },
+    headers: { 'X-Auth-Mode': 'cookie' },
+    retryOn401: false,
+  })
+}
+
 export async function logoutRequest() {
   try {
     await apiFetch('/auth/logout', {
@@ -344,6 +358,84 @@ export function uploadReviewPhoto(reviewId, file, contentType, { onProgress } = 
       request.withCredentials = true
       request.setRequestHeader('Content-Type', contentType)
       if (memoryToken) request.setRequestHeader('Authorization', `Bearer ${memoryToken}`)
+      if (onProgress && request.upload) {
+        request.upload.addEventListener('progress', (event) => {
+          const percent =
+            event.lengthComputable && event.total > 0 ? Math.round((event.loaded / event.total) * 100) : 0
+          onProgress(percent)
+        })
+      }
+      request.addEventListener('load', () => {
+        let payload = null
+        try {
+          payload = JSON.parse(request.responseText)
+        } catch {
+          /* non-JSON error body */
+        }
+        if (request.status >= 500) noteFailure()
+        else noteResponse()
+        if (request.status >= 200 && request.status < 300) {
+          resolve(payload && typeof payload === 'object' && 'data' in payload ? payload.data : payload)
+          return
+        }
+        reject(errorFromResponse(request.status, payload))
+      })
+      request.addEventListener('error', () => {
+        lastRefreshFailure = 'transient'
+        noteFailure()
+        reject(new NetworkError())
+      })
+      request.addEventListener('abort', () => {
+        reject(new NetworkError('The upload was cancelled. Try again.'))
+      })
+      request.send(file)
+    })
+
+  return send().catch(async (error) => {
+    if (error instanceof AuthError && error.status === 401) {
+      const refreshed = await tryRefresh()
+      if (refreshed) return send()
+    }
+    throw error
+  })
+}
+
+// --- payments (GCash) -------------------------------------------------------
+
+/** Public GCash payment settings (QR URL, receiver, down-payment policy). */
+export function fetchPaymentSettings() {
+  return apiFetch('/payments/settings')
+}
+
+/**
+ * Server-calculated quote for one appointment: { appointmentId, totalAmount,
+ * verifiedTotal, outstanding, options: [{ key: 'FULL'|'DOWN', amount }], settings }.
+ * Every amount is the server's — the browser never computes money.
+ */
+export function fetchPaymentQuote(appointmentId) {
+  return apiFetch(`/payments/quote/${encodeURIComponent(appointmentId)}`)
+}
+
+/** The signed-in customer's own payment transactions: { payments: [...] }. */
+export function fetchMyPayments() {
+  return apiFetch('/payments/mine')
+}
+
+/**
+ * Submit an online GCash payment: the proof image goes as RAW BYTES in the
+ * body (Content-Type is the sniffed PNG/JPEG type), the option and reference
+ * number as query params. XHR carries real upload progress and mirrors
+ * apiFetch's refresh-once-on-401 behavior. Resolves to { payment: {...} }.
+ */
+export function submitOnlinePayment(appointmentId, { option, referenceNo, file, contentType, onProgress } = {}) {
+  const query = `option=${encodeURIComponent(option)}&referenceNo=${encodeURIComponent(referenceNo)}`
+  const send = () =>
+    new Promise((resolve, reject) => {
+      const request = new XMLHttpRequest()
+      request.open('POST', `${BASE}/payments/${encodeURIComponent(appointmentId)}/online?${query}`, true)
+      request.withCredentials = true
+      request.setRequestHeader('Content-Type', contentType)
+      if (memoryToken) request.setRequestHeader('Authorization', 'Bearer ' + memoryToken)
       if (onProgress && request.upload) {
         request.upload.addEventListener('progress', (event) => {
           const percent =

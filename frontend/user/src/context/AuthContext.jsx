@@ -4,6 +4,7 @@ import {
   clearSession,
   displayNameFor,
   getSessionUser,
+  googleAuthRequest,
   hasAuthHint,
   lastRefreshOutcome,
   loginRequest,
@@ -62,6 +63,17 @@ export function AuthProvider({ children }) {
     return sessionUser
   }, [])
 
+  // Google Identity sign-in: same session shape as password login (in-memory
+  // access token + httpOnly refresh cookie). Only CUSTOMER sessions come from
+  // this endpoint.
+  const signInWithGoogle = useCallback(async (idToken) => {
+    const result = await googleAuthRequest(idToken)
+    const sessionUser = sessionUserFor(result)
+    setSession({ user: sessionUser, accessToken: result.accessToken })
+    setUser(sessionUser)
+    return sessionUser
+  }, [])
+
   // Legacy setter kept for AppShell's post-login toast: signIn/signUp already
   // stored the session, this only adopts the user object into state.
   const login = useCallback((nextUser) => {
@@ -91,8 +103,21 @@ export function AuthProvider({ children }) {
   }, [])
 
   const value = useMemo(
-    () => ({ user, restoring, authView, signIn, signUp, login, logout, resolveAuthFailure, openAuth, closeAuth, switchAuth }),
-    [user, restoring, authView, signIn, signUp, login, logout, resolveAuthFailure, openAuth, closeAuth, switchAuth],
+    () => ({
+      user,
+      restoring,
+      authView,
+      signIn,
+      signInWithGoogle,
+      signUp,
+      login,
+      logout,
+      resolveAuthFailure,
+      openAuth,
+      closeAuth,
+      switchAuth,
+    }),
+    [user, restoring, authView, signIn, signInWithGoogle, signUp, login, logout, resolveAuthFailure, openAuth, closeAuth, switchAuth],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

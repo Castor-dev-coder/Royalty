@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import AuthModal from './AuthModal.jsx'
 import BrandMark from './BrandMark.jsx'
+import GoogleSignInButton from './GoogleSignInButton.jsx'
 import { useAuth } from '../context/useAuth.jsx'
 import { ApiError, AuthError, ValidationError } from '../lib/api.js'
 
@@ -170,17 +171,12 @@ function Login({ onClose, onSwitch, onLogin = () => {} }) {
             Sign up
           </button>
         </p>
-        <div className="relative my-[21px] w-full text-center text-[0.58rem] text-[#77736b] before:absolute before:top-1/2 before:right-0 before:left-0 before:h-px before:bg-[#34322e] before:content-['']">
-          <span className="relative bg-[#11110f] px-3">OR</span>
-        </div>
-        <button
-          className="flex min-h-11 w-full cursor-pointer items-center justify-center gap-[10px] rounded border border-[#34322e] bg-[#171716] text-[0.7rem] text-[#e1ded8] transition-[border-color,background] duration-[180ms] hover:border-[var(--gold)] hover:bg-[#1d1c19]"
-          onClick={() => setMessage('Sign-up isn’t available yet.')}
-          type="button"
-        >
-          <span className="font-[Arial,sans-serif] text-base font-bold text-[#4285f4]" aria-hidden="true">G</span>
-          Log in with Google
-        </button>
+        <GoogleSignInButton
+          onSignedIn={(nextUser) => {
+            onLogin(nextUser)
+            onClose()
+          }}
+        />
       </div>
     </AuthModal>
   )
