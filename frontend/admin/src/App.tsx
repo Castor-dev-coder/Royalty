@@ -34,6 +34,20 @@ import { ImageUploadField, type ImageUploadHandle } from './shared/imageUpload';
 import { CheckboxMultiSelect, TagMultiSelect, ToggleSwitch } from './shared/profileFields';
 import { CustomerAvatar } from './components/CustomerAvatar';
 import { ReviewPhotos } from './components/ReviewPhotos';
+import { PaymentDetailModal } from './components/PaymentDetailModal';
+import { RecordPaymentModal, type RecordPaymentOption } from './components/RecordPaymentModal';
+import { PaymentSettingsPanel } from './components/PaymentSettingsPanel';
+import {
+  canEditPaymentSettings,
+  canRecordPayment,
+  channelBadge,
+  channelLabel,
+  methodLabel,
+  paymentStatusBadge,
+  paymentStatusLabel,
+  toPaymentRow,
+  type PaymentRow,
+} from './payments';
 import {
   canManageReviewPhotos,
   insertPhoto,
@@ -41,7 +55,7 @@ import {
   sortPhotos,
   type ReviewPhoto,
 } from './reviewPhotos';
-import { useAppointmentsQuery, type AppointmentRow } from './appointmentsQuery';
+import { useAppointmentsQuery, toAppointmentRow, type AppointmentRow } from './appointmentsQuery';
 import { currentManilaDateKey, currentManilaMonthKey, manilaDateKey, selectMonthBookings } from './dashboard-month';
 import { AttendancePanel } from './attendance/AttendancePanel';
 import { StaffShell } from './staff/StaffShell';
@@ -2664,21 +2678,47 @@ function AppointmentPage() {
 }
 
 function PaymentPage() {
-  const [payments, setPayments] = useState<Array<Record<string, any>>>([]);
+  const [payments, setPayments] = useState<PaymentRow[]>([]);
   const [activities, setActivities] = useState<Array<{ id: string; message: string; createdAt: string }>>([]);
-  const [tab, setTab] = useState<'pending' | 'history'>('pending');
+  const [tab, setTab] = useState<'pending' | 'history' | 'settings'>('pending');
   const [search, setSearch] = useState('');
-  const [selectedPayment, setSelectedPayment] = useState<any | null>(null);
-  const [verificationCode, setVerificationCode] = useState('');
-  const [codeError, setCodeError] = useState('');
-  const [paymentConfirmation, setPaymentConfirmation] = useState<'VERIFIED' | 'REJECTED' | null>(null);
+  const [loadError, setLoadError] = useState('');
+  const [selectedPayment, setSelectedPayment] = useState<PaymentRow | null>(null);
+  const [paymentConfirmation, setPaymentConfirmation] = useState<{ payment: PaymentRow; status: 'VERIFIED' | 'REJECTED' } | null>(null);
+  const [recordOpen, setRecordOpen] = useState(false);
+  const [pickerOptions, setPickerOptions] = useState<RecordPaymentOption[] | null>(null);
+  const [pickerLoading, setPickerLoading] = useState(false);
   const [notice, setNotice] = useState('');
-  const [busy, setBusy] = useState(false);
   const token = getAccessToken();
-  const navigate = useNavigate();
+  const role = currentSession(token)?.role ?? null;
+  const canReview = role === 'ADMIN' || role === 'MANAGER';
+  const canRecord = canRecordPayment(role);
+  const canSettings = canEditPaymentSettings(role);
   const location = useLocation();
-  const closePaymentModal = useCallback(() => setSelectedPayment(null), []);
-  const paymentDialogRef = useDialogBehavior<HTMLElement>(closePaymentModal, selectedPayment !== null);
+
+  const loadPayments = useCallback(async (signal?: AbortSignal) => {
+    const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+    const headers = authHeader(token);
+    const [paymentResponse, activityResponse] = await Promise.all([
+      apiFetch(`${baseUrl}/payments?page=1&limit=100`, { signal, headers }),
+      apiFetch(`${baseUrl}/payments/activity`, { signal, headers }),
+    ]);
+    const paymentPayload = await paymentResponse.json().catch(() => null);
+    if (!paymentResponse.ok) throw new Error(paymentPayload?.message ?? 'Payment records are not available from the configured backend.');
+    const activityPayload = activityResponse.ok ? await activityResponse.json().catch(() => null) : null;
+    setPayments(((paymentPayload?.data?.payments ?? []) as any[]).map(toPaymentRow));
+    setActivities(activityPayload?.data?.activities ?? []);
+    setLoadError('');
+  }, [token]);
+
+  useEffect(() => {
+    if (!token) return;
+    const controller = new AbortController();
+    loadPayments(controller.signal).catch((cause) => {
+      if (!controller.signal.aborted) setLoadError(cause instanceof Error ? cause.message : 'Unable to load payment records.');
+    });
+    return () => controller.abort();
+  }, [loadPayments, token]);
 
   useEffect(() => {
     const state = location.state as { completeAppointmentId?: string; appointmentCode?: string } | null;
@@ -2690,74 +2730,63 @@ function PaymentPage() {
     }
   }, [location.state, payments]);
 
-  async function loadPayments(signal?: AbortSignal) {
-    const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
-    const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
-    const [paymentResponse, activityResponse] = await Promise.all([
-      apiFetch(`${baseUrl}/payments?page=1&limit=100`, { signal, headers }),
-      apiFetch(`${baseUrl}/payments/activity`, { signal, headers }),
-    ]);
-    const paymentPayload = await paymentResponse.json();
-    if (!paymentResponse.ok) throw new Error(paymentPayload.message ?? 'Payment records are not available from the configured backend.');
-    const activityPayload = activityResponse.ok ? await activityResponse.json() : { data: { activities: [] } };
-    setPayments(paymentPayload?.data?.payments ?? []);
-    setActivities(activityPayload?.data?.activities ?? []);
-  }
-
-  useEffect(() => {
-    if (!token) return;
-    const controller = new AbortController();
-    loadPayments(controller.signal).catch((cause) => {
-      if (!controller.signal.aborted) setNotice(cause instanceof Error ? cause.message : 'Unable to load payment records.');
-    });
-    return () => controller.abort();
-  }, []);
-
-  async function updatePaymentStatus(status: 'VERIFIED' | 'REJECTED') {
-    if (!selectedPayment) return;
+  async function updatePaymentStatus(payment: PaymentRow, status: 'VERIFIED' | 'REJECTED') {
     if (!token) {
       setNotice('Sign in with an administrator account to verify payments.');
       return;
     }
-    setBusy(true);
-    setNotice('');
-    try {
-      const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
-      const response = await apiFetch(`${baseUrl}/payments/${selectedPayment.id}/status`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ status }),
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.message ?? 'Unable to update payment status.');
-      setPayments((current) => current.map((payment) => payment.id === selectedPayment.id ? payload.data.payment : payment));
-      const activityResponse = await apiFetch(`${baseUrl}/payments/activity`, { headers: { Authorization: `Bearer ${token}` } });
-      if (activityResponse.ok) {
-        const activityPayload = await activityResponse.json();
-        setActivities(activityPayload?.data?.activities ?? []);
-      }
-      setSelectedPayment(null);
-      setPaymentConfirmation(null);
-      setNotice(`Payment ${selectedPayment.appointmentCode} ${status === 'VERIFIED' ? 'verified' : 'rejected'}.`);
-      setVerificationCode('');
-    } catch (cause) {
-      throw cause instanceof Error ? cause : new Error('Unable to update payment status.');
-    } finally {
-      setBusy(false);
+    const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+    const response = await apiFetch(`${baseUrl}/payments/${payment.id}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+      body: JSON.stringify({ status }),
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(payload?.message ?? 'Unable to update payment status.');
+    setPayments((current) => current.map((item) => (item.id === payment.id ? toPaymentRow(payload?.data?.payment) : item)));
+    const activityResponse = await apiFetch(`${baseUrl}/payments/activity`, { headers: authHeader(token) });
+    if (activityResponse.ok) {
+      const activityPayload = await activityResponse.json().catch(() => null);
+      setActivities(activityPayload?.data?.activities ?? []);
     }
+    setPaymentConfirmation(null);
+    setNotice(`Payment ${payment.appointmentCode} ${status === 'VERIFIED' ? 'verified' : 'rejected'}.`);
   }
 
-  function validatePaymentCode() {
-    if (!/^\d{5}$/.test(verificationCode.trim())) {
-      setCodeError('Enter the five-digit code provided with this appointment.');
-      return;
+  /**
+   * Open the counter payment form.
+   *
+   * The picker is filled from the appointment list so money can be recorded
+   * for a booking that has no payment yet. The outstanding figure is shown
+   * only where the server has reported one; the API re-checks every amount.
+   */
+  async function openRecordModal() {
+    setRecordOpen(true);
+    if (pickerOptions !== null) return;
+    setPickerLoading(true);
+    try {
+      const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+      const response = await apiFetch(`${baseUrl}/appointments?page=1&limit=100`, { headers: authHeader(token) });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(payload?.message ?? 'Appointments are not available.');
+      const rows = ((payload?.data?.appointments ?? []) as any[]).map(toAppointmentRow);
+      setPickerOptions(rows.map((row) => {
+        const known = payments.find((payment) => payment.appointmentId === String(row.id));
+        return {
+          appointmentId: String(row.id ?? ''),
+          appointmentCode: row.code,
+          label: `${row.customerName ?? 'Customer'} · ${row.serviceNames}`,
+          detail: `${formatRequestDate(row.appointmentDate)} · ${row.startTime}–${row.endTime}`,
+          outstanding: known ? known.outstanding : null,
+          total: row.totalAmount ?? null,
+        };
+      }));
+    } catch (cause) {
+      setNotice(cause instanceof Error ? cause.message : 'Appointments are not available.');
+      setRecordOpen(false);
+    } finally {
+      setPickerLoading(false);
     }
-    if (verificationCode.trim() !== String(selectedPayment?.verificationCode ?? '')) {
-      setCodeError('That code does not match this appointment. Check the booking reference and try again.');
-      return;
-    }
-    setCodeError('');
-    setPaymentConfirmation('VERIFIED');
   }
 
   const pendingPayments = payments.filter((payment) => payment.status === 'UNVERIFIED');
@@ -2766,7 +2795,7 @@ function PaymentPage() {
   const todayKey = `${paymentToday.getFullYear()}-${String(paymentToday.getMonth() + 1).padStart(2, '0')}-${String(paymentToday.getDate()).padStart(2, '0')}`;
   const confirmedToday = payments.filter((payment) => payment.status === 'VERIFIED' && String(payment.verifiedAt ?? '').slice(0, 10) === todayKey);
   const displayedPayments = (tab === 'pending' ? pendingPayments : historyPayments).filter((payment) =>
-    `${payment.appointmentCode} ${payment.customerName} ${payment.customerEmail} ${payment.serviceName}`.toLowerCase().includes(search.toLowerCase()),
+    `${payment.appointmentCode} ${payment.customerName} ${payment.customerEmail} ${payment.serviceName} ${payment.referenceNo ?? ''}`.toLowerCase().includes(search.toLowerCase()),
   );
   const confirmedRevenue = payments.filter((payment) => payment.status === 'VERIFIED').reduce((sum, payment) => sum + Number(payment.amount ?? 0), 0);
 
@@ -2785,81 +2814,102 @@ function PaymentPage() {
             <div className="tab-group">
               <button type="button" className={tab === 'pending' ? 'active' : ''} onClick={() => setTab('pending')}>Pending Queue <span>{pendingPayments.length}</span></button>
               <button type="button" className={tab === 'history' ? 'active' : ''} onClick={() => setTab('history')}>Payment History</button>
+              {canSettings && <button type="button" className={tab === 'settings' ? 'active' : ''} onClick={() => setTab('settings')}>Payment Settings</button>}
             </div>
-            <input aria-label="Search payments" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by reference or customer..." className="search-input" />
+            <div className="payment-tools">
+              <input aria-label="Search payments" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by reference or customer..." className="search-input" />
+              {canRecord && <button type="button" className="primary-action" onClick={() => void openRecordModal()}>Record payment</button>}
+            </div>
           </div>
           {notice && <p className="table-message" role="status">{notice}</p>}
-          {payments.length === 0 ? (
+          {tab === 'settings' ? (
+            <PaymentSettingsPanel />
+          ) : loadError ? (
             <div className="payment-unavailable">
-              <strong>Payments API unavailable</strong>
-              <p>{notice || 'The configured backend does not expose payment records. No demo payments are mixed into live data.'}</p>
+              <strong>Payments could not be loaded</strong>
+              <p>{loadError}</p>
+            </div>
+          ) : payments.length === 0 ? (
+            <div className="payment-unavailable">
+              <strong>No payments recorded yet</strong>
+              <p>Payments submitted online or recorded at the counter will appear here.</p>
             </div>
           ) : (
             <div className="payment-table-scroll">
               <table role="table" className="responsive-table">
-                <thead role="rowgroup"><tr><th role="columnheader" scope="col">Reference / Customer</th><th role="columnheader" scope="col">Service</th><th role="columnheader" scope="col">Amount</th><th role="columnheader" scope="col">Booking</th><th role="columnheader" scope="col">Payment</th><th role="columnheader" scope="col">Action</th></tr></thead>
+                <thead role="rowgroup"><tr><th role="columnheader" scope="col">Reference / Customer</th><th role="columnheader" scope="col">Service</th><th role="columnheader" scope="col">Amount</th><th role="columnheader" scope="col">Channel</th><th role="columnheader" scope="col">Booking</th><th role="columnheader" scope="col">Payment</th><th role="columnheader" scope="col">Action</th></tr></thead>
                 <tbody role="rowgroup">
                   {displayedPayments.map((payment) => (
                     <tr role="row" key={payment.id}>
                       <td role="cell" data-label="Reference / Customer" data-primary><div className="payment-customer"><CustomerAvatar name={payment.customerName} /><div><strong>{payment.customerName}</strong><small>{payment.appointmentCode} · {payment.customerEmail}</small></div></div></td>
                       <td role="cell" data-label="Service">{payment.serviceName}</td>
-                      <td role="cell" data-label="Amount"><strong>₱{Number(payment.amount).toLocaleString()}</strong><small className="payment-method">{payment.paymentMethod}</small></td>
+                      <td role="cell" data-label="Amount"><strong>₱{Number(payment.amount).toLocaleString()}</strong><small className="payment-method">{methodLabel(payment.paymentMethod)}</small></td>
+                      <td role="cell" data-label="Channel"><span className={`status-badge ${channelBadge(payment.channel)}`}>{channelLabel(payment.channel)}</span></td>
                       <td role="cell" data-label="Booking"><span className={`status-badge ${appointmentStatusBadge(String(payment.bookingStatus ?? 'RESERVED'))}`}>{appointmentStatusText(String(payment.bookingStatus ?? 'RESERVED'))}</span></td>
-                      <td role="cell" data-label="Payment"><span className={`status-badge ${payment.status === 'VERIFIED' ? 'success' : payment.status === 'REJECTED' ? 'danger' : 'warning'}`}>{payment.status === 'VERIFIED' ? 'Verified' : payment.status === 'REJECTED' ? 'Rejected' : 'Pending'}</span></td>
-                      <td className="cell-actions" role="cell" data-label="Action">{payment.status === 'UNVERIFIED'
-                        ? <button type="button" className="payment-action approve-action" disabled onClick={() => { setSelectedPayment(payment); setVerificationCode(''); setCodeError(''); }}>Verify</button>
-                        : <span className="payment-date">{payment.verifiedAt ? new Date(payment.verifiedAt).toLocaleDateString() : '—'}</span>}</td>
+                      <td role="cell" data-label="Payment"><span className={`status-badge ${paymentStatusBadge(payment.status)}`}>{paymentStatusLabel(payment.status)}</span></td>
+                      <td className="cell-actions" role="cell" data-label="Action"><button type="button" className="payment-action" onClick={() => setSelectedPayment(payment)}>Details</button></td>
                     </tr>
                   ))}
-                  {displayedPayments.length === 0 && <tr role="row"><td colSpan={6} className="cell-empty" role="cell" data-empty>{payments.length ? 'No payments match this view.' : 'No payment records are available.'}</td></tr>}
+                  {displayedPayments.length === 0 && <tr role="row"><td colSpan={7} className="cell-empty" role="cell" data-empty>No payments match this view.</td></tr>}
                 </tbody>
               </table>
             </div>
           )}
         </section>
 
-        <section className="panel payment-activity">
-          <div className="panel-header compact"><h3>Payment Activity Log</h3><span>Verification history</span></div>
-          {activities.length ? (
-            <ul className="payment-activity-list">
-              {activities.slice(0, 6).map((activity) => (
-                <li key={activity.id}><strong>{activity.message}</strong><small>{new Date(activity.createdAt).toLocaleString()}</small></li>
-              ))}
-            </ul>
-          ) : <p className="empty-list">Payment activity will appear here when payments are verified or rejected.</p>}
-        </section>
+        {tab !== 'settings' && (
+          <section className="panel payment-activity">
+            <div className="panel-header compact"><h3>Payment Activity Log</h3><span>Verification history</span></div>
+            {activities.length ? (
+              <ul className="payment-activity-list">
+                {activities.slice(0, 6).map((activity) => (
+                  <li key={activity.id}><strong>{activity.message}</strong><small>{new Date(activity.createdAt).toLocaleString()}</small></li>
+                ))}
+              </ul>
+            ) : <p className="empty-list">Payment activity will appear here when payments are verified or rejected.</p>}
+          </section>
+        )}
       </section>
 
       {selectedPayment && (
-        <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="verify-payment-title" onClick={closePaymentModal}>
-          <section ref={paymentDialogRef} className="modal-card payment-modal" onClick={(event) => event.stopPropagation()}>
-            <div className="modal-header"><h3 id="verify-payment-title">Verify payment</h3><button type="button" className="close-button" aria-label="Close payment verification" onClick={() => setSelectedPayment(null)}>×</button></div>
-            <p className="form-hint">Enter the five-digit payment code supplied for this appointment. This development verification does not process a real payment.</p>
-            <dl className="payment-details">
-              <div><dt>Reference</dt><dd>{selectedPayment.appointmentCode}</dd></div>
-              <div><dt>Customer</dt><dd><span className="person-inline"><CustomerAvatar name={selectedPayment.customerName} /><span>{selectedPayment.customerName}</span></span></dd></div>
-              <div><dt>Service</dt><dd>{selectedPayment.serviceName}</dd></div>
-              <div><dt>Amount</dt><dd>₱{Number(selectedPayment.amount).toLocaleString()}</dd></div>
-              <div><dt>Method</dt><dd>{selectedPayment.paymentMethod}</dd></div>
-            </dl>
-                        {codeError && <p id="payment-code-error" className="form-error" role="alert">{codeError}</p>}
-            <div className="modal-actions">
-              <button type="button" className="secondary-action" onClick={() => setSelectedPayment(null)}>Cancel</button>
-              <button type="button" className="reject-action" disabled onClick={() => setPaymentConfirmation('REJECTED')}>Reject</button>
-              <button type="button" className="primary-action" disabled={busy} onClick={validatePaymentCode}>Validate code</button>
-            </div>
-          </section>
-        </div>
+        <PaymentDetailModal
+          payment={selectedPayment}
+          payments={payments}
+          canReview={canReview}
+          onClose={() => setSelectedPayment(null)}
+          onVerify={() => {
+            setPaymentConfirmation({ payment: selectedPayment, status: 'VERIFIED' });
+            setSelectedPayment(null);
+          }}
+          onReject={() => {
+            setPaymentConfirmation({ payment: selectedPayment, status: 'REJECTED' });
+            setSelectedPayment(null);
+          }}
+        />
       )}
-      {paymentConfirmation && selectedPayment && (
+      {paymentConfirmation && (
         <ConfirmModal
-          title={paymentConfirmation === 'VERIFIED' ? 'Confirm payment?' : 'Reject payment?'}
-          message={paymentConfirmation === 'VERIFIED' ? `The code matches ${selectedPayment.appointmentCode}. Record ₱${Number(selectedPayment.amount).toLocaleString()} as verified in the development demo?` : `Reject the payment for ${selectedPayment.appointmentCode}? This changes only the development demo record.`}
-          confirmLabel={paymentConfirmation === 'VERIFIED' ? 'Confirm payment' : 'Reject payment'}
-          danger={paymentConfirmation === 'REJECTED'}
+          title={paymentConfirmation.status === 'VERIFIED' ? 'Confirm payment?' : 'Reject payment?'}
+          message={paymentConfirmation.status === 'VERIFIED'
+            ? `Record ₱${Number(paymentConfirmation.payment.amount).toLocaleString()} as verified for ${paymentConfirmation.payment.appointmentCode}? The appointment balance is updated by the server.`
+            : `Reject the ₱${Number(paymentConfirmation.payment.amount).toLocaleString()} payment for ${paymentConfirmation.payment.appointmentCode}? The transaction stays on record as rejected.`}
+          confirmLabel={paymentConfirmation.status === 'VERIFIED' ? 'Confirm payment' : 'Reject payment'}
+          danger={paymentConfirmation.status === 'REJECTED'}
           onClose={() => setPaymentConfirmation(null)}
-          onConfirm={() => updatePaymentStatus(paymentConfirmation)}
+          onConfirm={() => updatePaymentStatus(paymentConfirmation.payment, paymentConfirmation.status)}
           onError={setNotice}
+        />
+      )}
+      {recordOpen && (
+        <RecordPaymentModal
+          options={pickerOptions ?? []}
+          loadingOptions={pickerLoading}
+          onClose={() => setRecordOpen(false)}
+          onRecorded={(payment) => {
+            setRecordOpen(false);
+            setNotice(`Payment recorded for ${payment.appointmentCode}.`);
+            void loadPayments().catch(() => undefined);
+          }}
         />
       )}
     </div>

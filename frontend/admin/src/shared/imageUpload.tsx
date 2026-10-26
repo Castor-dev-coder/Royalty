@@ -152,7 +152,11 @@ export const ImageUploadField = forwardRef<ImageUploadHandle, ImageUploadFieldPr
             payload = null;
           }
           if (request.status >= 200 && request.status < 300) {
-            const url = String(payload?.data?.photoUrl ?? payload?.data?.imageUrl ?? payload?.data?.url ?? '');
+            const url = String(
+              payload?.data?.photoUrl ?? payload?.data?.imageUrl ?? payload?.data?.url
+              // The payment settings endpoint answers with a settings record.
+              ?? payload?.data?.settings?.gcashQrUrl ?? '',
+            );
             fileRef.current = null;
             setUploadedUrl(url || null);
             setProgress(null);

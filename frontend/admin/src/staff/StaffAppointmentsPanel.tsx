@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useDialogBehavior } from '../components/useDialogBehavior';
 import { CustomerAvatar } from '../components/CustomerAvatar';
+import { RecordPaymentModal, type RecordPaymentOption } from '../components/RecordPaymentModal';
+import { canRecordPayment } from '../payments';
+import { getAccessToken } from '../api';
+import { currentSession } from '../session';
 import {
   EmptyState,
   ErrorState,
@@ -43,8 +47,10 @@ export function StaffAppointmentsPanel() {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<StaffAppointment | null>(null);
   const [pending, setPending] = useState<{ appointment: StaffAppointment; status: string } | null>(null);
+  const [recordTarget, setRecordTarget] = useState<StaffAppointment | null>(null);
   const [message, setMessage] = useState('');
   const [actionError, setActionError] = useState('');
+  const canRecord = canRecordPayment(currentSession(getAccessToken())?.role ?? null);
 
   const closeDetail = () => setSelected(null);
   const detailRef = useDialogBehavior<HTMLElement>(closeDetail, selected !== null);
@@ -84,6 +90,22 @@ export function StaffAppointmentsPanel() {
   }, [appointments, statusFilter, search]);
 
   const upcomingCount = visible.filter((appointment) => `${appointment.appointmentDate}T${appointment.endTime}` >= new Date().toISOString().slice(0, 16)).length;
+
+  /**
+   * The appointments money may be recorded against.
+   *
+   * The staff list has no outstanding figure — the server reports one only
+   * on a payment record — so the picker shows the appointment total and the
+   * API re-checks the amount against the real balance.
+   */
+  const recordOptions = useMemo<RecordPaymentOption[]>(() => (appointments ?? []).map((appointment) => ({
+    appointmentId: appointment.id,
+    appointmentCode: appointment.appointmentCode,
+    label: `${appointment.customer ? `${appointment.customer.firstName} ${appointment.customer.lastName}` : 'Customer'} · ${appointment.services.map((service) => service.serviceName).join(', ') || 'Salon appointment'}`,
+    detail: `${formatDate(appointment.appointmentDate)} · ${formatTime(appointment.startTime)}`,
+    outstanding: null,
+    total: appointment.totalAmount,
+  })), [appointments]);
 
   async function applyStatus(appointment: StaffAppointment, status: string) {
     setActionError('');
@@ -177,6 +199,7 @@ export function StaffAppointmentsPanel() {
                     <td role="cell" data-label="Status"><StatusBadge status={appointment.status} /></td>
                     <td className="cell-actions" role="cell" data-label="Actions">
                       <button type="button" className="link-button" onClick={() => setSelected(appointment)}>Details</button>
+                      {canRecord && <button type="button" className="link-button" onClick={() => setRecordTarget(appointment)}>Record payment</button>}
                     </td>
                   </tr>
                 ))}
@@ -218,6 +241,9 @@ export function StaffAppointmentsPanel() {
                   </button>
                 );
               })}
+              {canRecord && (
+                <button type="button" className="secondary-action" onClick={() => { setRecordTarget(selected); closeDetail(); }}>Record payment</button>
+              )}
               <button type="button" className="secondary-action" onClick={closeDetail}>Close</button>
             </div>
           </section>
@@ -247,6 +273,17 @@ export function StaffAppointmentsPanel() {
             </div>
           </section>
         </div>
+      )}
+      {recordTarget && (
+        <RecordPaymentModal
+          options={recordOptions}
+          presetAppointmentId={recordTarget.id}
+          onClose={() => setRecordTarget(null)}
+          onRecorded={(payment) => {
+            setRecordTarget(null);
+            setMessage(`Payment recorded for ${payment.appointmentCode}.`);
+          }}
+        />
       )}
     </>
   );

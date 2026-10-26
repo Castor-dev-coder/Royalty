@@ -957,7 +957,7 @@ tbody tr:hover td { background: var(--surface-hover); }
 .tab-group button.active span { background: var(--accent-soft); color: var(--accent-text); }
 .payment-tabs .search-input { min-width: min(310px, 100%); }
 .payment-table-scroll { width: 100%; overflow-x: auto; }
-.payment-table-scroll table { min-width: 770px; margin-top: 10px; }
+.payment-table-scroll table { min-width: 880px; margin-top: 10px; }
 .payment-table-scroll thead th { padding-top: 4px; }
 .payment-table-scroll tbody td { padding-top: 11px; padding-bottom: 11px; }
 .payment-customer { display: flex; align-items: center; gap: 8px; min-width: 0; }
@@ -2829,3 +2829,47 @@ textarea.modal-input { line-height: 1.55; }
    Attendance
    ========================================================================== */
 .attendance-clock-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: var(--space-3); }
+
+/* ==========================================================================
+   Payments: detail, counter recording and settings
+
+   One payment reads as its own story: where the money was collected, what
+   the server reports for the booking, and the proof behind the transaction.
+   ========================================================================== */
+.payment-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.payment-tools .search-input { flex: 1 1 220px; }
+.payment-detail-badges { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
+.payment-detail-badges .status-badge { padding: 0.32rem 0.55rem; font-size: var(--text-2xs); }
+.modal-card.payment-detail-modal { width: min(560px, 100%); }
+/* The three server figures sit side by side: total, received, still due. */
+.payment-totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 12px 0; }
+.payment-totals div { padding: 10px 12px; background: var(--surface-sunken); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); min-width: 0; }
+.payment-totals span { display: block; color: var(--text-muted); font-size: var(--text-2xs); }
+.payment-totals strong { display: block; margin-top: 4px; color: var(--text-primary); font-size: var(--text-sm); overflow-wrap: anywhere; }
+.payment-proof h4, .payment-history h4 { margin: 12px 0 6px; font-size: var(--text-xs); font-weight: 650; color: var(--text-secondary); }
+/* The proof thumbnail is a fixed crop and a button: it opens the lightbox. */
+.payment-proof-thumb { display: block; width: 96px; height: 72px; padding: 0; border: 1px solid var(--control-border); border-radius: var(--radius-sm); overflow: hidden; background: var(--surface-sunken); cursor: pointer; }
+.payment-proof-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.payment-history-list { list-style: none; margin: 0; padding: 0; }
+.payment-history-list li { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 0; border-top: 1px solid var(--border-subtle); font-size: var(--text-2xs); }
+.payment-history-list li:first-child { border-top: 0; }
+.payment-history-list .status-badge { padding: 0.28rem 0.5rem; font-size: var(--text-2xs); }
+.payment-history-method { color: var(--text-muted); }
+.payment-history-list strong { margin-left: auto; color: var(--text-primary); }
+.payment-history-list small { width: 100%; color: var(--text-muted); }
+.record-appointment-picker, .record-payment-form { display: grid; gap: 6px; }
+.record-appointment-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; max-height: 240px; overflow-y: auto; }
+.record-appointment-option { display: grid; gap: 2px; width: 100%; text-align: left; padding: 9px 12px; border: 1px solid var(--control-border); border-radius: var(--radius-sm); background: var(--surface-raised); color: var(--text-primary); cursor: pointer; }
+.record-appointment-option:hover { background: var(--surface-hover); }
+.record-appointment-option span { font-size: var(--text-xs); color: var(--text-secondary); }
+.record-appointment-option small { font-size: var(--text-2xs); color: var(--text-muted); }
+.record-appointment-chosen { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 10px 12px; margin-bottom: 6px; background: var(--surface-sunken); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); }
+.record-appointment-chosen strong, .record-appointment-chosen span, .record-appointment-chosen small { display: block; }
+.record-appointment-chosen span { font-size: var(--text-xs); color: var(--text-secondary); }
+.record-appointment-chosen small { font-size: var(--text-2xs); color: var(--text-muted); }
+.payment-settings-form { display: grid; gap: 6px; padding-top: 10px; min-width: 0; }
+.payment-settings-form .modal-input { width: 100%; }
+@media (max-width: 560px) {
+  .payment-totals { grid-template-columns: 1fr; }
+  .record-appointment-chosen { flex-direction: column; }
+}
