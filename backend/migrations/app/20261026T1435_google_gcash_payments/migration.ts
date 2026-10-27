@@ -126,9 +126,13 @@ export default class M extends Migration<Start, End> {
           codecRef: { codecId: 'pg/enum@1', typeParams: { typeName: 'payment_channel' } },
         }),
       }),
+      // Backfill for the channel column. No-op on any replay: the payments
+      // table is created empty earlier in this graph and migrations never
+      // insert rows (seeds run separately), so the check finds nothing to fix.
+      // Pre-ledger rows, had any existed, were all in-person records.
       this.dataTransform(endContract, 'backfill-payments-channel', {
-        check: () => placeholder('backfill-payments-channel:check'),
-        run: () => placeholder('backfill-payments-channel:run'),
+        check: () => pg.raw.sql`SELECT 1 AS violation FROM public.payments WHERE channel IS NULL LIMIT 1`.returnsRow({ violation: { codecId: 'pg/int4@1' } }),
+        run: () => pg.raw.sql`UPDATE public.payments SET channel = 'IN_PERSON' WHERE channel IS NULL`.affectedCount(),
       }),
       this.setNotNull({ schema: 'public', table: 'payments', column: 'channel' }),
       this.dropNotNull({ schema: 'public', table: 'accounts', column: 'password_hash' }),
