@@ -23,9 +23,14 @@ const [{ createApp }, { db }] = await Promise.all([
 // results, but the catalogue controllers must still complete cleanly.
 function fakeTable() {
   return {
-    where: () => ({ first: async () => null, all: async () => [] }),
-    orderBy: () => ({ offset: () => ({ limit: () => ({ all: async () => [] }) }), all: async () => [] }),
-    all: async () => [],
+    where: () => ({
+      first: async () => null,
+      all: () => [],
+      aggregate: async () => ({ total: 0 }),
+      orderBy: () => ({ offset: () => ({ limit: () => ({ all: () => [] }) }), all: () => [] }),
+    }),
+    orderBy: () => ({ offset: () => ({ limit: () => ({ all: () => [] }) }), all: () => [] }),
+    all: () => [],
     aggregate: async () => ({ total: 0 }),
     create: async (data: Record<string, unknown>) => ({ id: 'row-test', ...data }),
   };

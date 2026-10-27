@@ -1,8 +1,8 @@
 import { Router } from 'express';
-import { getAccountController, listAccountsController, updateAccountStatusController, updateOwnProfileController, changePasswordController, adminChangePasswordController, createStaffAccountController } from '../modules/accounts/accounts.controller.js';
+import { getAccountController, listAccountsController, updateAccountStatusController, updateAccountRoleController, updateOwnProfileController, changePasswordController, adminChangePasswordController, createStaffAccountController } from '../modules/accounts/accounts.controller.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import { validateRequest } from '../middleware/validator.js';
-import { updateAccountStatusSchema, updateOwnProfileSchema, changePasswordSchema, createStaffAccountSchema } from '../modules/accounts/accounts.schemas.js';
+import { updateAccountStatusSchema, updateAccountRoleSchema, updateOwnProfileSchema, changePasswordSchema, createStaffAccountSchema } from '../modules/accounts/accounts.schemas.js';
 
 export const accountsRouter = Router();
 
@@ -27,6 +27,10 @@ accountsRouter.post('/me/password', validateRequest(changePasswordSchema), chang
 
 // PATCH /accounts/:id/status - Update account status (admin/manager only)
 accountsRouter.patch('/:id/status', requireRole('ADMIN', 'MANAGER'), validateRequest(updateAccountStatusSchema), updateAccountStatusController);
+
+// PATCH /accounts/:id/role - Update account role (ADMIN only). MANAGER and
+// below get 403 FORBIDDEN; the service re-checks the stored account role.
+accountsRouter.patch('/:id/role', requireRole('ADMIN'), validateRequest(updateAccountRoleSchema), updateAccountRoleController);
 
 // POST /accounts/:id/password - Admin change password for specific account (admin/manager only)
 accountsRouter.post('/:id/password', requireRole('ADMIN', 'MANAGER'), validateRequest(changePasswordSchema), adminChangePasswordController);

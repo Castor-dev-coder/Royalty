@@ -104,6 +104,13 @@ export const EMAIL_MESSAGE = 'Enter a valid email address, such as name@example.
 export const GMAIL_MESSAGE = 'Enter a Gmail address, such as name@gmail.com.';
 
 /**
+ * The message returned when a request tries to change a first name after the
+ * account was created. First names are immutable for every caller, ADMIN
+ * included, so this is the single wording used by every update path.
+ */
+export const FIRST_NAME_IMMUTABLE_MESSAGE = 'First name cannot be changed after account creation';
+
+/**
  * Whether a value is a Gmail address.
  *
  * The domain must be exactly gmail.com. A lookalike such as

@@ -120,12 +120,22 @@ export class ReviewsService {
     return this.mapReview(review);
   }
 
-  static async list(query: ReviewListQuery): Promise<{ reviews: ReviewInfo[]; total: number }> {
+  static async list(query: ReviewListQuery): Promise<{ reviews: ReviewInfo[]; total: number; ratingCounts: Record<1 | 2 | 3 | 4 | 5, number> }> {
     const totalResult = await (query.rating === undefined
       ? db.orm.public.Review.where({})
       : db.orm.public.Review.where({ rating: query.rating }))
       .aggregate((aggregate) => ({ total: aggregate.count() }));
     const total = typeof totalResult.total === 'number' ? totalResult.total : 0;
+    // Full-dataset star distribution (every review, not the current page):
+    // five bounded count queries over the integer star column.
+    const starEntries = await Promise.all(
+      ([5, 4, 3, 2, 1] as const).map(async (star) => {
+        const result = await db.orm.public.Review.where({ rating: star })
+          .aggregate((aggregate) => ({ total: aggregate.count() }));
+        return [star, typeof result.total === 'number' ? result.total : 0] as const;
+      }),
+    );
+    const ratingCounts = Object.fromEntries(starEntries) as Record<1 | 2 | 3 | 4 | 5, number>;
     const ordered = (query.rating === undefined
       ? db.orm.public.Review.where({})
       : db.orm.public.Review.where({ rating: query.rating }))
@@ -136,7 +146,7 @@ export class ReviewsService {
     // Bounded fan-out: each mapReview runs ~5 queries, so N parallel rows
     // would exhaust the shared connection pool (hard cap: 15 sessions).
     const reviews = await mapWithConcurrency(records, 2, (review) => this.mapReview(review));
-    return { reviews, total };
+    return { reviews, total, ratingCounts };
   }
 
   private static async mapReview(review: {

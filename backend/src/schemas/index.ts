@@ -49,7 +49,9 @@ export const createAccountSchema = z.object({
   // A new account is given a Gmail address.
   email: gmailSchema(),
   password: z.string().min(8).max(100),
-  role: z.enum(['ADMIN', 'MANAGER', 'STAFF', 'CUSTOMER']).default('CUSTOMER'),
+  // ADMIN is deliberately absent: no creation path may mint an administrator
+  // (hidden-admin prevention).
+  role: z.enum(['MANAGER', 'STAFF', 'CUSTOMER']).default('CUSTOMER'),
 });
 
 export type CreateAccountRequest = z.infer<typeof createAccountSchema>;

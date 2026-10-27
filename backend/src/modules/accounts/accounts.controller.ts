@@ -4,8 +4,11 @@ import { AuthenticatedRequest } from '../../middleware/auth.js';
 import {
   changePasswordSchema,
   updateAccountStatusSchema,
+  updateAccountRoleSchema,
+  UpdateAccountRoleRequest,
   updateOwnProfileSchema,
   UpdateOwnProfileRequest,
+  CreateStaffAccountRequest,
 } from './accounts.schemas.js';
 import { validateRequest } from '../../middleware/validator.js';
 
@@ -55,6 +58,21 @@ export async function updateAccountStatusController(req: AuthenticatedRequest, r
     const { status } = req.body;
 
     const account = await AccountService.updateStatus(id, String(status), req.user!.userId);
+    res.json({ data: account });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// PATCH /accounts/:id/role - Update account role (admin only)
+export async function updateAccountRoleController(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const id = String(req.params.id);
+    // The validated body is used, so smuggled fields are stripped and only
+    // the checked role enum can reach the service.
+    const { role } = (req as Request & { validatedData: UpdateAccountRoleRequest }).validatedData;
+
+    const account = await AccountService.updateRole(id, role, req.user!.userId);
     res.json({ data: account });
   } catch (error) {
     next(error);
@@ -118,7 +136,10 @@ export async function adminChangePasswordController(req: AuthenticatedRequest, r
 
 export async function createStaffAccountController(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const result = await AccountService.createStaffAccount(req.body, (req as unknown as { user: { userId: string } }).user.userId);
+    // The validated body is used, so smuggled fields (role tricks, isSystem,
+    // status) are stripped before the service sees the request.
+    const data = (req as Request & { validatedData: CreateStaffAccountRequest }).validatedData;
+    const result = await AccountService.createStaffAccount(data, (req as unknown as { user: { userId: string } }).user.userId);
     res.status(201).json({ data: result });
   } catch (error) {
     next(error);

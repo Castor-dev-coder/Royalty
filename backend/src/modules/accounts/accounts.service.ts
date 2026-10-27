@@ -107,6 +107,81 @@ export class AccountService {
   }
 
   /**
+   * Change an account's role (promote or demote).
+   * Only ADMIN may write roles — enforced at the route (requireRole('ADMIN'))
+   * and re-checked here against the stored account, never the JWT claim alone.
+   * MANAGER/STAFF/CUSTOMER attempts are rejected 403.
+   */
+  static async updateRole(
+    accountId: string,
+    newRole: 'ADMIN' | 'MANAGER' | 'STAFF' | 'CUSTOMER',
+    requestingUserId: string
+  ): Promise<AccountProfile> {
+    const requester = await db.orm.public.Account.where({ id: requestingUserId }).first();
+    if (!requester || requester.role !== 'ADMIN') {
+      throw new ForbiddenError('Only administrators can change account roles');
+    }
+
+    const account = await db.orm.public.Account.where({ id: accountId }).first();
+    if (!account) {
+      throw new NotFoundError('Account not found');
+    }
+    // Hidden system account: no by-ID role change for anyone.
+    if (account.isSystem) {
+      throw new NotFoundError('Account not found');
+    }
+
+    if (account.role === newRole) {
+      return {
+        id: account.id,
+        email: account.email,
+        role: account.role,
+        status: account.status,
+        createdAt: account.createdAt,
+        updatedAt: account.updatedAt,
+      };
+    }
+
+    // Demoting the last visible active admin would leave the system with no
+    // usable administrator (the hidden one cannot satisfy admin workflows).
+    if (account.role === 'ADMIN' && newRole !== 'ADMIN') {
+      const adminCountResult = await db.orm.public.Account
+        .where({ role: 'ADMIN', status: 'ACTIVE', isSystem: false })
+        .aggregate((aggregate) => ({ total: aggregate.count() }));
+      const adminCount = typeof adminCountResult.total === 'number' ? adminCountResult.total : 0;
+      if (adminCount <= 1) {
+        throw new BadRequestError('Cannot change the role of the only active admin account');
+      }
+    }
+
+    const oldRole = account.role;
+    const updated = await db.orm.public.Account
+      .where({ id: accountId })
+      .update({ role: newRole });
+    if (!updated) {
+      throw new NotFoundError('Account not found');
+    }
+
+    await generateAuditLog({
+      actorAccountId: requestingUserId,
+      action: 'UPDATE_ACCOUNT_ROLE',
+      entityType: 'Account',
+      entityId: accountId,
+      oldData: { role: oldRole },
+      newData: { role: newRole },
+    });
+
+    return {
+      id: updated.id,
+      email: updated.email,
+      role: updated.role,
+      status: updated.status,
+      createdAt: updated.createdAt,
+      updatedAt: updated.updatedAt,
+    };
+  }
+
+  /**
    * Update account status (ACTIVE/DEACTIVATED).
    * Only ADMIN/MANAGER can change status.
    */

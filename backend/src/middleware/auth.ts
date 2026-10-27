@@ -33,6 +33,25 @@ export function authenticate(req: AuthenticatedRequest, _res: Response, next: Ne
   }
 }
 
+/**
+ * Attaches req.user when a valid bearer token is present, but never rejects:
+ * public catalogue routes stay open to anonymous visitors while still seeing
+ * the caller's real role when one authenticates (without this, every caller
+ * silently fell back to 'CUSTOMER' and staff-only fields were hidden).
+ */
+export function optionalAuthenticate(req: AuthenticatedRequest, _res: Response, next: NextFunction): void {
+  try {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const decoded = verifyAccessToken(authHeader.substring(7));
+      req.user = { userId: decoded.sub, email: decoded.email, role: decoded.role };
+    }
+  } catch {
+    // Anonymous or invalid token: proceed without a user.
+  }
+  next();
+}
+
 export function requireRole(...allowedRoles: string[]) {
   return (req: AuthenticatedRequest, _res: Response, next: NextFunction): void => {
     if (!req.user) {

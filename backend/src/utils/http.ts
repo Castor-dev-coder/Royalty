@@ -23,6 +23,16 @@ export function publicCacheMiddleware(_req: Request, res: Response, next: () => 
   next();
 }
 
+/**
+ * Marks a cached route's response as varying by Authorization: role-dependent
+ * payloads (e.g. admin sees deactivated services, customers do not) must never
+ * be shared across auth states.
+ */
+export function varyOnAuthorization(_req: Request, res: Response, next: () => void): void {
+  res.setHeader('Vary', 'Authorization');
+  next();
+}
+
 export function jsonWithEtag(req: Request, res: Response, body: unknown): void {
   const etag = `W/"${createHash('sha256').update(JSON.stringify(body)).digest('base64url').slice(0, 27)}"`;
   res.setHeader('ETag', etag);

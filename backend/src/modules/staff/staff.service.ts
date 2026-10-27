@@ -1,7 +1,8 @@
 import { db } from '../../prisma/db.js';
 import { pgVarchar } from '../../prisma/contract-compat.js';
-import { NotFoundError, ForbiddenError, ConflictError, BadRequestError } from '../../errors/index.js';
+import { NotFoundError, ForbiddenError, ConflictError, BadRequestError, ValidationError } from '../../errors/index.js';
 import { generateAuditLog } from '../../utils/audit.js';
+import { FIRST_NAME_IMMUTABLE_MESSAGE } from '../../utils/validation.js';
 import { isStaffEligibleForServices } from './staff.rules.js';
 
 export interface EligibleStaffInfo {
@@ -20,6 +21,11 @@ export interface StaffProfile {
   primaryRole: string;
   employmentType: 'FULL_TIME' | 'PART_TIME';
   workStatus: 'ON_DUTY' | 'DAY_OFF' | 'UNAVAILABLE';
+  /** Staff-profile fields the editors must see exactly as stored. */
+  position: string | null;
+  bio: string | null;
+  /** Service category ids this staff member performs. */
+  specialties: string[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -143,6 +149,22 @@ export class StaffService {
     } else {
       for await (const s of staffRaw) {
         staff.push(this.mapStaff(s));
+      }
+    }
+
+    // One grouped query attaches each member's specialty category ids so the
+    // editors can prefill from the authoritative links.
+    if (staff.length > 0) {
+      const links = db.orm.public.StaffCategory.where({}).all() as
+        Iterable<{ staffId: string; categoryId: string }> | AsyncIterable<{ staffId: string; categoryId: string }>;
+      const byStaff = new Map<string, string[]>();
+      for await (const link of links) {
+        const list = byStaff.get(link.staffId) ?? [];
+        list.push(String(link.categoryId));
+        byStaff.set(link.staffId, list);
+      }
+      for (const member of staff) {
+        member.specialties = byStaff.get(member.id) ?? [];
       }
     }
 
@@ -271,6 +293,14 @@ export class StaffService {
       throw new NotFoundError('Staff member not found');
     }
 
+    // First names are set at account creation and are immutable afterwards,
+    // for every caller (ADMIN included). An echo of the stored name is a
+    // harmless no-op; any different value is a change attempt and is refused.
+    if (data.firstName !== undefined
+      && String(data.firstName).trim() !== String(staff.firstName).trim()) {
+      throw new ValidationError(FIRST_NAME_IMMUTABLE_MESSAGE);
+    }
+
     // Validate fields
     if (data.firstName !== undefined && data.firstName.trim().length === 0) {
       throw new BadRequestError('First name cannot be empty');
@@ -282,9 +312,9 @@ export class StaffService {
       throw new BadRequestError('Primary role cannot be empty');
     }
 
-    // Build update data
+    // Build update data. firstName is deliberately never written: it is
+    // immutable after account creation (see the guard above).
     const updateData: Record<string, unknown> = {};
-    if (data.firstName !== undefined) updateData.firstName = data.firstName;
     if (data.lastName !== undefined) updateData.lastName = data.lastName;
     if (data.phone !== undefined) updateData.phone = data.phone;
     if (data.primaryRole !== undefined) updateData.primaryRole = data.primaryRole;
@@ -341,6 +371,8 @@ export class StaffService {
     primaryRole: string;
     employmentType: 'FULL_TIME' | 'PART_TIME';
     workStatus: 'ON_DUTY' | 'DAY_OFF' | 'UNAVAILABLE';
+    position: string | null;
+    bio: string | null;
     createdAt: Date;
     updatedAt: Date;
   }): StaffProfile {
@@ -353,6 +385,9 @@ export class StaffService {
       primaryRole: staff.primaryRole,
       employmentType: staff.employmentType,
       workStatus: staff.workStatus,
+      position: staff.position,
+      bio: staff.bio,
+      specialties: [],
       createdAt: staff.createdAt,
       updatedAt: staff.updatedAt,
     };
