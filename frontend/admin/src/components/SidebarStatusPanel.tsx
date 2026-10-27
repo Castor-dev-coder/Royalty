@@ -34,7 +34,8 @@ interface TodayBooking {
 
 const SCHEDULE_LIMIT = 4;
 /** A page large enough that the usual case is the whole record set. */
-const PAGE_SIZE = 200;
+// The API caps `limit` at 100; larger values are rejected with 400.
+const PAGE_SIZE = 100;
 
 export function SidebarStatusPanel() {
   const [status, setStatus] = useState<SidebarStatus | null>(null);

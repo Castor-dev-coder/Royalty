@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { apiFetch, authHeader, getAccessToken } from '../api';
+import { codeMatchesSearch } from '../appointmentCode';
 import { AppointmentCodeInput } from './AppointmentCodeInput';
 import { useDialogBehavior } from './useDialogBehavior';
 import { FieldError, invalidField, formatMoney } from '../shared/ui';
@@ -64,7 +65,7 @@ export function RecordPaymentModal({
     const tail = needle.startsWith('apt-') ? needle.slice(4) : needle;
     const pool = needle
       ? options.filter((option) =>
-          option.appointmentCode.toLowerCase().includes(needle) ||
+          codeMatchesSearch(option.appointmentCode, search) ||
           option.label.toLowerCase().includes(tail))
       : options;
     return pool.slice(0, 8);

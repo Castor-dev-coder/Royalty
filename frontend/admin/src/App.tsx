@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { apiFetch, authHeader, clearAccessTokens, generateTemporaryPassword, getAccessToken, storeAccessTokens } from './api';
+import { apiFetch, authHeader, clearAccessTokens, generateTemporaryPassword, getAccessToken, logoutRequest, storeAccessTokens, tryRefreshAccessToken } from './api';
+import { codesMatch } from './appointmentCode';
 import {
   accountEmailError,
   DURATION_MESSAGE,
@@ -29,7 +30,7 @@ import { CalendarSkeleton, ChartSkeleton, FieldError, invalidField, ListSkeleton
 import { DataOriginNote, LineChart, type LineAxisPoint, type LineSeries } from './components/charts';
 import { AccountsIcon, AttendanceIcon, CalendarIcon, DashboardIcon, PaymentsIcon, StaffIcon } from './components/icons';
 import { useDialogBehavior } from './components/useDialogBehavior';
-import { clearAccountSession, currentSession, readLoginSession, storeAccountSession, type AccountRole } from './session';
+import { clearAccountSession, currentSession, readAccountSession, readLoginSession, storeAccountSession, type AccountRole } from './session';
 import { ImageUploadField, type ImageUploadHandle } from './shared/imageUpload';
 import { CheckboxMultiSelect, TagMultiSelect, ToggleSwitch } from './shared/profileFields';
 import { CustomerAvatar } from './components/CustomerAvatar';
@@ -239,6 +240,54 @@ function summarizeSchedule(days: Array<{ dayOfWeek: number; enabled: boolean; st
   const active = days.filter((day) => day.enabled);
   if (!active.length) return 'No recurring schedule';
   return active.map((day) => `${weekDayLabels[day.dayOfWeek - 1]} ${day.startTime}-${day.endTime}`).join(' · ');
+}
+
+// --- staff-schedule saving (per-row API contract) --------------------------
+
+type ScheduleRowLite = { id: string; isActive: boolean; startTime: string; endTime: string };
+
+/**
+ * The next occurrence of a weekday (1=Mon..7=Sun) as the effectiveFrom the
+ * create API requires: an ISO datetime strictly in the future, computed on the
+ * studio's Asia/Manila calendar.
+ */
+function nextWeekdayIso(dayOfWeek: number): string {
+  const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' });
+  for (let add = 1; add <= 7; add++) {
+    const iso = fmt.format(new Date(Date.now() + add * 86_400_000));
+    const [y, m, d] = iso.split('-').map(Number);
+    const jsDay = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+    if ((jsDay === 0 ? 7 : jsDay) === dayOfWeek) return `${iso}T00:00:00.000Z`;
+  }
+  return `${fmt.format(new Date(Date.now() + 86_400_000))}T00:00:00.000Z`;
+}
+
+/** Manager-readable failure text for a schedule save (never raw internals). */
+function friendlyScheduleFailure(status: number, serverMessage?: string): string {
+  const detail = (serverMessage ?? '').trim();
+  if (status === 401) return 'Your session has expired. Please sign in again.';
+  if (status === 403) return "You don't have permission to make this change.";
+  if (status === 404) return 'That schedule entry no longer exists. Reload the page and try again.';
+  if (detail && detail.toLowerCase() !== 'validation failed') return detail;
+  return "We couldn't save this schedule. Please check the selected staff member and times, then try again.";
+}
+
+/** One per-row schedule call against the real API contract (row id + flat body). */
+async function callScheduleApi(method: 'POST' | 'PATCH' | 'DELETE', url: string, body: unknown, token: string): Promise<void> {
+  let response: Response;
+  try {
+    response = await apiFetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new Error("We couldn't save this schedule. Please check your connection, then try again.");
+  }
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(friendlyScheduleFailure(response.status, payload?.error?.message));
+  }
 }
 
 /**
@@ -540,8 +589,35 @@ function useStaffData() {
 function Shell() {
   const location = useLocation();
   const [isAuthenticated, setIsAuthenticated] = useState(Boolean(getAccessToken()));
+  // A stored session (non-secret metadata) is the hint to silently restore the
+  // httpOnly-cookie session before showing the sign-in page — a valid session
+  // must never flash the login screen on reload.
+  const [restoring, setRestoring] = useState(() => Boolean(readAccountSession()));
+  const [sessionExpired, setSessionExpired] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const mobileNavToggleRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (!restoring) return;
+    let cancelled = false;
+    void (async () => {
+      const restored = await tryRefreshAccessToken();
+      if (cancelled) return;
+      if (restored) {
+        setIsAuthenticated(true);
+      } else {
+        // Invalid/expired cookie: drop the stored session and say so on the
+        // sign-in page instead of failing silently.
+        clearAccessTokens();
+        clearAccountSession();
+        setSessionExpired(true);
+      }
+      setRestoring(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [restoring]);
 
   useEffect(() => {
     setMobileNavOpen(false);
@@ -570,8 +646,20 @@ function Shell() {
     return 'Business Dashboard';
   }, [location.pathname]);
 
+  if (restoring) {
+    return (
+      <div className="login-page" role="status" aria-live="polite">
+        <main className="login-form-panel">
+          <div className="login-pane">
+            <p className="login-lede">Restoring your session…</p>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   if (!isAuthenticated) {
-    return <LoginPage onLogin={(role) => {
+    return <LoginPage sessionExpired={sessionExpired} onLogin={(role) => {
       setIsAuthenticated(true);
       // A staff member opens the staff dashboard; an administrator opens the
       // business dashboard. The reload re-reads the stored session.
@@ -626,10 +714,14 @@ function Shell() {
             label="Signed in"
             initials="SA"
             onSignOut={() => {
-              clearAccessTokens();
-              clearAccountSession();
-              setIsAuthenticated(false);
-              window.location.reload();
+              // Server-side revocation first (clears the httpOnly refresh
+              // cookie), then the local session state.
+              void logoutRequest().finally(() => {
+                clearAccessTokens();
+                clearAccountSession();
+                setIsAuthenticated(false);
+                window.location.reload();
+              });
             }}
           />
         </aside>
@@ -1719,7 +1811,7 @@ function StaffManagementPage() {
                 </div>
                 <div className="schedule-request-what">
                   <span className="schedule-request-type">{request.requestType}</span>
-                  <small>
+                  <small className="schedule-request-when">
                     {formatRequestDate(request.requestedDate)}
                     {request.requestedStartTime && request.requestedEndTime
                       ? ` · ${request.requestedStartTime}–${request.requestedEndTime}`
@@ -1731,12 +1823,16 @@ function StaffManagementPage() {
                 <span className={`status-badge ${request.status === 'APPROVED' ? 'success' : request.status === 'REJECTED' ? 'danger' : 'warning'}`}>
                   {request.status === 'APPROVED' ? 'Approved' : request.status === 'REJECTED' ? 'Rejected' : 'Pending'}
                 </span>
-                {request.status === 'PENDING' && (
-                  <span className="schedule-request-actions">
-                    <button type="button" className="link-button approve-link" disabled={reviewingRequestId === request.id} onClick={() => setPendingReview({ request, decision: 'approve' })}>Approve</button>
-                    <button type="button" className="link-button danger-link" disabled={reviewingRequestId === request.id} onClick={() => setPendingReview({ request, decision: 'reject' })}>Reject</button>
-                  </span>
-                )}
+                {/* Always rendered so the action track keeps its width whether
+                    it holds buttons or only the settled status. */}
+                <span className="schedule-request-actions">
+                  {request.status === 'PENDING' && (
+                    <>
+                      <button type="button" className="link-button approve-link" disabled={reviewingRequestId === request.id} onClick={() => setPendingReview({ request, decision: 'approve' })}>Approve</button>
+                      <button type="button" className="link-button danger-link" disabled={reviewingRequestId === request.id} onClick={() => setPendingReview({ request, decision: 'reject' })}>Reject</button>
+                    </>
+                  )}
+                </span>
               </li>
             ))}
           </ul>
@@ -1934,6 +2030,31 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
   const [schedule, setSchedule] = useState(normalizeWeeklySchedule());
   const [scheduleError, setScheduleError] = useState('');
   const [savingSchedule, setSavingSchedule] = useState(false);
+  // Row ids per weekday: PATCH/DELETE take a schedule-ROW id (never the staff
+  // id), so the save diff needs the rows the API actually returned.
+  const scheduleRowsRef = useRef<Map<number, ScheduleRowLite>>(new Map());
+  const reloadScheduleRows = useCallback(async () => {
+    const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+    const response = await apiFetch(`${baseUrl}/schedules/staff`, { headers: { ...authHeader(getAccessToken()) } });
+    const payload = await response.json().catch(() => null);
+    const rows = ((payload?.data?.staffSchedules ?? []) as Array<Record<string, unknown>>)
+      .filter((row) => row.staffId === staff.id);
+    const byDay = new Map<number, ScheduleRowLite>();
+    for (const row of rows) {
+      const day = Number(row?.dayOfWeek ?? 0);
+      if (day < 1 || day > 7) continue;
+      const lite: ScheduleRowLite = {
+        id: String(row.id),
+        isActive: Boolean(row.isActive ?? true),
+        startTime: String(row.startTime ?? ''),
+        endTime: String(row.endTime ?? ''),
+      };
+      const existing = byDay.get(day);
+      if (!existing || (!existing.isActive && lite.isActive)) byDay.set(day, lite);
+    }
+    scheduleRowsRef.current = byDay;
+    setSchedule(normalizeWeeklySchedule(rows));
+  }, [staff.id]);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [coveredRoles, setCoveredRoles] = useState<string[]>(staff.coveredRoles ?? []);
   const [specialties, setSpecialties] = useState<string[]>(staff.specialties ?? []);
@@ -1970,17 +2091,10 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
   }, []);
 
   useEffect(() => {
-    const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
-    apiFetch(`${baseUrl}/schedules/staff`, { headers: { Authorization: `Bearer ${getAccessToken()}` } })
-      .then(async (response) => {
-        const payload = await response.json();
-        const staffSchedules = (payload?.data?.staffSchedules ?? []).filter((s: any) => s.staffId === staff.id);
-        if (staffSchedules.length > 0) {
-          setSchedule(normalizeWeeklySchedule(staffSchedules));
-        }
-      })
-      .catch(() => undefined);
-  }, [staff.id]);
+    reloadScheduleRows().catch(() => {
+      setScheduleError("We couldn't load the schedule right now. Your existing information has been preserved. Please try again.");
+    });
+  }, [reloadScheduleRows]);
 
   /**
    * Check the fields of the staff editor.
@@ -2088,7 +2202,7 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
 
   async function saveSchedule() {
     const token = getAccessToken();
-    if (!token) { setError('Sign in with an administrator account to save schedule.'); return; }
+    if (!token) { setScheduleError('Your session has expired. Please sign in again.'); return; }
     for (const day of schedule) {
       if (day.enabled && (!day.startTime || !day.endTime || !isValidTimeRange(day.startTime, day.endTime))) {
         setScheduleError(`${weekDayLabels[day.dayOfWeek - 1]}: Set valid start and end times (start must be before end).`);
@@ -2097,18 +2211,42 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
     }
     setScheduleError('');
     setSavingSchedule(true);
+    // The API works per schedule row: POST creates one weekday (with the
+    // required future effectiveFrom), PATCH edits/deactivates an existing row
+    // BY ROW ID. The weekly grid is diffed against the rows the API returned.
     try {
       const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
-      const response = await apiFetch(`${baseUrl}/schedules/staff/${staff.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ schedule: schedule.filter((d) => d.enabled).map((d) => ({ dayOfWeek: d.dayOfWeek, startTime: d.startTime, endTime: d.endTime, isActive: true })) }),
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.message ?? 'Unable to save schedule.');
-      setNotice('Schedule updated.');
+      let changed = 0;
+      for (const day of schedule) {
+        const row = scheduleRowsRef.current.get(day.dayOfWeek);
+        if (day.enabled) {
+          if (!row) {
+            await callScheduleApi('POST', `${baseUrl}/schedules/staff`, {
+              staffId: staff.id,
+              dayOfWeek: day.dayOfWeek,
+              startTime: day.startTime,
+              endTime: day.endTime,
+              effectiveFrom: nextWeekdayIso(day.dayOfWeek),
+              isActive: true,
+            }, token);
+            changed++;
+          } else if (!row.isActive || row.startTime !== day.startTime || row.endTime !== day.endTime) {
+            await callScheduleApi('PATCH', `${baseUrl}/schedules/staff/${row.id}`, {
+              startTime: day.startTime,
+              endTime: day.endTime,
+              isActive: true,
+            }, token);
+            changed++;
+          }
+        } else if (row?.isActive) {
+          await callScheduleApi('PATCH', `${baseUrl}/schedules/staff/${row.id}`, { isActive: false }, token);
+          changed++;
+        }
+      }
+      await reloadScheduleRows();
+      setNotice(changed > 0 ? 'Schedule updated.' : 'No schedule changes to save.');
     } catch (cause) {
-      setScheduleError(cause instanceof Error ? cause.message : 'Unable to save schedule.');
+      setScheduleError(cause instanceof Error ? cause.message : "We couldn't save this schedule. Please try again.");
     } finally {
       setSavingSchedule(false);
     }
@@ -2982,7 +3120,7 @@ function PaymentVerificationPage() {
       setCodeError('Enter the appointment code shown on the booking.');
       return;
     }
-    if (typed !== String(payment.appointmentCode ?? '').toUpperCase()) {
+    if (!codesMatch(typed, String(payment.appointmentCode ?? ''))) {
       setCodeError('That code does not match this appointment. Check the booking reference and try again.');
       return;
     }
@@ -3509,12 +3647,14 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
 }
 
 
-function LoginPage({ onLogin }: { onLogin: (role: AccountRole | null) => void }) {
+function LoginPage({ onLogin, sessionExpired = false }: { onLogin: (role: AccountRole | null) => void; sessionExpired?: boolean }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   /**
@@ -3535,7 +3675,8 @@ function LoginPage({ onLogin }: { onLogin: (role: AccountRole | null) => void })
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (submitting) return;
+    // Guards duplicate submissions even before React re-renders.
+    if (submittingRef.current || submitting) return;
     const errors = collectFieldErrors();
     setFieldErrors(errors);
     if (Object.keys(errors).length > 0) {
@@ -3547,6 +3688,7 @@ function LoginPage({ onLogin }: { onLogin: (role: AccountRole | null) => void })
       }
       return;
     }
+    submittingRef.current = true;
     setSubmitting(true);
     setError('');
 
@@ -3554,12 +3696,14 @@ function LoginPage({ onLogin }: { onLogin: (role: AccountRole | null) => void })
       const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
       const response = await apiFetch(`${baseUrl}/auth/login`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), password }),
+        // Cookie mode: the refresh token comes back as an httpOnly cookie and
+        // never appears in the response body or in web storage.
+        headers: { 'Content-Type': 'application/json', 'X-Auth-Mode': 'cookie' },
+        body: JSON.stringify({ email: email.trim(), password, ...(rememberMe ? { rememberMe: true } : {}) }),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.message ?? 'Unable to sign in. Check your credentials and API connection.');
-      storeAccessTokens(payload.data.accessToken, payload.data.refreshToken);
+      storeAccessTokens(payload.data.accessToken);
       // The role decides which area the session opens. It is read from the
       // sign-in response and used for navigation only; the API remains the
       // authority on what the session may do.
@@ -3568,6 +3712,7 @@ function LoginPage({ onLogin }: { onLogin: (role: AccountRole | null) => void })
       onLogin(session?.role ?? null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unable to sign in.');
+      submittingRef.current = false;
       setSubmitting(false);
     }
   }
@@ -3637,6 +3782,19 @@ function LoginPage({ onLogin }: { onLogin: (role: AccountRole | null) => void })
               </div>
               <FieldError id="login-password-error" message={fieldErrors.password} />
             </div>
+            <label className="login-remember">
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(event) => setRememberMe(event.target.checked)}
+              />
+              Keep me logged in
+            </label>
+            {sessionExpired && (
+              <p className="login-session-expired" role="status">
+                Your session has expired. Please sign in again.
+              </p>
+            )}
             {error && (
               <p className="login-error" role="alert">
                 <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.5"/><path d="M12 8v4M12 16h.01" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/></svg>

@@ -1506,13 +1506,27 @@ textarea.modal-input { line-height: 1.55; }
   overflow: hidden;
 }
 .login-submit:hover:not(:disabled) { background: var(--accent-hover); }
-.login-submit:disabled { opacity: 0.6; cursor: wait; }
-.login-submit .submit-spinner { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; gap: 10px; }
+/* Loading keeps the brand background, text contrast, and dimensions: the
+   spinner and the live label carry the state — never a faded button. */
+.login-submit { display: inline-flex; align-items: center; justify-content: center; gap: 10px; }
+.login-submit:active:not(:disabled) { background: var(--accent-active); transform: translateY(1px); }
+.login-submit:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.login-submit:disabled { cursor: wait; }
+.login-submit .submit-spinner { display: none; width: 22px; height: 22px; }
 .login-submit .submit-spinner svg { width: 22px; height: 22px; animation: spin 0.8s linear infinite; stroke: currentColor; stroke-width: 2.5; }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 .login-submit .submit-text { display: inline; }
-.login-submit:disabled .submit-text { display: none; }
-.login-submit:disabled .submit-spinner { display: flex; }
+.login-submit:disabled .submit-spinner { display: inline-flex; align-items: center; }
+@media (prefers-reduced-motion: reduce) {
+  .login-submit { transition: none; }
+  .login-submit:active:not(:disabled) { transform: none; }
+  .login-submit .submit-spinner svg { animation: none; }
+}
+
+.login-remember { display: flex; align-items: center; gap: 8px; margin-top: 4px; font-size: var(--text-xs); color: var(--text-secondary); cursor: pointer; }
+.login-remember input { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
+.login-remember input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.login-session-expired { margin: 0; padding: 10px 12px; border-left: 3px solid var(--accent); background: var(--accent-soft); color: var(--text-primary); font-size: var(--text-xs); border-radius: var(--radius-sm); }
 
 .login-footer { margin-top: auto; padding-top: 32px; }
 .login-footer p { margin: 0; font-size: var(--text-2xs); letter-spacing: 0.08em; color: var(--text-muted); }
@@ -2607,22 +2621,57 @@ textarea.modal-input { line-height: 1.55; }
 .schedule-request-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-3); }
 .schedule-request-item {
   display: grid;
-  grid-template-columns: minmax(9rem, 0.8fr) minmax(0, 1.6fr) auto auto;
+  /* Fixed status and action tracks: the columns cannot move when the action
+     buttons give way to a settled status badge (or to nothing). */
+  grid-template-columns: minmax(9rem, 0.9fr) minmax(0, 1.8fr) 7.5rem 8.75rem;
   gap: var(--space-4);
-  align-items: center;
+  /* Top-aligned so the staff name and the request type share one line. */
+  align-items: start;
   padding: var(--space-3) 0;
   border-bottom: 1px solid var(--border-subtle);
 }
 .schedule-request-item:last-child { border-bottom: 0; }
 
-.schedule-request-who strong { display: block; color: var(--text-primary); font-size: var(--text-sm); line-height: var(--leading-snug); }
+/* Key details (who, what, when, status) lead at md; supporting metadata
+   (email, reason, submitted) stays at the 2xs floor. */
+.schedule-request-who strong { display: block; color: var(--text-primary); font-size: var(--text-md); font-weight: 600; line-height: var(--leading-snug); }
 .schedule-request-who small { display: block; color: var(--text-muted); font-size: var(--text-2xs); line-height: var(--leading-snug); margin-top: 2px; }
-.schedule-request-what { display: grid; gap: 2px; min-width: 0; }
-.schedule-request-type { color: var(--text-primary); font-size: var(--text-sm); font-weight: 600; line-height: var(--leading-snug); }
+.schedule-request-what { display: grid; gap: 3px; min-width: 0; }
+.schedule-request-type { color: var(--text-primary); font-size: var(--text-md); font-weight: 600; line-height: var(--leading-snug); }
+.schedule-request-when { color: var(--text-secondary); font-size: var(--text-sm); font-weight: 500; line-height: var(--leading-snug); }
 .schedule-request-what small { color: var(--text-muted); font-size: var(--text-2xs); line-height: var(--leading-snug); }
+.schedule-request-what small.schedule-request-when { color: var(--text-secondary); font-size: var(--text-sm); font-weight: 500; }
 .schedule-request-reason { color: var(--text-secondary) !important; }
 .schedule-request-submitted { opacity: 0.85; }
-.schedule-request-actions { display: flex; gap: var(--space-2); align-items: center; }
+.schedule-request-item > .status-badge {
+  justify-self: start;
+  align-self: start;
+  margin-top: 2px;
+  /* Uniform pill widths: the status column keeps one clean edge for every
+     state, however long the word is. */
+  min-width: 5.75rem;
+  text-align: center;
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+.schedule-request-actions {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  justify-content: flex-end;
+  align-self: start;
+  min-height: 2.25rem;
+}
+.schedule-request-actions .link-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.125rem;
+  padding: 0 0.85rem;
+  font-size: var(--text-xs);
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
 
 /* Below the tablet breakpoint the request becomes a card, so the requester
    and the request stack and nothing has to be read sideways. */
@@ -2639,7 +2688,9 @@ textarea.modal-input { line-height: 1.55; }
   .schedule-request-who { grid-area: who; }
   .schedule-request-what { grid-area: what; }
   .schedule-request-item > .status-badge { grid-area: status; align-self: start; justify-self: end; }
-  .schedule-request-actions { grid-area: action; }
+  .schedule-request-actions { grid-area: action; justify-content: stretch; }
+  /* On the card layout an empty action row would only add stray height. */
+  .schedule-request-actions:empty { display: none; }
   .schedule-request-actions .link-button {
     flex: 1 1 0;
     min-height: 44px;

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { apiFetch, storeAccessTokens } from '../api';
 import { FieldError, invalidField } from '../shared/ui';
 import { EMAIL_MESSAGE, isValidEmail } from '../shared/validation';
@@ -17,13 +17,16 @@ export function StaffSignIn({ onSignedIn }: { onSignedIn: () => void }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (submitting) return;
+    // Guards duplicate submissions even before React re-renders.
+    if (submittingRef.current || submitting) return;
     // The address is checked for shape only. The staff accounts do not all
     // share one domain, so no domain is required here.
     const errors: Record<string, string> = {};
@@ -39,6 +42,7 @@ export function StaffSignIn({ onSignedIn }: { onSignedIn: () => void }) {
       }
       return;
     }
+    submittingRef.current = true;
     setSubmitting(true);
     setError('');
 
@@ -46,17 +50,20 @@ export function StaffSignIn({ onSignedIn }: { onSignedIn: () => void }) {
       const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
       const response = await apiFetch(`${baseUrl}/auth/login`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), password }),
+        // Cookie mode: the refresh token comes back as an httpOnly cookie and
+        // never appears in the response body or in web storage.
+        headers: { 'Content-Type': 'application/json', 'X-Auth-Mode': 'cookie' },
+        body: JSON.stringify({ email: email.trim(), password, ...(rememberMe ? { rememberMe: true } : {}) }),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.message ?? 'Unable to sign in. Check your credentials and API connection.');
-      storeAccessTokens(payload.data.accessToken, payload.data.refreshToken);
+      storeAccessTokens(payload.data.accessToken);
       const session = readLoginSession(payload);
       if (session) storeAccountSession(session);
       onSignedIn();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unable to sign in.');
+      submittingRef.current = false;
       setSubmitting(false);
     }
   }
@@ -126,6 +133,14 @@ export function StaffSignIn({ onSignedIn }: { onSignedIn: () => void }) {
               </div>
               <FieldError id="staff-login-password-error" message={fieldErrors.password} />
             </div>
+            <label className="login-remember">
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(event) => setRememberMe(event.target.checked)}
+              />
+              Keep me logged in
+            </label>
             {error && (
               <p className="login-error" role="alert">
                 <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.5"/><path d="M12 8v4M12 16h.01" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/></svg>

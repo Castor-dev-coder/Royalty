@@ -4,6 +4,7 @@ import { CustomerAvatar } from '../components/CustomerAvatar';
 import { AppointmentCodeInput } from '../components/AppointmentCodeInput';
 import { RecordPaymentModal, type RecordPaymentOption } from '../components/RecordPaymentModal';
 import { canRecordPayment } from '../payments';
+import { codeMatchesSearch } from '../appointmentCode';
 import { getAccessToken } from '../api';
 import { currentSession } from '../session';
 import {
@@ -87,7 +88,7 @@ export function StaffAppointmentsPanel() {
         const client = appointment.customer ? `${appointment.customer.firstName} ${appointment.customer.lastName}` : '';
         const services = appointment.services.map((service) => service.serviceName).join(' ');
         return (
-          appointment.appointmentCode.toLowerCase().includes(needle) ||
+          codeMatchesSearch(appointment.appointmentCode, search) ||
           `${client} ${services}`.toLowerCase().includes(tail)
         );
       })
@@ -154,7 +155,7 @@ export function StaffAppointmentsPanel() {
                 value={search}
                 onChange={setSearch}
                 inputClassName="search-input"
-                placeholder="52C86F7E…"
+                placeholder="12345"
               />
             </div>
             <label className="sr-only" htmlFor="staff-appointment-status">Filter by status</label>

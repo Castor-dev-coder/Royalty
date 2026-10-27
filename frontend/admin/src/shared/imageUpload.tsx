@@ -97,6 +97,14 @@ export const ImageUploadField = forwardRef<ImageUploadHandle, ImageUploadFieldPr
     };
   }, []);
 
+  useEffect(() => {
+    // The URL can arrive after mount (settings load async). Follow it unless
+    // the user has staged a local file in the control.
+    if (fileRef.current === null && previewRef.current === null) {
+      setPreview(initialUrl ?? '');
+    }
+  }, [initialUrl]);
+
   function acceptFile(file: File | null) {
     if (!file) return;
     void checkImageFile(file).then((message) => {

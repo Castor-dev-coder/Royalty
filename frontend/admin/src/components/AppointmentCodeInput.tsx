@@ -2,16 +2,17 @@ import { useId } from 'react';
 
 /**
  * Appointment code entry with a fixed, non-editable "APT-" prefix: staff type
- * only the rest. Letters and digits (and the hyphens both real code formats
- * contain) are accepted, uppercased as they type; spaces are trimmed; a pasted
- * "APT-…" is never double-prefixed. onChange receives the FULL code — "APT-"
- * plus the typed part — and the server still validates the full value.
+ * only the rest. New codes are five digits (APT-12345); legacy codes are
+ * APT-<UUID> with hyphens, so letters, digits and hyphens are accepted,
+ * uppercased as they type; spaces are trimmed; a pasted "APT-…" is never
+ * double-prefixed. onChange receives the FULL code — "APT-" plus the typed
+ * part — and the server still validates the full value.
  */
 export function AppointmentCodeInput({
   label,
   value,
   onChange,
-  placeholder = '52C86F7E…',
+  placeholder = '12345',
   describedBy,
   inputClassName = 'modal-input',
 }: {
