@@ -253,15 +253,35 @@ function Appointments() {
   // update them in place and never replace them with a skeleton or an error.
   const hasDataRef = useRef(false)
   const hasPaymentsRef = useRef(false)
+  // Monotonic token: an older appointment response must never overwrite a
+  // newer one (overlapping page changes, refreshes, and post-action reloads).
+  const loadSeqRef = useRef(0)
+  const paySeqRef = useRef(0)
+  // Account identity: switching users must never show the previous account's
+  // appointments while the new fetch is in flight.
+  const ownerKey = user?.email ?? null
+  useEffect(() => {
+    setItems([])
+    setTotal(0)
+    hasDataRef.current = false
+    setPayments([])
+    hasPaymentsRef.current = false
+    setError(null)
+    setPaymentsError(null)
+    setLoading(true)
+    setPaymentsLoading(true)
+  }, [ownerKey])
 
   // The synchronous body never sets state (only promise callbacks do), so the
   // effect below cannot trigger cascading renders. Resolves true on success
   // (including a 304 that changed nothing) for the auto-refresh scheduler.
   const load = useCallback(() => {
     if (!user || user.role !== 'CUSTOMER') return Promise.resolve(true)
+    const seq = ++loadSeqRef.current
     return fetchMyAppointments({ page, limit: PAGE_SIZE }).then(
       (result) => {
         // 304 on the conditional GET: what's on screen is still current.
+        if (seq !== loadSeqRef.current) return true
         if (result !== NOT_MODIFIED) {
           setItems(result.appointments ?? [])
           setTotal(result.total ?? 0)
@@ -273,6 +293,7 @@ function Appointments() {
       },
       (err) =>
         (async () => {
+          if (seq !== loadSeqRef.current) return true
           if (err instanceof AuthError && err.status === 401) {
             // FE-01: only an invalid/expired token clears the session.
             const disposition = await sessionDispositionAfter401(user.role)
@@ -300,8 +321,10 @@ function Appointments() {
   // in promise callbacks, keep rows on screen through transient failures.
   const loadPayments = useCallback(() => {
     if (!user || user.role !== 'CUSTOMER') return Promise.resolve(true)
+    const seq = ++paySeqRef.current
     return fetchMyPayments().then(
       (result) => {
+        if (seq !== paySeqRef.current) return true
         setPayments(result?.payments ?? [])
         setPaymentsError(null)
         hasPaymentsRef.current = true
@@ -310,6 +333,7 @@ function Appointments() {
       },
       (err) =>
         (async () => {
+          if (seq !== paySeqRef.current) return true
           if (err instanceof AuthError && err.status === 401) {
             const disposition = await sessionDispositionAfter401(user.role)
             await resolveAuthFailure(disposition)

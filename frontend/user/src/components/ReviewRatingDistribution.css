@@ -1,0 +1,97 @@
+/* Rating distribution on the customer Reviews page: one labelled row per
+   star bucket with a CSS bar scaled to the largest bucket. Gold fill on a
+   neutral track, matching the salon palette the review panels already use
+   (var(--gold) on the dark review surface). Every figure on a row is
+   visible text; the bar's accessible name repeats it. */
+
+.rating-dist {
+  display: grid;
+  gap: 16px;
+  width: 100%;
+  min-width: 0;
+}
+
+.rating-dist-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 4px 10px;
+  margin: 0;
+}
+
+.rating-dist-average {
+  font-size: 34px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--gold);
+  font-variant-numeric: tabular-nums;
+}
+
+.rating-dist-scope {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #d9d3ca;
+}
+
+.rating-dist-rows {
+  display: grid;
+  gap: 9px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Label | bar | figure. The middle track takes the remaining width with a
+   floor of zero, so the chart reflows on narrow screens without ever
+   scrolling sideways. */
+.rating-dist-row {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) 72px;
+  align-items: center;
+  gap: 10px;
+}
+
+.rating-dist-label {
+  font-size: 13px;
+  color: #d9d3ca;
+  white-space: nowrap;
+}
+
+.rating-dist-track {
+  display: block;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(212, 180, 92, 0.16);
+  overflow: hidden;
+}
+
+.rating-dist-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--gold);
+}
+
+.rating-dist-value {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--gold);
+  font-variant-numeric: tabular-nums;
+}
+
+.rating-dist-percent {
+  min-width: 34px;
+  text-align: right;
+  color: #918c82;
+}
+
+@media (max-width: 480px) {
+  .rating-dist-row {
+    grid-template-columns: 52px minmax(0, 1fr) 64px;
+    gap: 8px;
+  }
+}

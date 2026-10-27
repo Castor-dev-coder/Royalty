@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import BookingFlow from './BookingFlow.jsx'
+import { ToastContext } from '../context/toast-context.js'
 import { invalidatePublicCache } from '../lib/api.js'
 import { resetOutageState } from '../lib/outage.js'
 import { manilaMonthEndIso, manilaTodayIso } from '../lib/hours.js'
@@ -91,7 +92,22 @@ function stubApi({
       if (url.includes('/appointments') && init.method === 'POST') {
         if (postError) return jsonResponse(postError.status, postError.body)
         onPost?.(JSON.parse(init.body))
-        return jsonResponse(201, { data: { appointment: { appointmentCode: 'ROY-1' } } })
+        return jsonResponse(201, { data: { appointment: { id: 'appt-1', appointmentCode: 'ROY-1' } } })
+      }
+      if (url.includes('/payments/quote/')) {
+        return jsonResponse(200, {
+          data: {
+            appointmentId: 'appt-1',
+            totalAmount: '250',
+            verifiedTotal: '0',
+            outstanding: '250',
+            options: [{ key: 'FULL', amount: '250' }, { key: 'DOWN', amount: '100' }],
+            settings: { configured: true, downPaymentKind: 'PERCENT', downPaymentValue: 40, receiverName: 'QA Receiver' },
+          },
+        })
+      }
+      if (url.includes('/payments/settings')) {
+        return jsonResponse(200, { data: { settings: { configured: true, downPaymentKind: 'PERCENT', downPaymentValue: 40 } } })
       }
       return jsonResponse(404, { error: { code: 'NOT_FOUND' } })
     }),
@@ -112,11 +128,13 @@ async function fillSlotWithRecommendation(date = openDay, time = '14:00') {
 
 function renderFlow(overrides = {}) {
   render(
-    <BookingFlow
-      service={{ ...service, ...overrides }}
-      user={{ name: 'Tester' }}
-      onClose={() => {}}
-    />,
+    <ToastContext.Provider value={{ showToast: () => {} }}>
+      <BookingFlow
+        service={{ ...service, ...overrides }}
+        user={{ name: 'Tester' }}
+        onClose={() => {}}
+      />
+    </ToastContext.Provider>,
   )
 }
 
@@ -302,15 +320,15 @@ describe('BookingFlow — slot matching', () => {
     expect(posts[0].staffId).toBe('a1')
   })
 
-  it('blocks confirming a partial-coverage pick with a friendly explanation', async () => {
+  it('renders partial-coverage staff disabled with a reason and never selects them', async () => {
     const posts = []
     stubApi({
       matching: {
-        recommended: staffEntry('m1', 'Mia', 'Reco'),
+        recommended: null,
         alternatives: [staffEntry('a1', 'Alan', 'Alt', { coversAll: false, coversCategories: 1 })],
-        reason: 'Covers all 2 categories · staff rating 4.8',
-        partial: false,
-        covers: 2,
+        reason: 'No stylist covers every category for this slot.',
+        partial: true,
+        covers: 1,
         needed: 2,
       },
       onPost: (body) => posts.push(body),
@@ -318,16 +336,67 @@ describe('BookingFlow — slot matching', () => {
     renderFlow()
     await fillSlot()
     await waitFor(() => expect(screen.getByRole('button', { name: /change stylist/i })).toBeTruthy())
+    // Nobody covers every category: the customer is told plainly.
+    expect(screen.getByText(/no staff are available for this date and time/i)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /change stylist/i }))
-    fireEvent.click(screen.getByRole('button', { name: /Alan Alt/i }))
+    // The partial alternative is visible with its reason but not selectable.
+    const partialButton = screen.getByRole('button', { name: /Alan Alt/i })
+    expect(partialButton.disabled).toBe(true)
+    expect(screen.getAllByText(/does not cover all selected services/i).length).toBeGreaterThan(0)
+    fireEvent.click(partialButton)
+    const select = screen.getByLabelText(/preferred stylist/i)
+    expect(select.value).toBe('')
     fireEvent.click(screen.getByRole('button', { name: /review booking/i }))
-    // The concern is spelled out up front and nothing is lost.
-    await waitFor(() => expect(screen.getByText(/does not cover every service/i)).toBeTruthy())
-    expect(screen.getByText(/appointment summary/i)).toBeTruthy()
+    // The flow is never trapped, and confirming stays blocked.
+    await waitFor(() => expect(screen.getByText(/appointment summary/i)).toBeTruthy())
     fireEvent.click(screen.getByRole('button', { name: /confirm booking/i }))
-    await waitFor(() => expect(screen.getByText(/cover every service category/i)).toBeTruthy())
+    await waitFor(() => expect(screen.getByText(/choose a stylist before booking|no stylist/i)).toBeTruthy())
     expect(posts.length).toBe(0)
     expect(screen.queryByText(/reference:/i)).toBeNull()
+  })
+
+  it('shows a truthful pay-at-salon result with no payment claims', async () => {
+    const posts = []
+    stubApi({
+      matching: { recommended: staffEntry('m1', 'Mia', 'Reco'), alternatives: [], reason: '', partial: false, covers: 1, needed: 1 },
+      onPost: (body) => posts.push(body),
+    })
+    renderFlow()
+    await fillSlot()
+    await waitFor(() => expect(screen.getByRole('button', { name: /no preference/i })).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: /no preference/i }))
+    fireEvent.click(screen.getByRole('button', { name: /review booking/i }))
+    await waitFor(() => expect(screen.getByText(/appointment summary/i)).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: /confirm booking/i }))
+    await waitFor(() => expect(screen.getByText(/payment is due at the salon/i)).toBeTruthy())
+    // The result must never claim a received or verified payment.
+    expect(screen.getByText(/payment: due at the salon/i)).toBeTruthy()
+    expect(screen.queryByText(/awaiting proof/i)).toBeNull()
+    expect(screen.queryByText(/successfully booked/i)).toBeNull()
+  })
+
+  it('shows an awaiting-proof result for GCash until the proof is submitted', async () => {
+    const posts = []
+    stubApi({
+      matching: { recommended: staffEntry('m1', 'Mia', 'Reco'), alternatives: [], reason: '', partial: false, covers: 1, needed: 1 },
+      onPost: (body) => posts.push(body),
+    })
+    renderFlow()
+    await fillSlot()
+    await waitFor(() => expect(screen.getByRole('button', { name: /no preference/i })).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: /no preference/i }))
+    fireEvent.click(screen.getByRole('button', { name: /review booking/i }))
+    await waitFor(() => expect(screen.getByText(/appointment summary/i)).toBeTruthy())
+    const gcashFull = screen.getByRole('button', { name: /gcash: pay in full/i })
+    expect(gcashFull.disabled).toBe(false)
+    fireEvent.click(gcashFull)
+    fireEvent.click(screen.getByRole('button', { name: /confirm booking/i }))
+    await waitFor(() => expect(screen.getByText(/reserved pending payment/i)).toBeTruthy())
+    // Not completed-looking before any proof exists.
+    expect(screen.getByText(/payment: awaiting proof submission/i)).toBeTruthy()
+    expect(screen.queryByText(/payment: due at the salon/i)).toBeNull()
+    expect(screen.getByRole('button', { name: /open payment window/i })).toBeTruthy()
+    expect(posts.length).toBe(1)
   })
 })
 

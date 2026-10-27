@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import EmptyState from '../components/EmptyState.jsx'
 import Pagination from '../components/Pagination.jsx'
 import ReviewCard from '../components/ReviewCard.jsx'
+import ReviewRatingDistribution from '../components/ReviewRatingDistribution.jsx'
 import { useAuth } from '../context/useAuth.jsx'
 import { useRecoveryTick } from '../lib/useOutage.js'
 import { fetchReviewList } from '../lib/api.js'
@@ -37,6 +38,7 @@ function Reviews() {
   const [page, setPage] = useState(1)
   const [rows, setRows] = useState([])
   const [total, setTotal] = useState(0)
+  const [ratingCounts, setRatingCounts] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -46,6 +48,7 @@ function Reviews() {
         if (stale) return
         setRows((data?.reviews ?? []).map(toCardReview))
         setTotal(data?.total ?? 0)
+        setRatingCounts(data?.ratingCounts ?? null)
         setLoading(false)
       },
       () => {
@@ -78,15 +81,28 @@ function Reviews() {
         id="reviews"
       >
         <div className="grid gap-[16px] md:grid-cols-[1.2fr_0.8fr]">
-          {/* No aggregate-summary endpoint exists yet (FE gap): the fabricated
-              summary is gone and nothing is invented to replace it. */}
+          {/* No aggregate-summary endpoint exists yet (FE gap), so the
+              summary and the distribution are aggregated from the review
+              rows actually loaded: real rows only, labelled with their
+              scope ("based on N loaded reviews") instead of pretending to
+              cover every review on the server. */}
           <div className="flex flex-col items-center justify-center rounded-[18px] border border-[var(--line)] bg-[var(--review-panel)] p-[22px_20px] text-center">
             <h2 className="m-0 text-[24px] font-semibold leading-none text-[var(--gold)]">
               Rating summary
             </h2>
-            <p className="mt-[12px] max-w-[320px] text-[14px] leading-[1.7] text-[#d9d3ca]" role="status">
-              Not available yet. {total} verified {total === 1 ? 'review' : 'reviews'} are listed below.
-            </p>
+            <div className="mt-[14px] w-full max-w-[360px]">
+              <ReviewRatingDistribution reviews={rows} ratingCounts={ratingCounts} totalCount={total} />
+              {loading && rows.length === 0 && (
+                <p className="m-0 text-[14px] leading-[1.7] text-[#d9d3ca]" role="status">
+                  Loading rating details…
+                </p>
+              )}
+              {!loading && rows.length === 0 && (
+                <p className="m-0 text-[14px] leading-[1.7] text-[#d9d3ca]" role="status">
+                  No reviews have been shared yet.
+                </p>
+              )}
+            </div>
           </div>
 
           <div className="flex flex-col items-center justify-center rounded-[18px] border border-[var(--line)] bg-[var(--review-panel)] p-[22px_20px] text-center">

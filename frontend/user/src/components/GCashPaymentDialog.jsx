@@ -440,7 +440,7 @@ function GCashPaymentDialog({ item, onClose, onSubmitted, preselectedOption = nu
         {quoteStatus === 'ready' && submitStatus === 'done' && (
           <div className="flex flex-col items-start gap-4">
             <p className="m-0 text-[15px] text-[#d8d4cb]" role="status">
-              Your payment was submitted.{' '}
+              Payment proof submitted.{' '}
               <strong className="font-semibold tracking-[0.12em] text-[var(--gold)] uppercase">Awaiting verification</strong>
             </p>
             <button
