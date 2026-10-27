@@ -696,20 +696,25 @@ function Shell() {
               <p>ADMIN PANEL</p>
             </div>
           </div>
-          <nav className="nav" id="primary-navigation" aria-label="Main navigation">
-            {navSections.map((section) => (
-              <div key={section.label}>
-                <p className="nav-section">{section.label}</p>
-                {section.items.map(({ label, to, Icon }) => (
-                  <NavLink key={label} to={to} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`} onClick={() => setMobileNavOpen(false)}>
-                    <span className="nav-icon" aria-hidden="true"><Icon /></span>
-                    {label}
-                  </NavLink>
-                ))}
-              </div>
-            ))}
-          </nav>
-          <SidebarStatusPanel />
+          {/* Brand, navigation and status share the column; only this middle
+              region scrolls when it outgrows the viewport, so the sign-out
+              control below is always on screen and never overlapped. */}
+          <div className="sidebar-scroll">
+            <nav className="nav" id="primary-navigation" aria-label="Main navigation">
+              {navSections.map((section) => (
+                <div key={section.label}>
+                  <p className="nav-section">{section.label}</p>
+                  {section.items.map(({ label, to, Icon }) => (
+                    <NavLink key={label} to={to} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`} onClick={() => setMobileNavOpen(false)}>
+                      <span className="nav-icon" aria-hidden="true"><Icon /></span>
+                      {label}
+                    </NavLink>
+                  ))}
+                </div>
+              ))}
+            </nav>
+            <SidebarStatusPanel />
+          </div>
           <SignOutControl
             label="Signed in"
             initials="SA"
@@ -1026,6 +1031,7 @@ function ServiceManagementPage() {
   const [loadError, setLoadError] = useState('');
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'deactivated'>('all');
   const [editing, setEditing] = useState<ServiceRecord | null | 'new'>(null);
   const [action, setAction] = useState<{ type: 'delete' | 'suspend'; service: ServiceRecord } | null>(null);
   const [manageCategories, setManageCategories] = useState(false);
@@ -1061,6 +1067,7 @@ function ServiceManagementPage() {
 
   const visibleServices = services.filter((service) =>
     (categoryFilter === 'all' || service.categoryId === categoryFilter)
+    && (statusFilter === 'all' || (statusFilter === 'active' ? service.isActive : !service.isActive))
     && `${service.name} ${service.categoryName} ${service.description ?? ''}`.toLowerCase().includes(search.toLowerCase()),
   );
 
@@ -1111,10 +1118,15 @@ function ServiceManagementPage() {
         </div>
       </div>
       <div className="service-filters">
-        <input aria-label="Search services" type="search" className="search-input" placeholder="Search services..." value={search} onChange={(event) => setSearch(event.target.value)} />
+        <input aria-label="Search services" type="search" className="search-input" placeholder="Search by service name or category" value={search} onChange={(event) => setSearch(event.target.value)} />
         <select aria-label="Filter by category" className="modal-input" value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
           <option value="all">All categories</option>
           {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+        </select>
+        <select aria-label="Filter by status" className="modal-input" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as 'all' | 'active' | 'deactivated')}>
+          <option value="all">All statuses</option>
+          <option value="active">Active</option>
+          <option value="deactivated">Deactivated</option>
         </select>
       </div>
       {loading && (
@@ -1134,7 +1146,7 @@ function ServiceManagementPage() {
                   <td role="cell" data-label="Category">{service.categoryName}</td>
                   <td role="cell" data-label="Duration">{service.durationMinutes} min</td>
                   <td role="cell" data-label="Price">₱{Number(service.price).toLocaleString()}</td>
-                  <td role="cell" data-label="Status"><span className={`status-badge ${service.isActive ? 'success' : 'neutral'}`}>{service.isActive ? 'Active' : 'Inactive'}</span></td>
+                  <td role="cell" data-label="Status"><span className={`status-badge ${service.isActive ? 'success' : 'warning'}`}>{service.isActive ? 'Active' : 'Deactivated'}</span></td>
                   <td className="cell-actions" role="cell" data-label="Actions"><div className="service-actions">
                     <button type="button" className="link-button" onClick={() => setEditing(service)}>Edit</button>
                     <button type="button" className={`link-button${service.isActive ? ' danger-link' : ' approve-link'}`} onClick={() => setAction({ type: 'suspend', service })}>{service.isActive ? 'Suspend' : 'Activate'}</button>
@@ -1848,7 +1860,7 @@ function StaffManagementPage() {
         <div className="panel-header compact staff-directory-header">
           <h3>Royal Salon Professional Staff Directory</h3>
           <div className="table-tools">
-            <input aria-label="Search staff" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by name, email or role..." className="search-input" />
+            <input aria-label="Search staff" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by name, email, role or schedule..." className="search-input" />
             <label className="sr-only" htmlFor="staff-filter-employment">Filter by employment type</label>
             <select id="staff-filter-employment" className="search-input" value={employmentFilter} onChange={(event) => setEmploymentFilter(event.target.value)}>
               <option value="all">All employment</option>
@@ -1949,6 +1961,7 @@ function StaffManagementPage() {
 
       {editingStaff && (
         <StaffEditModal
+          key={editingStaff.id ?? editingStaff.email}
           staff={editingStaff}
           onClose={() => setEditingStaff(null)}
           onSaved={() => { setEditingStaff(null); window.location.reload(); }}
@@ -2018,6 +2031,109 @@ type TimeOffRecord = {
   endTime: string | null;
 };
 
+/**
+ * The values the staff editor works with, merged from three sources: the
+ * directory row, the staff-profile record, and the sign-in account record.
+ */
+type StaffEditValues = {
+  firstName: string;
+  lastName: string;
+  phone: string;
+  email: string;
+  primaryRole: string;
+  position: string;
+  bio: string;
+  coveredRoles: string[];
+  specialties: string[];
+  showOnTeam: boolean;
+  employmentType: 'FULL_TIME' | 'PART_TIME';
+  workStatus: 'ON_DUTY' | 'DAY_OFF' | 'UNAVAILABLE';
+  /** The permission role on the sign-in account. Shown, never edited here. */
+  accountRole: string;
+  photoUrl: string | null;
+};
+
+/**
+ * Merge the directory row with the account and staff-profile records.
+ *
+ * A field counts as "known" only when a record actually carried it, so a
+ * value that never loaded can never later be written back as an empty
+ * string over a stored one: unknown fields are left out of the save.
+ */
+function mergeStaffEditValues(
+  row: StaffRow,
+  profile: Record<string, unknown> | null,
+  account: Record<string, unknown> | null,
+): { values: StaffEditValues; known: Set<string> } {
+  const known = new Set<string>();
+  // A present string wins over a fallback. An empty string is never treated
+  // as loaded data, because a missing field and a cleared one arrive in the
+  // same shape and clearing is the more dangerous guess.
+  const text = (key: string, ...candidates: Array<unknown>): string => {
+    for (const candidate of candidates) {
+      if (typeof candidate === 'string' && candidate.length > 0) {
+        known.add(key);
+        return candidate;
+      }
+    }
+    return '';
+  };
+  const list = (key: string, ...candidates: Array<unknown>): string[] => {
+    for (const candidate of candidates) {
+      if (Array.isArray(candidate) && candidate.length > 0) {
+        known.add(key);
+        return candidate.map((entry) => String(entry));
+      }
+    }
+    return [];
+  };
+  const flag = (key: string, ...candidates: Array<unknown>): boolean => {
+    for (const candidate of candidates) {
+      if (typeof candidate === 'boolean') {
+        known.add(key);
+        return candidate;
+      }
+    }
+    return false;
+  };
+  const employment = text('employmentType', profile?.employmentType, row.employment === 'Part Time' ? 'PART_TIME' : 'FULL_TIME');
+  const work = text('workStatus', profile?.workStatus, row.status === 'Active' ? 'ON_DUTY' : row.status === 'On Vacation' ? 'UNAVAILABLE' : 'DAY_OFF');
+  const profileSpecialties = profile ? staffSpecialtyIds(profile) : [];
+  return {
+    values: {
+      firstName: text('firstName', profile?.firstName, row.firstName),
+      lastName: text('lastName', profile?.lastName, row.lastName),
+      phone: text('phone', profile?.phone, row.phone),
+      email: text('email', account?.email, row.email === 'Email not available' ? '' : row.email),
+      primaryRole: text('primaryRole', profile?.primaryRole, row.role),
+      position: text('position', profile?.position, row.position),
+      bio: text('bio', profile?.bio, row.bio),
+      coveredRoles: list('coveredRoles',
+        Array.isArray(profile?.coveredRoles) ? profile.coveredRoles : undefined,
+        Array.isArray(row.coveredRoles) && row.coveredRoles.length > 0 ? row.coveredRoles : undefined),
+      specialties: list('specialties',
+        profileSpecialties.length > 0 ? profileSpecialties : undefined,
+        Array.isArray(row.specialties) && row.specialties.length > 0 ? row.specialties : undefined),
+      // The directory row coerces the flag to a boolean whether the payload
+      // carried it or not, so only a payload that actually carried it (or a
+      // true row value) marks the field as loaded.
+      showOnTeam: flag('showOnTeam',
+        typeof profile?.showOnTeam === 'boolean' ? profile.showOnTeam : undefined,
+        row.showOnTeam ? true : undefined),
+      employmentType: employment === 'PART_TIME' ? 'PART_TIME' : 'FULL_TIME',
+      workStatus: work === 'ON_DUTY' ? 'ON_DUTY' : work === 'UNAVAILABLE' ? 'UNAVAILABLE' : 'DAY_OFF',
+      accountRole: text('accountRole', account?.role) || 'Unknown',
+      photoUrl: ((profile?.photoUrl ?? profile?.photo ?? row.photoUrl ?? null) as string | null),
+    },
+    known,
+  };
+}
+
+/** The account role, in the words the account pages use. */
+function accountRoleLabel(role: string): string {
+  return ({ ADMIN: 'Super Admin', MANAGER: 'Manager', STAFF: 'Staff', CUSTOMER: 'Customer' } as Record<string, string>)[role] ?? role;
+}
+
 function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose: () => void; onSaved: () => void }) {
   const [timeOff, setTimeOff] = useState<TimeOffRecord[]>([]);
   const [showTimeOff, setShowTimeOff] = useState(false);
@@ -2055,14 +2171,82 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
     scheduleRowsRef.current = byDay;
     setSchedule(normalizeWeeklySchedule(rows));
   }, [staff.id]);
+
+  // The form works from the account and staff-profile records themselves, so
+  // every field shows what the server actually stores for this member.
+  const [recordState, setRecordState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [recordError, setRecordError] = useState('');
+  const [reloadNonce, setReloadNonce] = useState(0);
+  const [values, setValues] = useState<StaffEditValues>(() => mergeStaffEditValues(staff, null, null).values);
+  const knownRef = useRef<Set<string>>(new Set());
+  const touchedRef = useRef<Set<string>>(new Set());
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [coveredRoles, setCoveredRoles] = useState<string[]>(staff.coveredRoles ?? []);
-  const [specialties, setSpecialties] = useState<string[]>(staff.specialties ?? []);
-  const [showOnTeam, setShowOnTeam] = useState(Boolean(staff.showOnTeam));
   const [specialtyError, setSpecialtyError] = useState('');
   const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
   const photoRef = useRef<ImageUploadHandle | null>(null);
   const dialogRef = useDialogBehavior(onClose);
+
+  // Role changes are an administrator action. Every other editor sees the
+  // role as read-only text; the field still submits its stored value.
+  const viewerRole = currentSession(getAccessToken())?.role ?? null;
+  const canChangeRole = viewerRole === 'ADMIN';
+
+  function setField<K extends keyof StaffEditValues>(field: K, value: StaffEditValues[K]) {
+    touchedRef.current.add(field);
+    setValues((current) => ({ ...current, [field]: value }));
+    setFieldErrors((current) => {
+      if (!current[field]) return current;
+      const next = { ...current };
+      delete next[field];
+      return next;
+    });
+  }
+
+  // Load the authoritative account and staff-profile records once per open.
+  // A late response for an earlier member is dropped, and a failed load shows
+  // a friendly message with a retry instead of an empty form.
+  useEffect(() => {
+    const controller = new AbortController();
+    let active = true;
+    setRecordState('loading');
+    setRecordError('');
+    void (async () => {
+      const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+      const headers = { ...authHeader(getAccessToken()) };
+      const [profileResult, accountResult] = await Promise.allSettled([
+        apiFetch(`${baseUrl}/staff/${staff.id}`, { signal: controller.signal, headers }),
+        staff.accountId
+          ? apiFetch(`${baseUrl}/accounts/${staff.accountId}`, { signal: controller.signal, headers })
+          : Promise.resolve(null),
+      ]);
+      if (!active) return;
+      const profileResponse = profileResult.status === 'fulfilled' ? profileResult.value : null;
+      if (!profileResponse || !profileResponse.ok) {
+        setRecordState('error');
+        setRecordError("We couldn't load this staff member's details. Check the connection and try again.");
+        return;
+      }
+      const profilePayload = await profileResponse.json().catch(() => null);
+      const accountResponse = accountResult.status === 'fulfilled' ? accountResult.value : null;
+      const accountPayload = accountResponse && accountResponse.ok
+        ? await accountResponse.json().catch(() => null)
+        : null;
+      if (!active) return;
+      const merged = mergeStaffEditValues(
+        staff,
+        (profilePayload?.data ?? null) as Record<string, unknown> | null,
+        (accountPayload?.data ?? null) as Record<string, unknown> | null,
+      );
+      knownRef.current = merged.known;
+      touchedRef.current = new Set();
+      setValues(merged.values);
+      setRecordState('ready');
+    })();
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [staff, reloadNonce]);
 
   // The specialties offered are the service categories, so a staff member is
   // marked against the catalogue the studio actually sells.
@@ -2103,12 +2287,12 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
    * number, and the role as a short piece of text. The values are checked
    * whole, so a pasted value is caught as well as a typed one.
    */
-  function collectFieldErrors(form: FormData): Record<string, string> {
+  function collectFieldErrors(): Record<string, string> {
     const errors: Record<string, string> = {};
-    const firstName = String(form.get('firstName') ?? '').trim();
-    const lastName = String(form.get('lastName') ?? '').trim();
-    const phone = String(form.get('phone') ?? '').trim();
-    const primaryRole = String(form.get('primaryRole') ?? '').trim();
+    const firstName = values.firstName.trim();
+    const lastName = values.lastName.trim();
+    const phone = values.phone.trim();
+    const primaryRole = values.primaryRole.trim();
     if (!firstName) errors.firstName = 'Enter a first name.';
     else if (!isValidPersonName(firstName)) errors.firstName = personNameMessage(firstName);
     if (!lastName) errors.lastName = 'Enter a last name.';
@@ -2116,18 +2300,15 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
     if (phone && !isValidPhilippineMobile(phone)) errors.phone = PHONE_MESSAGE;
     if (!primaryRole) errors.primaryRole = 'Enter a primary role.';
     else if (primaryRole.length > 100) errors.primaryRole = 'Keep the role under 100 characters.';
-    const position = String(form.get('position') ?? '').trim();
-    if (position.length > 100) errors.position = 'Keep the position under 100 characters.';
-    const bio = String(form.get('bio') ?? '').trim();
-    if (bio.length > 1000) errors.bio = 'Keep the bio under 1000 characters.';
+    if (values.position.trim().length > 100) errors.position = 'Keep the position under 100 characters.';
+    if (values.bio.trim().length > 1000) errors.bio = 'Keep the bio under 1000 characters.';
     return errors;
   }
 
   /** Re-check one field, once the reader has left it. */
-  function recheckField(field: string, form: HTMLFormElement | null) {
-    if (!form) return;
+  function recheckField(field: keyof StaffEditValues) {
     if (!Object.prototype.hasOwnProperty.call(fieldErrors, field)) return;
-    const errors = collectFieldErrors(new FormData(form));
+    const errors = collectFieldErrors();
     setFieldErrors((current) => {
       const next = { ...current };
       if (errors[field]) next[field] = errors[field];
@@ -2138,20 +2319,19 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const errors = collectFieldErrors(form);
+    const errors = collectFieldErrors();
     setFieldErrors(errors);
     // Showing a profile on the team page needs at least one specialty, so the
     // page never lists someone with nothing they are known for.
-    const specialtyMessage = showOnTeam && specialties.length === 0
+    const specialtyMessage = values.showOnTeam && values.specialties.length === 0
       ? 'Select at least one specialty when the profile is shown on the team page.'
       : '';
     setSpecialtyError(specialtyMessage);
     if (Object.keys(errors).length > 0 || specialtyMessage) {
       // The dialog stays open and keeps what was typed.
-      for (const field of ['firstName', 'lastName', 'phone', 'primaryRole', 'position', 'bio']) {
+      for (const field of ['firstName', 'lastName', 'phone', 'primaryRole', 'position', 'bio'] as const) {
         if (!errors[field]) continue;
-        event.currentTarget.querySelector<HTMLElement>(`[name="${field}"]`)?.focus();
+        dialogRef.current?.querySelector<HTMLElement>(`[name="${field}"]`)?.focus();
         break;
       }
       return;
@@ -2160,24 +2340,34 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
     if (!token) { setError('Sign in with an administrator account to edit staff.'); return; }
     setSubmitting(true);
     setError('');
-    const lastName = String(form.get('lastName') ?? '').trim();
+    // Optional profile fields travel only when a record actually carried
+    // them or the editor changed them. A field that never loaded is left out
+    // of the request entirely, so saving can never blank a stored value.
+    const known = knownRef.current;
+    const touched = touchedRef.current;
+    const optional = (field: keyof StaffEditValues) => known.has(field) || touched.has(field);
+    const body: Record<string, unknown> = {
+      // The first name is immutable after account creation; the stored value
+      // is echoed back unchanged, which is exactly what the API accepts.
+      firstName: values.firstName.trim(),
+      lastName: values.lastName.trim(),
+      phone: values.phone.trim(),
+      primaryRole: values.primaryRole.trim(),
+      employmentType: values.employmentType,
+      workStatus: values.workStatus,
+    };
+    // The API requires a non-empty position when one is set, so an empty
+    // field means "keep the stored one", never "erase it".
+    if (values.position.trim()) body.position = values.position.trim();
+    if (optional('bio')) body.bio = values.bio.trim();
+    if (optional('coveredRoles')) body.coveredRoles = values.coveredRoles;
+    if (optional('showOnTeam')) body.showOnTeam = values.showOnTeam;
+    if (optional('specialties') || (values.showOnTeam && values.specialties.length > 0)) body.specialties = values.specialties;
     try {
       const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/staff/${staff.id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          firstName: String(form.get('firstName') ?? '').trim(),
-          lastName,
-          phone: String(form.get('phone') ?? ''),
-          primaryRole: String(form.get('primaryRole') ?? '').trim(),
-          employmentType: String(form.get('employmentType')),
-          workStatus: String(form.get('workStatus')),
-          position: String(form.get('position') ?? '').trim(),
-          bio: String(form.get('bio') ?? '').trim(),
-          coveredRoles,
-          showOnTeam,
-          specialties,
-        }),
+        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+        body: JSON.stringify(body),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.message ?? 'Unable to save staff changes.');
@@ -2261,7 +2451,7 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
     if (!token) throw new Error('Sign in with an administrator account to manage time off.');
     const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/staff/${staff.id}/time-off${existing ? `/${existing.id}` : ''}`, {
       method: existing ? 'PATCH' : 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
       body: JSON.stringify(values),
     });
     const payload = await response.json();
@@ -2280,7 +2470,7 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
     if (!token) { setError('Sign in with an administrator account to manage time off.'); return; }
     const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/staff/${staff.id}/time-off/${entry.id}`, {
       method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { ...authHeader(token) },
     });
     const payload = await response.json();
     if (!response.ok) { setError(payload.message ?? 'Unable to remove time off.'); return; }
@@ -2295,81 +2485,134 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
           <h3 id="staff-edit-title">Edit Staff Account</h3>
           <button type="button" className="close-button" aria-label="Close" onClick={onClose}>×</button>
         </div>
+        {recordState === 'loading' && (
+          <SkeletonRegion label="Loading the staff record">
+            <ListSkeleton rows={5} />
+          </SkeletonRegion>
+        )}
+        {recordState === 'error' && (
+          <div className="staff-record-error" role="alert">
+            <strong>This staff record could not be loaded</strong>
+            <p>{recordError}</p>
+            <div className="modal-actions">
+              <button type="button" className="secondary-action" onClick={onClose}>Close</button>
+              <button type="button" className="primary-action" onClick={() => setReloadNonce((nonce) => nonce + 1)}>Try again</button>
+            </div>
+          </div>
+        )}
+        {recordState === 'ready' && (
         <div className="staff-edit-content">
           <form className="staff-account-form" onSubmit={handleSubmit} noValidate>
             <h4>Staff Account Information</h4>
-            <p className="form-hint">{staff.email}</p>
-            <ImageUploadField ref={photoRef} label="STAFF PHOTO" idPrefix="staff-photo" initialUrl={staff.photoUrl ?? null} />
-            <div className="form-grid">
-              <label className="field-label">FIRST NAME
-                <input className="modal-input" name="firstName" defaultValue={staff.firstName ?? ''} required maxLength={100}
-                  autoComplete="given-name"
-                  onBlur={(event) => recheckField('firstName', event.currentTarget.form)}
-                  {...invalidField('staff-edit-first-name-error', fieldErrors.firstName)} />
-                <FieldError id="staff-edit-first-name-error" message={fieldErrors.firstName} />
-              </label>
-              <label className="field-label">LAST NAME
-                <input className="modal-input" name="lastName" defaultValue={staff.lastName ?? ''} required maxLength={100}
-                  autoComplete="family-name"
-                  onBlur={(event) => recheckField('lastName', event.currentTarget.form)}
-                  {...invalidField('staff-edit-last-name-error', fieldErrors.lastName)} />
-                <FieldError id="staff-edit-last-name-error" message={fieldErrors.lastName} />
+            <p className="form-hint">{values.email || 'No email on file'} · {accountRoleLabel(values.accountRole)}</p>
+            <div className="form-section">
+              <h5 className="form-section-title">Identity and contact</h5>
+              <ImageUploadField ref={photoRef} label="STAFF PHOTO" idPrefix="staff-photo" initialUrl={values.photoUrl} />
+              <div className="form-grid">
+                <label className="field-label">FIRST NAME
+                  {/* The first name is fixed at account creation. It is read
+                      only, shows the stored value, and still submits it. */}
+                  <input className="modal-input" name="firstName" value={values.firstName} readOnly required maxLength={100}
+                    autoComplete="given-name"
+                    {...invalidField('staff-edit-first-name-error', fieldErrors.firstName)} />
+                  <FieldError id="staff-edit-first-name-error" message={fieldErrors.firstName} />
+                </label>
+                <label className="field-label">LAST NAME
+                  <input className="modal-input" name="lastName" value={values.lastName} onChange={(event) => setField('lastName', event.target.value)} required maxLength={100}
+                    autoComplete="family-name" placeholder="e.g. Santos"
+                    onBlur={() => recheckField('lastName')}
+                    {...invalidField('staff-edit-last-name-error', fieldErrors.lastName)} />
+                  <FieldError id="staff-edit-last-name-error" message={fieldErrors.lastName} />
+                </label>
+              </div>
+              <p className="form-hint">First names are set when the account is created and cannot be changed.</p>
+              <label className="field-label">PHONE
+                <input className="modal-input" name="phone" type="tel" value={values.phone} onChange={(event) => setField('phone', event.target.value)} maxLength={30}
+                  inputMode="tel" autoComplete="tel" placeholder="+63 912 345 6789"
+                  onBlur={() => recheckField('phone')}
+                  {...invalidField('staff-edit-phone-error', fieldErrors.phone)} />
+                <FieldError id="staff-edit-phone-error" message={fieldErrors.phone} />
               </label>
             </div>
-            <label className="field-label">PHONE
-              <input className="modal-input" name="phone" type="tel" defaultValue={staff.phone ?? ''} maxLength={30}
-                inputMode="tel" autoComplete="tel"
-                onBlur={(event) => recheckField('phone', event.currentTarget.form)}
-                {...invalidField('staff-edit-phone-error', fieldErrors.phone)} />
-              <FieldError id="staff-edit-phone-error" message={fieldErrors.phone} />
-            </label>
-            <label className="field-label">PRIMARY ROLE
-              <input className="modal-input" name="primaryRole" defaultValue={staff.role} required maxLength={100}
-                onBlur={(event) => recheckField('primaryRole', event.currentTarget.form)}
-                {...invalidField('staff-edit-primary-role-error', fieldErrors.primaryRole)} />
-              <FieldError id="staff-edit-primary-role-error" message={fieldErrors.primaryRole} />
-            </label>
-            <label className="field-label">POSITION
-              <input className="modal-input" name="position" defaultValue={staff.position ?? ''} maxLength={100}
-                placeholder="e.g. Senior Stylist"
-                onBlur={(event) => recheckField('position', event.currentTarget.form)}
-                {...invalidField('staff-edit-position-error', fieldErrors.position)} />
-              <FieldError id="staff-edit-position-error" message={fieldErrors.position} />
-            </label>
-            <label className="field-label">BIO
-              <textarea className="modal-input" name="bio" defaultValue={staff.bio ?? ''} rows={3} maxLength={1000}
-                placeholder="A short introduction shown on the team page."
-                onBlur={(event) => recheckField('bio', event.currentTarget.form)}
-                {...invalidField('staff-edit-bio-error', fieldErrors.bio)} />
-              <FieldError id="staff-edit-bio-error" message={fieldErrors.bio} />
-            </label>
-            <TagMultiSelect
-              label="COVERED ROLES"
-              hint="Roles this staff member can step into. Pick from the list or add your own."
-              options={COVERED_ROLE_VOCABULARY}
-              value={coveredRoles}
-              onChange={setCoveredRoles}
-            />
-            <CheckboxMultiSelect
-              label="SPECIALTIES"
-              options={categories}
-              value={specialties}
-              onChange={(next) => { setSpecialties(next); if (next.length > 0) setSpecialtyError(''); }}
-              errorId="staff-edit-specialties-error"
-              errorMessage={specialtyError}
-            />
-            <ToggleSwitch
-              label="Show on team page"
-              hint="List this staff member on the public team page."
-              checked={showOnTeam}
-              onChange={(next) => {
-                setShowOnTeam(next);
-                if (!next) setSpecialtyError('');
-              }}
-            />
-            <div className="form-grid">
-              <label className="field-label">EMPLOYMENT TYPE<select className="modal-input" name="employmentType" defaultValue={staff.employment === 'Part Time' ? 'PART_TIME' : 'FULL_TIME'}><option value="FULL_TIME">Full Time</option><option value="PART_TIME">Part Time</option></select></label>
-              <label className="field-label">WORK STATUS<select className="modal-input" name="workStatus" defaultValue={staff.status === 'Active' ? 'ON_DUTY' : staff.status === 'On Vacation' ? 'UNAVAILABLE' : 'DAY_OFF'}><option value="ON_DUTY">On Duty</option><option value="DAY_OFF">Day Off</option><option value="UNAVAILABLE">Unavailable</option></select></label>
+
+            <div className="form-section">
+              <h5 className="form-section-title">Staff profile</h5>
+              <label className="field-label">POSITION
+                <input className="modal-input" name="position" value={values.position} onChange={(event) => setField('position', event.target.value)} maxLength={100}
+                  placeholder="e.g. Senior Stylist"
+                  onBlur={() => recheckField('position')}
+                  {...invalidField('staff-edit-position-error', fieldErrors.position)} />
+                <FieldError id="staff-edit-position-error" message={fieldErrors.position} />
+              </label>
+              <label className="field-label">BIO
+                <textarea className="modal-input" name="bio" value={values.bio} onChange={(event) => setField('bio', event.target.value)} rows={3} maxLength={1000}
+                  placeholder="e.g. Senior stylist specialising in balayage and bridal looks"
+                  onBlur={() => recheckField('bio')}
+                  {...invalidField('staff-edit-bio-error', fieldErrors.bio)} />
+                <FieldError id="staff-edit-bio-error" message={fieldErrors.bio} />
+              </label>
+              <TagMultiSelect
+                label="COVERED ROLES"
+                hint="Roles this staff member can step into. Pick from the list or add your own."
+                options={COVERED_ROLE_VOCABULARY}
+                value={values.coveredRoles}
+                onChange={(next) => setField('coveredRoles', next)}
+              />
+              <CheckboxMultiSelect
+                label="SPECIALTIES"
+                options={categories}
+                value={values.specialties}
+                onChange={(next) => { setField('specialties', next); if (next.length > 0) setSpecialtyError(''); }}
+                errorId="staff-edit-specialties-error"
+                errorMessage={specialtyError}
+              />
+              <ToggleSwitch
+                label="Show on team page"
+                hint="List this staff member on the public team page."
+                checked={values.showOnTeam}
+                onChange={(next) => {
+                  setField('showOnTeam', next);
+                  if (!next) setSpecialtyError('');
+                }}
+              />
+            </div>
+
+            <div className="form-section">
+              <h5 className="form-section-title">Work details</h5>
+              <div className="form-grid">
+                <label className="field-label">EMPLOYMENT TYPE
+                  <select className="modal-input" name="employmentType" value={values.employmentType} onChange={(event) => setField('employmentType', event.target.value === 'PART_TIME' ? 'PART_TIME' : 'FULL_TIME')}>
+                    <option value="FULL_TIME">Full Time</option>
+                    <option value="PART_TIME">Part Time</option>
+                  </select>
+                </label>
+                <label className="field-label">WORK STATUS
+                  <select className="modal-input" name="workStatus" value={values.workStatus} onChange={(event) => setField('workStatus', event.target.value === 'ON_DUTY' ? 'ON_DUTY' : event.target.value === 'UNAVAILABLE' ? 'UNAVAILABLE' : 'DAY_OFF')}>
+                    <option value="ON_DUTY">On Duty</option>
+                    <option value="DAY_OFF">Day Off</option>
+                    <option value="UNAVAILABLE">Unavailable</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+
+            <div className="form-section">
+              <h5 className="form-section-title">Permissions</h5>
+              <label className="field-label">PRIMARY ROLE
+                {canChangeRole ? (
+                  <input className="modal-input" name="primaryRole" value={values.primaryRole} onChange={(event) => setField('primaryRole', event.target.value)} required maxLength={100}
+                    placeholder="e.g. Senior Stylist"
+                    onBlur={() => recheckField('primaryRole')}
+                    {...invalidField('staff-edit-primary-role-error', fieldErrors.primaryRole)} />
+                ) : (
+                  <input className="modal-input" name="primaryRole" value={values.primaryRole} readOnly
+                    {...invalidField('staff-edit-primary-role-error', fieldErrors.primaryRole)} />
+                )}
+                <FieldError id="staff-edit-primary-role-error" message={fieldErrors.primaryRole} />
+              </label>
+              <span className="field-label">ACCOUNT ROLE</span>
+              <p className="readonly-text">{accountRoleLabel(values.accountRole)}</p>
+              {!canChangeRole && <p className="form-hint">Only administrators can change roles.</p>}
             </div>
             {error && <p className="form-error" role="alert">{error}</p>}
             <div className="modal-actions">
@@ -2438,6 +2681,7 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
           </div>
 
         </div>
+        )}
       </section>
     </div>
   );
@@ -2822,6 +3066,10 @@ function PaymentPage() {
   const [tab, setTab] = useState<'pending' | 'history' | 'settings'>('pending');
   const [search, setSearch] = useState('');
   const [loadError, setLoadError] = useState('');
+  // Distinguishes 'still loading' from 'loaded with zero records': the ledger
+  // must never flash an empty state while the first fetch is in flight.
+  const [loading, setLoading] = useState(true);
+  const loadSeqRef = useRef(0);
   const [selectedPayment, setSelectedPayment] = useState<PaymentRow | null>(null);
   const [paymentConfirmation, setPaymentConfirmation] = useState<{ payment: PaymentRow; status: 'VERIFIED' | 'REJECTED' } | null>(null);
   const [recordOpen, setRecordOpen] = useState(false);
@@ -2838,6 +3086,7 @@ function PaymentPage() {
   const loadPayments = useCallback(async (signal?: AbortSignal) => {
     const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
     const headers = authHeader(token);
+    const seq = ++loadSeqRef.current;
     const [paymentResponse, activityResponse] = await Promise.all([
       apiFetch(`${baseUrl}/payments?page=1&limit=100`, { signal, headers }),
       apiFetch(`${baseUrl}/payments/activity`, { signal, headers }),
@@ -2845,16 +3094,21 @@ function PaymentPage() {
     const paymentPayload = await paymentResponse.json().catch(() => null);
     if (!paymentResponse.ok) throw new Error(paymentPayload?.message ?? 'Payment records are not available from the configured backend.');
     const activityPayload = activityResponse.ok ? await activityResponse.json().catch(() => null) : null;
+    // A stale response must never overwrite a newer one.
+    if (seq !== loadSeqRef.current) return;
     setPayments(((paymentPayload?.data?.payments ?? []) as any[]).map(toPaymentRow));
     setActivities(activityPayload?.data?.activities ?? []);
     setLoadError('');
+    setLoading(false);
   }, [token]);
 
   useEffect(() => {
     if (!token) return;
     const controller = new AbortController();
     loadPayments(controller.signal).catch((cause) => {
-      if (!controller.signal.aborted) setLoadError(cause instanceof Error ? cause.message : 'Unable to load payment records.');
+      if (controller.signal.aborted) return;
+      setLoading(false);
+      setLoadError(cause instanceof Error ? cause.message : 'Unable to load payment records.');
     });
     return () => controller.abort();
   }, [loadPayments, token]);
@@ -2937,21 +3191,22 @@ function PaymentPage() {
     `${payment.appointmentCode} ${payment.customerName} ${payment.customerEmail} ${payment.serviceName} ${payment.referenceNo ?? ''}`.toLowerCase().includes(search.toLowerCase()),
   );
   const confirmedRevenue = payments.filter((payment) => payment.status === 'VERIFIED').reduce((sum, payment) => sum + Number(payment.amount ?? 0), 0);
+  const initialLoading = loading && payments.length === 0;
 
   return (
     <div className="payment-layout">
       <section className="payment-content">
         <div className="payment-stats">
-          <div className="payment-stat"><span className="status-badge warning">Needs action</span><strong>{pendingPayments.length}</strong><small>Pending payments</small></div>
-          <div className="payment-stat"><span className="status-badge success">Settled</span><strong>{confirmedToday.length}</strong><small>Confirmed today</small></div>
-          <div className="payment-stat"><span className="status-badge neutral">Review</span><strong>{payments.filter((payment) => payment.status === 'REJECTED').length}</strong><small>Rejected</small></div>
-          <div className="payment-stat"><span className="status-badge warning">Revenue</span><strong>₱{confirmedRevenue.toLocaleString()}</strong><small>Revenue confirmed</small></div>
+          <div className="payment-stat"><span className="status-badge warning">Needs action</span><strong>{initialLoading ? '…' : pendingPayments.length}</strong><small>Pending payments</small></div>
+          <div className="payment-stat"><span className="status-badge success">Settled</span><strong>{initialLoading ? '…' : confirmedToday.length}</strong><small>Confirmed today</small></div>
+          <div className="payment-stat"><span className="status-badge neutral">Review</span><strong>{initialLoading ? '…' : payments.filter((payment) => payment.status === 'REJECTED').length}</strong><small>Rejected</small></div>
+          <div className="payment-stat"><span className="status-badge warning">Revenue</span><strong>{initialLoading ? '…' : `₱${confirmedRevenue.toLocaleString()}`}</strong><small>Revenue confirmed</small></div>
         </div>
 
         <section className="panel payment-table-panel">
           <div className="payment-tabs">
             <div className="tab-group">
-              <button type="button" className={tab === 'pending' ? 'active' : ''} onClick={() => setTab('pending')}>Pending Queue <span>{pendingPayments.length}</span></button>
+              <button type="button" className={tab === 'pending' ? 'active' : ''} onClick={() => setTab('pending')}>Pending Queue <span>{initialLoading ? '' : pendingPayments.length}</span></button>
               <button type="button" className={tab === 'history' ? 'active' : ''} onClick={() => setTab('history')}>Payment History</button>
               {canSettings && <button type="button" className={tab === 'settings' ? 'active' : ''} onClick={() => setTab('settings')}>Payment Settings</button>}
             </div>
@@ -2963,10 +3218,15 @@ function PaymentPage() {
           {notice && <p className="table-message" role="status">{notice}</p>}
           {tab === 'settings' ? (
             <PaymentSettingsPanel />
+          ) : initialLoading ? (
+            <SkeletonRegion label="Loading payment records">
+              <TableSkeleton rows={5} columns={6} />
+            </SkeletonRegion>
           ) : loadError ? (
             <div className="payment-unavailable">
               <strong>Payments could not be loaded</strong>
               <p>{loadError}</p>
+              <button type="button" className="secondary-action" onClick={() => { setLoading(true); void loadPayments().catch((cause) => { setLoading(false); setLoadError(cause instanceof Error ? cause.message : 'Unable to load payment records.'); }); }}>Try again</button>
             </div>
           ) : payments.length === 0 ? (
             <div className="payment-unavailable">

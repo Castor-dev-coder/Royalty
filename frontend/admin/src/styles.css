@@ -318,8 +318,13 @@ small { font-size: var(--text-2xs); line-height: var(--leading-snug); }
 
 .page-bg { width: 100%; min-height: 100vh; min-height: 100dvh; background: var(--surface-app); display: flex; }
 .viewer-shell { width: 100%; height: 100vh; height: 100dvh; min-height: 100vh; min-height: 100dvh; display: flex; background: var(--surface-app); border: 0; box-shadow: none; }
-.sidebar { width: 260px; min-width: 260px; height: 100vh; height: 100dvh; background: var(--surface-base); border-right: 1px solid var(--border); padding: var(--space-6) var(--space-3) var(--space-4); display: flex; flex-direction: column; align-items: stretch; }
-.sidebar-brand { padding: 0 8px; min-height: 48px; }
+/* The sidebar is a viewport-height flex column. The brand is pinned to the
+   top, the sign-out area to the bottom, and only the middle region between
+   them scrolls when the navigation or status panel grows long, so content
+   can never push the sign-out control out of its panel. */
+.sidebar { width: 260px; min-width: 260px; height: 100vh; height: 100dvh; overflow: hidden; background: var(--surface-base); border-right: 1px solid var(--border); padding: var(--space-6) var(--space-3) var(--space-4); display: flex; flex-direction: column; align-items: stretch; }
+.sidebar-brand { padding: 0 8px; min-height: 48px; flex: 0 0 auto; }
+.sidebar-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 .brand-wrap { display: flex; align-items: center; gap: 12px; }
 .brand-mark { width: 30px; height: 30px; border-radius: 8px; background: var(--accent); color: var(--text-on-accent); display: inline-flex; align-items: center; justify-content: center; font-size: 0.9rem; font-weight: 700; }
 .brand-wrap h1 { margin: 0; font-size: 1.33rem; letter-spacing: 0; font-weight: 800; color: var(--text-primary); }
@@ -619,7 +624,7 @@ small { font-size: var(--text-2xs); line-height: var(--leading-snug); }
 .profile-card strong, .user-cell strong { display: block; font-size: var(--text-sm); color: var(--text-primary); }
 .profile-card span, .user-cell small { display: block; font-size: var(--text-2xs); color: var(--text-muted); }
 
-.signout-wrap { position: relative; display: block; width: 100%; margin-top: auto; }
+.signout-wrap { position: relative; display: block; width: 100%; margin-top: auto; flex: 0 0 auto; }
 .signout-wrap .sidebar-profile { margin-top: 0; }
 .signout-wrap.pending .sidebar-profile { background: var(--danger-soft); border-color: var(--danger-border); }
 .signout-wrap.pending .sidebar-profile .avatar { background: var(--danger-soft); color: var(--danger-text); }
@@ -1692,6 +1697,10 @@ textarea.modal-input { line-height: 1.55; }
   .viewer-shell { height: auto; min-height: 100vh; min-height: 100dvh; flex-direction: column; }
   .content-panel { height: auto; overflow: visible;
   padding: var(--space-5) var(--space-6) var(--space-7);}
+  /* Stacked top-bar mode: the sidebar is a header row again, so neither it
+     nor the scroll region between its parts constrains the page height. */
+  .sidebar { height: auto; overflow: visible; }
+  .sidebar-scroll { flex: 0 0 auto; min-height: 0; overflow: visible; }
   .sidebar-brand { display: none; }
   .signout-wrap { display: block; width: auto; max-width: 100%; align-self: flex-end; margin-top: 8px; }
   .signout-wrap .sidebar-profile { display: flex; width: auto; max-width: 100%; margin-top: 0; padding: 6px 10px; }
@@ -1869,7 +1878,10 @@ textarea.modal-input { line-height: 1.55; }
   padding: var(--space-6) var(--space-3) var(--space-4);}
   .sidebar.mobile-open { transform: translateX(0); }
   .sidebar-brand { display: flex; padding-top: 60px; flex-shrink: 0; }
-  .nav { flex: 1 1 auto; flex-direction: column; gap: var(--space-1); margin-top: var(--space-6); padding: 0 12px; overflow-y: auto; min-height: 0; }
+  /* In the drawer the same middle region carries the scrolling, so the
+     sign-out area at the bottom stays visible while the list moves. */
+  .sidebar-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-bottom: var(--space-2); }
+  .nav { flex: 0 0 auto; flex-direction: column; gap: var(--space-1); margin-top: var(--space-6); padding: 0 12px; }
   .nav-link { flex: 0 0 auto; width: 100%; min-height: 44px;
   gap: var(--space-3);
   font-size: var(--text-sm);
