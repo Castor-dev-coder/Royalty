@@ -18,17 +18,18 @@ import { useToast } from '../context/useToast.jsx'
 // payment lands as Awaiting verification. Failures keep the dialog state and
 // show the server message with a retry; 'Pay at the salon' only informs and
 // closes (no online collection).
-function GCashPaymentDialog({ item, onClose, onSubmitted }) {
+function GCashPaymentDialog({ item, onClose, onSubmitted, preselectedOption = null }) {
   const { showToast } = useToast()
   const [quote, setQuote] = useState(null)
   const [quoteStatus, setQuoteStatus] = useState('loading') // loading | ready | error
   const [quoteError, setQuoteError] = useState('')
   const [reloadTick, setReloadTick] = useState(0)
 
-  const [optionKey, setOptionKey] = useState(null)
   const [referenceNo, setReferenceNo] = useState('')
   const [referenceError, setReferenceError] = useState(null)
   const [proof, setProof] = useState(null) // in-memory draft only
+  // A plan chosen in the booking flow arrives preselected ('FULL' | 'DOWN').
+  const [optionKey, setOptionKey] = useState(preselectedOption ?? '')
   const [proofError, setProofError] = useState(null)
   const [qrFailed, setQrFailed] = useState(false)
 

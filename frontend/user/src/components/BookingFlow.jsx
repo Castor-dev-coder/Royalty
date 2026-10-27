@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Dialog from './Dialog.jsx'
+import GCashPaymentDialog from './GCashPaymentDialog.jsx'
 import SafeImage from './SafeImage.jsx'
 import {
   ApiError,
@@ -7,6 +8,7 @@ import {
   fetchBusinessHours,
   fetchEligibleStaff,
   fetchMatching,
+  fetchPaymentSettings,
 } from '../lib/api.js'
 import {
   hoursForDate,
@@ -80,7 +82,15 @@ function BookingFlow({ service, user, onClose }) {
   const [showAlternatives, setShowAlternatives] = useState(false)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const [confirmation, setConfirmation] = useState(null) // { appointmentCode }
+  const [confirmation, setConfirmation] = useState(null) // created appointment ({ id, appointmentCode })
+  // Payment choice inside the Review step: 'SALON' (default), 'FULL', 'DOWN'.
+  const [paymentPlan, setPaymentPlan] = useState('SALON')
+  // Public payment settings (configured = a QR is set) gate the GCash options.
+  const [paySettings, setPaySettings] = useState(null)
+  // The deposit percent is a server setting the UI reads, never a local guess.
+  const depositPercent = paySettings?.downPaymentKind === 'PERCENT' ? paySettings.downPaymentValue : null
+  // Opened on the Confirmed step when a GCash plan was chosen.
+  const [payDialogOpen, setPayDialogOpen] = useState(false)
   // Shop hours drive the slot picker (GET /schedules/business-hours).
   const [hours, setHours] = useState(null) // business-hours rows, or null unknown
   const [hoursStatus, setHoursStatus] = useState('idle') // idle | loading | ready | error
@@ -93,6 +103,22 @@ function BookingFlow({ service, user, onClose }) {
   // The matching effect must not re-run when the pick mode changes, so it
   // reads the current mode through a ref instead of state.
   const pickModeRef = useRef('recommended')
+
+  // Payment settings decide whether the GCash options are available at all.
+  useEffect(() => {
+    let cancelled = false
+    fetchPaymentSettings().then(
+      (data) => {
+        if (!cancelled) setPaySettings(data?.settings ?? null)
+      },
+      () => {
+        if (!cancelled) setPaySettings(null)
+      },
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   function applyPickMode(mode) {
     pickModeRef.current = mode
@@ -418,6 +444,9 @@ function BookingFlow({ service, user, onClose }) {
         setSubmitting(false)
         setConfirmation(data?.appointment ?? data ?? {})
         goToStep(3)
+        // A GCash plan opens the existing payment dialog preselected; closing
+        // it leaves the booking in place and the card keeps its pay button.
+        if (paymentPlan !== 'SALON') setPayDialogOpen(true)
       },
       (err) => {
         setSubmitting(false)
@@ -567,8 +596,43 @@ function BookingFlow({ service, user, onClose }) {
               <p className="m-0 mt-2">{form.date} at {form.time}</p>
               <p className="m-0">Stylist: {chosenStaff ? `${chosenStaff.firstName} ${chosenStaff.lastName}` : 'Assigned automatically'}</p>
               <p className="m-0">Total: <strong className="text-(--gold)\">{formatPeso(service.price)}</strong></p>
-              <p className="m-0 mt-1 text-[10px] leading-5 tracking-[1.2px] text-[#8d877c] uppercase">Payment happens at the salon</p>
             </div>
+            <fieldset className="m-0 grid gap-2 rounded border border-[rgba(212,180,92,.25)] p-4">
+              <legend className="text-[0.62rem] font-semibold tracking-[0.12em] text-[#918c82] uppercase">Payment</legend>
+              {[
+                ['SALON', 'Pay at the salon', null],
+                ['FULL', 'GCash: pay in full', service.price],
+                [
+                  'DOWN',
+                  depositPercent != null
+                    ? `GCash: ${depositPercent}% down payment`
+                    : 'GCash: down payment',
+                  // Display only (integer centavos); the server confirms the amount.
+                  depositPercent != null ? Math.round(service.price * 100 * depositPercent / 100) / 100 : null,
+                ],
+              ].map(([key, label, amount]) => {
+                const gcash = key !== 'SALON'
+                const disabled = gcash && paySettings?.configured !== true
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    aria-pressed={paymentPlan === key}
+                    disabled={disabled}
+                    onClick={() => setPaymentPlan(key)}
+                    className={`min-h-[44px] w-full cursor-pointer rounded-full border px-5 text-left text-[12px] font-semibold tracking-[0.12em] uppercase ${paymentPlan === key ? 'border-(--gold) bg-(--gold) text-[#111]' : 'border-[#3a352c] text-[#d8d4cb] hover:border-(--gold)'} disabled:cursor-not-allowed disabled:opacity-50`}
+                  >
+                    {label}
+                    {amount != null && ` — ${formatPeso(amount)}`}
+                  </button>
+                )
+              })}
+              <p className="m-0 mt-1 text-[10px] leading-5 tracking-[1.2px] text-[#8d877c] uppercase">
+                {paySettings?.configured === true
+                  ? 'Amounts are display only; the server confirms them.'
+                  : "GCash isn't available yet"}
+              </p>
+            </fieldset>
             {error && <p className="m-0 text-xs text-[#e9a68c]" role="alert">{error}</p>}
             <div className="flex gap-3">
               <button type="button" onClick={() => goToStep(1)} className="btn-pill flex-1 border border-[#635b4c] px-5 py-3 text-xs font-bold uppercase text-[#d5cdbf]">Back</button>
@@ -581,6 +645,7 @@ function BookingFlow({ service, user, onClose }) {
   }
 
   return (
+    <>
     <Dialog labelledBy="booking-title" onClose={onClose} panelClassName="max-h-[92vh] w-full max-w-140 overflow-y-auto rounded-md border border-(--gold) bg-[#11110f] shadow-[0_20px_80px_rgba(0,0,0,.65)]">
         <div className="flex items-center justify-between border-b border-[rgba(212,180,92,.25)] px-6 py-5">
           <div><p className="m-0 text-[10px] uppercase tracking-[2px] text-(--gold)\">Royalty Salon</p><h2 id="booking-title" className="m-1 font-(--serif) text-2xl text-[#f3eee5]">{activeStep === 3 ? 'Booking Confirmed' : activeStep === 2 ? 'Review your booking' : 'Book your appointment'}</h2></div>
@@ -632,6 +697,15 @@ function BookingFlow({ service, user, onClose }) {
           </div>
         </div>
     </Dialog>
+      {payDialogOpen && confirmation && (
+        <GCashPaymentDialog
+          item={confirmation}
+          preselectedOption={paymentPlan === 'DOWN' ? 'DOWN' : 'FULL'}
+          onClose={() => setPayDialogOpen(false)}
+          onSubmitted={() => setPayDialogOpen(false)}
+        />
+      )}
+    </>
   )
 }
 

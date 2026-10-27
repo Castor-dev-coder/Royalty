@@ -32,7 +32,7 @@ function quoteWith(overrides = {}) {
       receiverName: 'Royalty Salon',
       accountNumberMasked: 'GCash •••• 1234',
       downPaymentKind: 'PERCENT',
-      downPaymentValue: 50,
+      downPaymentValue: 40,
     },
     ...overrides,
   }
@@ -71,7 +71,7 @@ describe('GCashPaymentDialog quote rendering', () => {
     expect(qr.getAttribute('loading')).toBe('lazy')
     expect(screen.getByText('Royalty Salon')).toBeTruthy()
     expect(screen.getByText('GCash •••• 1234')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Pay 50% down payment — ₱1,500.00' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Pay 40% down payment — ₱1,500.00' })).toBeTruthy()
   })
 
   it('shows the unconfigured empty state', async () => {

@@ -16,7 +16,7 @@ import {
 } from '../lib/api.js'
 import ReviewForm from '../components/ReviewForm.jsx'
 import GCashPaymentDialog from '../components/GCashPaymentDialog.jsx'
-import { formatAmount, groupPaymentsByAppointment, paymentStatusLabel } from '../lib/payments.js'
+import { formatAmount, groupPaymentsByAppointment, paymentStatusLabel, shouldShowPay } from '../lib/payments.js'
 
 const PAGE_SIZE = 10
 
@@ -93,7 +93,7 @@ function formatTimestamp(iso) {
     : date.toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
-function AppointmentCard({ item, customerName, onCancel, onOpenPayment, onOpenReview, onReviewSuccess, cancelMessage, cancelBusy, reviewOpen, onCloseReview }) {
+function AppointmentCard({ item, customerName, outstanding, onCancel, onOpenPayment, onOpenReview, onReviewSuccess, cancelMessage, cancelBusy, reviewOpen, onCloseReview }) {
   const { month, day, weekdayShort } = formatDateParts(item.appointmentDate)
   const staffName = item.staff ? `${item.staff.firstName} ${item.staff.lastName}`.trim() : 'Unassigned'
   const reviewed = item.alreadyReviewed && item.review
@@ -101,9 +101,10 @@ function AppointmentCard({ item, customerName, onCancel, onOpenPayment, onOpenRe
   const moreCount = item.services.length - 1
   const showReviewButton = item.status === 'COMPLETED' && !item.alreadyReviewed && !reviewOpen
   const showCancel = item.status === 'RESERVED' || item.status === 'CONFIRMED'
-  // Every appointment offers the GCash payment dialog; the server quote gates
+  // PAY WITH GCASH for pay-at-salon bookings and anything unpaid or partly
+  // paid; hidden for cancelled, no-show and fully paid. The server quote gates
   // what can actually be paid.
-  const showPay = true
+  const showPay = shouldShowPay(item.status, outstanding)
   const hasActions = Boolean(showPay || showReviewButton || reviewed || showCancel)
   return (
     <article className="rounded-lg border border-[#27241f] bg-[#151515] px-6 py-6 max-[640px]:px-4 max-[640px]:py-4">
@@ -522,6 +523,7 @@ function Appointments() {
                         cancelMessage={cancelState[item.id]?.message}
                         customerName={user.name || user.email || 'Guest'}
                         item={item}
+                        outstanding={(payments.find((row) => row.appointmentId === item.id) ?? null)?.outstanding ?? null}
                         onCancel={handleCancel}
                         onCloseReview={() => setReviewOpenId(null)}
                         onOpenPayment={setPayItem}

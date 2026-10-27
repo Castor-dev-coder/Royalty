@@ -44,7 +44,7 @@ export function quoteViewState(quote) {
 /**
  * Label for one server option, carrying the SERVER amount: 'FULL' renders
  * 'Pay in full — ₱X'; 'DOWN' names the server's down-payment policy (e.g.
- * 'Pay 50% down payment — ₱Y') and falls back to plain wording when the
+ * 'Pay 40% down payment — ₱Y') and falls back to plain wording when the
  * policy has no percentage to name.
  */
 export function optionLabel(option, settings) {
@@ -65,6 +65,18 @@ export function quoteSummaryRows(quote) {
     { key: 'verified', label: 'Verified received', value: quote?.verifiedTotal },
     { key: 'outstanding', label: 'Outstanding', value: quote?.outstanding },
   ].map((row) => ({ ...row, display: formatAmount(row.value) }))
+}
+
+/**
+ * Whether the PAY WITH GCASH button appears on an appointment card.
+ * Hidden for cancelled, no-show and fully paid; shown for pay-at-salon
+ * bookings and anything unpaid or partly paid. Unknown outstanding (payment
+ * rows still loading) keeps the button — the server quote gates the dialog.
+ */
+export function shouldShowPay(status, outstanding) {
+  if (status === 'CANCELLED' || status === 'NO_SHOW') return false
+  if (outstanding === null || outstanding === undefined) return true
+  return Number(outstanding) > 0
 }
 
 /** The 'pay at the salon' closing line, quoting the server's outstanding. */

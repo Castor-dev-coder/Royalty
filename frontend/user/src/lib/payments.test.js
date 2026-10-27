@@ -8,9 +8,34 @@ import {
   quoteSummaryRows,
   quoteViewState,
   salonOptionMessage,
+  shouldShowPay,
   validateReferenceNo,
 } from './payments.js'
 import { ConflictError, NetworkError } from './api.js'
+
+describe('shouldShowPay — when the card offers PAY WITH GCASH', () => {
+  it('shows it for pay-at-salon bookings with nothing paid', () => {
+    expect(shouldShowPay('RESERVED', 1000)).toBe(true)
+    expect(shouldShowPay('CONFIRMED', 1000)).toBe(true)
+    expect(shouldShowPay('COMPLETED', 250)).toBe(true) // partly paid
+    expect(shouldShowPay('RESERVED', 0.01)).toBe(true) // one cent left
+  })
+
+  it('hides it for cancelled and no-show bookings', () => {
+    expect(shouldShowPay('CANCELLED', 1000)).toBe(false)
+    expect(shouldShowPay('NO_SHOW', 1000)).toBe(false)
+  })
+
+  it('hides it for fully paid bookings', () => {
+    expect(shouldShowPay('RESERVED', 0)).toBe(false)
+    expect(shouldShowPay('COMPLETED', 0)).toBe(false)
+  })
+
+  it('keeps it while the outstanding balance is not known yet', () => {
+    expect(shouldShowPay('RESERVED', null)).toBe(true)
+    expect(shouldShowPay('RESERVED', undefined)).toBe(true)
+  })
+})
 
 describe('reference number validation', () => {
   it('requires a reference number', () => {
@@ -66,7 +91,7 @@ describe('quote rendering', () => {
 })
 
 describe('option gating', () => {
-  const settings = { configured: true, downPaymentKind: 'PERCENT', downPaymentValue: 50 }
+  const settings = { configured: true, downPaymentKind: 'PERCENT', downPaymentValue: 40 }
 
   it('shows unconfigured before anything else', () => {
     expect(quoteViewState({ settings: { configured: false }, options: [] })).toBe('unconfigured')
@@ -85,7 +110,7 @@ describe('option gating', () => {
 
   it('labels options with the server amounts', () => {
     expect(optionLabel({ key: 'FULL', amount: 3000 }, settings)).toBe('Pay in full — ₱3,000.00')
-    expect(optionLabel({ key: 'DOWN', amount: 1500 }, settings)).toBe('Pay 50% down payment — ₱1,500.00')
+    expect(optionLabel({ key: 'DOWN', amount: 1500 }, settings)).toBe('Pay 40% down payment — ₱1,500.00')
     expect(optionLabel({ key: 'DOWN', amount: 500 }, { configured: true, downPaymentKind: 'FIXED', downPaymentValue: 500 })).toBe(
       'Pay down payment — ₱500.00',
     )
