@@ -20,7 +20,12 @@ process.env.JWT_SECRET ??= randomBytes(32).toString('hex');
 process.env.JWT_REFRESH_SECRET ??= randomBytes(32).toString('hex');
 
 const DB_URL = process.env.DATABASE_URL ?? '';
-const REAL_DB = DB_URL !== '' && !DB_URL.includes('127.0.0.1:5');
+// Non-localhost targets are refused unless the explicit hosted-test script
+// opts in (ALLOW_HOSTED_INTEGRATION=1).
+const ATT_HOST = DB_URL.match(/postgres(?:ql)?:\/\/[^@]*@([^:/]+)/)?.[1] ?? '';
+const ATT_LOCAL = ATT_HOST === '127.0.0.1' || ATT_HOST === 'localhost';
+const HOSTED_OK = process.env.ALLOW_HOSTED_INTEGRATION === '1';
+const REAL_DB = DB_URL !== '' && !/127\.0\.0\.1:5\//.test(DB_URL) && (ATT_LOCAL || HOSTED_OK);
 
 test(
   'attendance timestamps round-trip against the real database (codec guard)',

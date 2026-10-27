@@ -13,6 +13,19 @@ import { db } from '../../prisma/db.js'
 import { pgNumeric, pgVarchar } from '../../prisma/contract-compat.js'
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../errors/index.js'
 import { generateAuditLog } from '../../utils/audit.js'
+import * as storage from '../images/storage.js'
+import { toTemporalInstant } from '../../utils/date-time.js'
+
+/** Trim, uppercase and strip inner spaces: ' a b c123 ' -> 'ABC123'. */
+export function normalizeReference(value: string): string {
+  return value.trim().toUpperCase().replace(/\s+/g, '')
+}
+
+/** Postgres unique_violation (23505) from the ORM or the raw driver. */
+function isUniqueViolation(error: unknown): boolean {
+  const candidate = error as { code?: unknown; message?: unknown }
+  return candidate?.code === '23505' || /unique|23505/i.test(String(candidate?.message ?? ''))
+}
 
 export type PaymentChannelValue = 'ONLINE' | 'IN_PERSON'
 export type PaymentMethodValue = 'CASH' | 'GCASH'
@@ -29,7 +42,8 @@ export interface PaymentTransaction {
   channel: PaymentChannelValue
   status: 'UNVERIFIED' | 'VERIFIED' | 'REJECTED'
   referenceNo: string | null
-  proofUrl: string | null
+  /** True when a proof image is stored; the path/URL itself is never exposed. */
+  hasProof: boolean
   bookingStatus: string
   recordedBy: string | null
   verifiedBy: string | null
@@ -59,7 +73,14 @@ export interface PaymentSettingsView {
   downPaymentValue: number
 }
 
-const APPROVED_DEFAULTS = { kind: 'PERCENT' as const, value: 50 }
+// The one server-side deposit setting: new deposits are
+// round(total x DEPOSIT_PERCENT / 100) in integer centavos. The
+// payment_settings row can switch the policy (NONE/FIXED/PERCENT) but the
+// PERCENT rate always comes from here — existing payment rows are never
+// recomputed; balances always use actual verified payments.
+export const DEPOSIT_PERCENT = 40
+
+const APPROVED_DEFAULTS = { kind: 'PERCENT' as const, value: DEPOSIT_PERCENT }
 
 function cents(value: unknown): number {
   return Math.round(Number(value ?? 0) * 100)
@@ -104,7 +125,9 @@ export class PaymentsService {
       receiverName: row.receiverName ? String(row.receiverName) : null,
       accountNumberMasked: row.accountNumberMasked ? String(row.accountNumberMasked) : null,
       downPaymentKind: String(row.downPaymentKind) as PaymentSettingsView['downPaymentKind'],
-      downPaymentValue: fromCents(cents(row.downPaymentValue)),
+      // PERCENT always reports the server setting; the row value serves FIXED.
+      downPaymentValue:
+        String(row.downPaymentKind) === 'PERCENT' ? DEPOSIT_PERCENT : fromCents(cents(row.downPaymentValue)),
     }
   }
 
@@ -155,9 +178,12 @@ export class PaymentsService {
     const options: PaymentQuote['options'] = []
     if (outstanding > 0) {
       options.push({ key: 'FULL', amount: fromCents(outstanding) })
-      if (settings.downPaymentKind !== 'NONE' && settings.downPaymentValue > 0) {
+      // The deposit option exists only before a deposit exists (per the
+      // approved UX rule): once anything is verified, only FULL remains.
+      if (verifiedTotal === 0 && settings.downPaymentKind !== 'NONE' && settings.downPaymentValue > 0) {
+        // Integer centavos, no floats: deposit = round(total x percent / 100).
         const down = settings.downPaymentKind === 'PERCENT'
-          ? Math.floor((total * Math.round(settings.downPaymentValue * 100)) / 10000)
+          ? Math.round((total * DEPOSIT_PERCENT) / 100)
           : cents(settings.downPaymentValue)
         const capped = Math.min(down, outstanding)
         if (capped > 0 && capped < outstanding) {
@@ -179,7 +205,7 @@ export class PaymentsService {
   static async submitOnline(
     appointmentId: string,
     actor: { userId: string; role: string },
-    input: { option: 'FULL' | 'DOWN'; referenceNo: string; proofUrl: string; proofStoragePath: string },
+    input: { option: 'FULL' | 'DOWN'; referenceNo: string; proofStoragePath: string },
   ): Promise<PaymentTransaction> {
     if (actor.role !== 'CUSTOMER') throw new ForbiddenError('Only customers can submit online payments')
     return withAppointmentLock(appointmentId, async () => {
@@ -196,17 +222,29 @@ export class PaymentsService {
       if (!option) throw new BadRequestError('That payment option is not available for this appointment')
       const amount = option.amount
 
-      const created = await db.orm.public.Payment.create({
-        appointmentId,
-        amount: pgNumeric(amount.toFixed(2)),
-        paymentMethod: 'GCASH',
-        channel: 'ONLINE',
-        status: 'UNVERIFIED',
-        referenceNo: pgVarchar<100>(input.referenceNo),
-        proofUrl: pgVarchar<500>(input.proofUrl),
-        proofStoragePath: pgVarchar<500>(input.proofStoragePath),
-        recordedBy: actor.userId,
-      })
+      // Only the object path is stored — never a public URL. `proof_url` holds
+      // the same path value so the live `online_payment_requires_proof` check
+      // (reference AND proof present for ONLINE rows) keeps holding without a
+      // schema change; it is not a URL.
+      let created: Record<string, unknown>
+      try {
+        created = await db.orm.public.Payment.create({
+          appointmentId,
+          amount: pgNumeric(amount.toFixed(2)),
+          paymentMethod: 'GCASH',
+          channel: 'ONLINE',
+          status: 'UNVERIFIED',
+          referenceNo: pgVarchar<100>(normalizeReference(input.referenceNo)),
+          proofUrl: pgVarchar<500>(input.proofStoragePath),
+          proofStoragePath: pgVarchar<500>(input.proofStoragePath),
+          recordedBy: actor.userId,
+        })
+      } catch (error) {
+        if (isUniqueViolation(error)) {
+          throw new ConflictError('That payment reference has already been used.')
+        }
+        throw error
+      }
       await generateAuditLog({
         actorAccountId: actor.userId,
         action: 'SUBMIT_ONLINE_PAYMENT',
@@ -238,17 +276,26 @@ export class PaymentsService {
         throw new ConflictError('The amount exceeds the outstanding balance')
       }
       // Money received in person is accepted immediately: recorded = verified.
-      const created = await db.orm.public.Payment.create({
-        appointmentId: input.appointmentId,
-        amount: pgNumeric(amount.toFixed(2)),
-        paymentMethod: input.method,
-        channel: 'IN_PERSON',
-        status: 'VERIFIED',
-        referenceNo: input.referenceNo ? pgVarchar<100>(input.referenceNo) : null,
-        recordedBy: actor.userId,
-        verifiedBy: actor.userId,
-        verifiedAt: new Date(),
-      })
+      let created: Record<string, unknown>
+      try {
+        created = await db.orm.public.Payment.create({
+          appointmentId: input.appointmentId,
+          amount: pgNumeric(amount.toFixed(2)),
+          paymentMethod: input.method,
+          channel: 'IN_PERSON',
+          status: 'VERIFIED',
+          referenceNo: input.referenceNo ? pgVarchar<100>(normalizeReference(input.referenceNo)) : null,
+          recordedBy: actor.userId,
+          verifiedBy: actor.userId,
+          // Temporal codec: timestamptz columns take Temporal.Instant, not Date.
+          verifiedAt: toTemporalInstant(new Date()),
+        })
+      } catch (error) {
+        if (isUniqueViolation(error)) {
+          throw new ConflictError('That payment reference has already been used.')
+        }
+        throw error
+      }
       await generateAuditLog({
         actorAccountId: actor.userId,
         action: 'RECORD_IN_PERSON_PAYMENT',
@@ -277,7 +324,8 @@ export class PaymentsService {
     const updated = await db.orm.public.Payment.where({ id: paymentId }).update({
       status,
       verifiedBy: actor.userId,
-      verifiedAt: new Date(),
+      // Temporal codec: timestamptz columns take Temporal.Instant, not Date.
+      verifiedAt: toTemporalInstant(new Date()),
     })
     await generateAuditLog({
       actorAccountId: actor.userId,
@@ -337,6 +385,22 @@ export class PaymentsService {
     return { activities }
   }
 
+  /**
+   * Short-lived signed read URL for one payment proof. The owning customer,
+   * MANAGER and ADMIN only (STAFF excluded), after the server-side role check.
+   */
+  static async proofSignedUrl(paymentId: string, actor: { userId: string; role: string }): Promise<string> {
+    const row = await db.orm.public.Payment.where({ id: paymentId }).first()
+    if (!row) throw new NotFoundError('Payment not found')
+    const appointment = await db.orm.public.Appointment.where({ id: String(row.appointmentId) }).first()
+    if (!appointment) throw new NotFoundError('Appointment not found')
+    if (actor.role === 'STAFF') throw new ForbiddenError('Payment proofs are not available to staff accounts')
+    await this.assertCanViewAppointment(appointment, actor)
+    const path = String(row.proofStoragePath ?? row.proofUrl ?? '')
+    if (!path) throw new NotFoundError('No proof is stored for this payment')
+    return storage.signedProofUrl(path)
+  }
+
   // ---- internals ---------------------------------------------------------
 
   private static async verifiedCentsFor(appointmentId: string): Promise<number> {
@@ -384,7 +448,7 @@ export class PaymentsService {
       channel: String(row.channel) as PaymentChannelValue,
       status: String(row.status) as PaymentTransaction['status'],
       referenceNo: row.referenceNo ? String(row.referenceNo) : null,
-      proofUrl: row.proofUrl ? String(row.proofUrl) : null,
+      hasProof: Boolean(row.proofStoragePath ?? row.proofUrl),
       bookingStatus: String(appointment.status),
       recordedBy: row.recordedBy ? String(row.recordedBy) : null,
       verifiedBy: row.verifiedBy ? String(row.verifiedBy) : null,

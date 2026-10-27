@@ -10,7 +10,10 @@ function who(req: Request): { userId: string; role: string } {
   return { userId: user!.userId, role: user!.role }
 }
 
-async function storeProof(buffer: Buffer): Promise<{ url: string; storagePath: string }> {
+// Proofs go to the private payment-proofs bucket only (uploadProof refuses
+// when the bucket is missing or public). Only the object path is returned —
+// public URLs are never stored; reads mint short-lived signed URLs instead.
+async function storeProof(buffer: Buffer): Promise<{ storagePath: string }> {
   if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
     throw new BadRequestError('Attach a payment proof image (PNG or JPG).')
   }
@@ -18,8 +21,8 @@ async function storeProof(buffer: Buffer): Promise<{ url: string; storagePath: s
     throw new BadRequestError('The image is too large (10 MB maximum).')
   }
   const processed = await processUpload(buffer)
-  const storagePath = await storage.uploadImage('payments', processed.format, processed.buffer)
-  return { url: storage.publicUrlFor(storagePath), storagePath }
+  const storagePath = await storage.uploadProof(processed.format, processed.buffer)
+  return { storagePath }
 }
 
 /** GET /payments/quote/:appointmentId — server-calculated amounts. */
@@ -48,12 +51,11 @@ export async function submitOnlinePaymentController(req: Request, res: Response,
     const payment = await PaymentsService.submitOnline(String(req.params.appointmentId), actor, {
       option,
       referenceNo,
-      proofUrl: proof.url,
       proofStoragePath: proof.storagePath,
     })
     res.status(201).json({ data: { payment } })
   } catch (error) {
-    if (storedPath) await storage.deleteObject(storedPath)
+    if (storedPath) await storage.deleteProof(storedPath)
     if (error instanceof ImageRejectedError) {
       res.status(400).json({ error: { code: 'IMAGE_REJECTED', message: error.message } })
       return
@@ -102,6 +104,19 @@ export async function recordInPersonPaymentController(req: Request, res: Respons
     const body = req.body as { appointmentId: string; method: 'CASH' | 'GCASH'; amount: number; referenceNo?: string }
     const payment = await PaymentsService.recordInPerson(who(req), body)
     res.status(201).json({ data: { payment } })
+  } catch (error) {
+    next(error)
+  }
+}
+
+/**
+ * GET /payments/:id/proof — short-lived signed URL for one proof image.
+ * Owning customer, MANAGER and ADMIN only (the service enforces the role).
+ */
+export async function paymentProofController(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const url = await PaymentsService.proofSignedUrl(String(req.params.id), who(req))
+    res.json({ data: { url, expiresIn: 120 } })
   } catch (error) {
     next(error)
   }

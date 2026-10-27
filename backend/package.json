@@ -9,6 +9,7 @@
     "build": "tsc",
     "test": "tsx --test src/modules/appointments/*.test.ts src/modules/accounts/*.test.ts src/modules/auth/*.test.ts src/modules/customers/*.test.ts src/modules/services/*.test.ts src/modules/staff/*.test.ts src/modules/schedules/*.test.ts src/modules/reviews/*.test.ts src/modules/images/*.test.ts src/modules/matching/*.test.ts src/modules/attendance/*.test.ts src/modules/payments/*.test.ts src/routes/*.test.ts src/utils/*.test.ts",
     "test:integration": "tsx --test --test-force-exit --test-concurrency=4 src/test/integration/*.test.ts",
+    "test:integration:hosted": "ALLOW_HOSTED_INTEGRATION=1 tsx --test --test-force-exit src/test/integration/attendance-timestamps.integration.test.ts",
     "start": "node dist/server.js",
     "contract:emit": "prisma contract emit",
     "db:init": "prisma db init",

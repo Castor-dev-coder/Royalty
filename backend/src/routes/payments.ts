@@ -7,6 +7,7 @@ import {
   listMyPaymentsController,
   listPaymentsController,
   paymentActivityController,
+  paymentProofController,
   paymentQuoteController,
   recordInPersonPaymentController,
   submitOnlinePaymentController,
@@ -31,6 +32,7 @@ paymentsRouter.use(authenticate);
 
 // Server-calculated amounts for one appointment (owner customer + staff).
 paymentsRouter.get('/quote/:appointmentId', paymentQuoteController);
+paymentsRouter.get('/:id/proof', paymentProofController);
 
 // CUSTOMER: online GCash submission (proof image = raw body; 10 uploads/hour).
 paymentsRouter.post(
