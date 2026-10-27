@@ -60,3 +60,6 @@ coverage/
 # Local Prisma ref backups (one-off copies made before re-signing)
 backend/migrations/app/refs/*.bak
 
+
+# Agent-written reports (local only)
+backend/docs/reports/

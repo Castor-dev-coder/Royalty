@@ -49,7 +49,7 @@ Policy (as configured):
 
 1. **Online GCash — pay in full**: customer pays the server-calculated
    outstanding amount, uploads a reference number + payment proof.
-2. **Online GCash — 50% down payment**: customer pays 50% of the
+2. **Online GCash — 40% down payment**: customer pays 40% of the
    server-calculated appointment total (remaining balance due at the salon).
 3. **Pay at the salon**: nothing collected online; cash or GCash in person,
    recorded by staff after receiving the money.
@@ -62,7 +62,7 @@ total. The browser never supplies prices or deposit amounts.
 - Upload the salon's GCash **QR image** (PNG/JPG), set the **receiver name**
   and **masked account number** (e.g. `09•• ••• 1234` — never the full number).
 - Down payment policy: `NONE`, `FIXED`, or `PERCENT` with a value. The
-  approved configuration is **PERCENT = 50**. Setting `NONE` hides the
+  deposit rate is one server-side setting, **DEPOSIT_PERCENT = 40**. Setting `NONE` hides the
   down-payment option for customers.
 
 ### Verification workflow
