@@ -3,6 +3,19 @@ import { GoogleAuthService } from './google.service.js';
 import { setRefreshCookie } from '../../lib/refresh-cookie.js';
 
 /**
+ * POST /auth/google/nonce — issues a single-use sign-in nonce the client
+ * passes to Google Identity Services; it comes back inside the ID token.
+ */
+export async function googleNonceController(_req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { nonce, expiresAt } = GoogleAuthService.issueNonce();
+    res.status(200).json({ data: { nonce, expiresAt } });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
  * POST /auth/google — Google Identity sign-in (customer app only).
  * Body: { idToken, rememberMe? } (cookie-mode refresh, mirroring login).
  */

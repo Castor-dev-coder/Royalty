@@ -2,8 +2,12 @@
 // verification and CUSTOMER account creation.
 //
 // Security posture:
-//   - The token audience MUST equal GOOGLE_CLIENT_ID.
+//   - The token audience MUST equal GOOGLE_CLIENT_ID and the issuer MUST be
+//     Google; expired tokens are refused (also re-checked here even though the
+//     verifier checks them).
 //   - Only tokens with email_verified are accepted.
+//   - The token MUST carry a single-use nonce this server issued (10-minute
+//     TTL); replays and stale nonces are refused.
 //   - Accounts are looked up by the stable Google `sub` first. A matching
 //     email that is NOT linked to that Google identity is a CONTROLLED
 //     CONFLICT (409): the user must sign in with their password. Accounts are
@@ -13,6 +17,7 @@
 //     password (no account-state disclosure).
 import { db } from '../../prisma/db.js'
 import { pgVarchar } from '../../prisma/contract-compat.js'
+import { randomUUID } from 'node:crypto'
 import { ConflictError, UnauthorizedError } from '../../errors/index.js'
 import { env } from '../../config/env.js'
 import { createAccessToken, createRefreshToken } from '../../lib/jwt.js'
@@ -24,6 +29,10 @@ export interface GoogleProfile {
   emailVerified: boolean
   givenName: string | null
   familyName: string | null
+  aud: string | null
+  iss: string | null
+  exp: number | null
+  nonce: string | null
 }
 
 export interface GoogleIdVerifier {
@@ -41,6 +50,12 @@ export interface GoogleAuthResult {
 
 // Lazy default verifier (google-auth-library). Injectable for tests.
 let realVerifier: GoogleIdVerifier | null = null
+
+// Single-use sign-in nonces: issued to the client before GIS renders, bound
+// into the ID token, consumed on first use. In-memory is enough for the
+// single-instance backend; a restart simply forces clients to fetch a new one.
+export const NONCE_TTL_MS = 10 * 60 * 1000
+const issuedNonces = new Map<string, number>()
 async function defaultVerifier(): Promise<GoogleIdVerifier> {
   if (!realVerifier) {
     const { OAuth2Client } = await import('google-auth-library')
@@ -56,6 +71,10 @@ async function defaultVerifier(): Promise<GoogleIdVerifier> {
           emailVerified: payload.email_verified === true,
           givenName: payload.given_name ?? null,
           familyName: payload.family_name ?? null,
+          aud: typeof payload.aud === 'string' ? payload.aud : null,
+          iss: typeof payload.iss === 'string' ? payload.iss : null,
+          exp: typeof payload.exp === 'number' ? payload.exp : null,
+          nonce: typeof payload.nonce === 'string' ? payload.nonce : null,
         }
       },
     }
@@ -64,9 +83,18 @@ async function defaultVerifier(): Promise<GoogleIdVerifier> {
 }
 
 export class GoogleAuthService {
+  /** Issues a single-use nonce for the Google sign-in flow. */
+  static issueNonce(options: { now?: number } = {}): { nonce: string; expiresAt: number } {
+    const now = options.now ?? Date.now()
+    const nonce = randomUUID()
+    const expiresAt = now + NONCE_TTL_MS
+    issuedNonces.set(nonce, expiresAt)
+    return { nonce, expiresAt }
+  }
+
   static async signIn(
     idToken: string,
-    options: { rememberMe?: boolean; verifier?: GoogleIdVerifier } = {},
+    options: { rememberMe?: boolean; verifier?: GoogleIdVerifier; now?: number } = {},
   ): Promise<GoogleAuthResult> {
     if (!env.GOOGLE_CLIENT_ID) {
       throw new UnauthorizedError('Google sign-in is not configured')
@@ -80,6 +108,8 @@ export class GoogleAuthService {
       throw new UnauthorizedError('Google sign-in failed')
     }
     if (!profile.emailVerified) throw new UnauthorizedError('Google sign-in failed')
+    this.assertGoogleClaims(profile, options.now ?? Date.now())
+    this.consumeNonce(profile.nonce, options.now ?? Date.now())
 
     // 1. Linked Google identity wins (email may have changed at Google).
     const byGoogle = await db.orm.public.Account.where({ googleId: pgVarchar<255>(profile.sub) }).first()
@@ -119,6 +149,23 @@ export class GoogleAuthService {
       newData: { email: profile.email },
     })
     return this.issueTokens(account, true)
+  }
+
+  private static assertGoogleClaims(profile: GoogleProfile, nowMs: number): void {
+    const allowedIssuers = new Set(['https://accounts.google.com', 'accounts.google.com'])
+    const expired = profile.exp === null || profile.exp * 1000 <= nowMs
+    if (profile.aud !== env.GOOGLE_CLIENT_ID || !allowedIssuers.has(profile.iss ?? '') || expired) {
+      throw new UnauthorizedError('Google sign-in failed')
+    }
+  }
+
+  /** Single-use consumption: unknown, missing and stale nonces all fail closed. */
+  private static consumeNonce(nonce: string | null, nowMs: number): void {
+    const expiresAt = nonce ? issuedNonces.get(nonce) : undefined
+    if (!nonce || expiresAt === undefined || expiresAt <= nowMs) {
+      throw new UnauthorizedError('Google sign-in failed')
+    }
+    issuedNonces.delete(nonce)
   }
 
   private static assertUsableCustomer(account: Record<string, unknown>): void {

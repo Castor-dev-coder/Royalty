@@ -306,6 +306,14 @@ export function googleAuthRequest(idToken, rememberMe = true) {
   })
 }
 
+/**
+ * Issues a single-use nonce for Google Identity Services; the value must be
+ * passed to GIS so it comes back inside the ID token. -> { nonce, expiresAt }.
+ */
+export function fetchGoogleNonce() {
+  return apiFetch('/auth/google/nonce', { method: 'POST', retryOn401: false })
+}
+
 export async function logoutRequest() {
   try {
     await apiFetch('/auth/logout', {

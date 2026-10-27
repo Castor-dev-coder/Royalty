@@ -50,10 +50,14 @@ const profile = (over: Record<string, unknown> = {}) => ({
   emailVerified: true,
   givenName: 'New',
   familyName: 'Customer',
+  aud: 'test-client-id.apps.googleusercontent.com',
+  iss: 'https://accounts.google.com',
+  exp: Math.floor(Date.now() / 1000) + 3600,
+  nonce: null as string | null,
   ...over,
 });
 const verifier = (over: Record<string, unknown> = {}) => ({
-  verify: async () => profile(over),
+  verify: async () => profile({ nonce: (await GoogleAuthService.issueNonce()).nonce, ...over }),
 });
 
 function seed(accounts: Row[] = [], customers: Row[] = []): void {
@@ -116,6 +120,7 @@ test('invalid tokens fail with the generic auth error', async () => {
 test('non-CUSTOMER and inactive linked accounts get the generic auth error', async () => {
   for (const account of [
     { id: 'acc-1', email: 'x@y', googleId: 'google-sub-1', role: 'STAFF', status: 'ACTIVE', passwordHash: null },
+    { id: 'acc-1', email: 'x@y', googleId: 'google-sub-1', role: 'MANAGER', status: 'ACTIVE', passwordHash: null },
     { id: 'acc-1', email: 'x@y', googleId: 'google-sub-1', role: 'CUSTOMER', status: 'DEACTIVATED', passwordHash: null },
     { id: 'acc-1', email: 'x@y', googleId: 'google-sub-1', role: 'ADMIN', status: 'ACTIVE', passwordHash: null },
   ] as Row[]) {
@@ -125,4 +130,70 @@ test('non-CUSTOMER and inactive linked accounts get the generic auth error', asy
       /Invalid email or password/,
     );
   }
+});
+
+test('a token whose nonce was never issued is rejected', async () => {
+  seed();
+  await assert.rejects(
+    () => GoogleAuthService.signIn('token', { verifier: verifier({ nonce: 'never-issued-nonce' }) }),
+    /Google sign-in failed/,
+  );
+  assert.equal(world.Account.length, 0);
+});
+
+test('a token without a nonce is rejected (clients must use an issued nonce)', async () => {
+  seed();
+  await assert.rejects(
+    () => GoogleAuthService.signIn('token', { verifier: verifier({ nonce: null }) }),
+    /Google sign-in failed/,
+  );
+  assert.equal(world.Account.length, 0);
+});
+
+test('a consumed nonce cannot be replayed', async () => {
+  seed();
+  const { nonce } = await GoogleAuthService.issueNonce();
+  const first = await GoogleAuthService.signIn('token', { verifier: verifier({ nonce }) });
+  assert.equal(first.created, true);
+  await assert.rejects(
+    () => GoogleAuthService.signIn('token', { verifier: verifier({ nonce }) }),
+    /Google sign-in failed/,
+  );
+});
+
+test('an expired nonce is rejected', async () => {
+  seed();
+  const issuedAt = Date.now();
+  const { nonce } = await GoogleAuthService.issueNonce({ now: issuedAt });
+  await assert.rejects(
+    () => GoogleAuthService.signIn('token', { verifier: verifier({ nonce }), now: issuedAt + 11 * 60 * 1000 }),
+    /Google sign-in failed/,
+  );
+});
+
+test('a token for a different audience is rejected with the generic error', async () => {
+  seed();
+  await assert.rejects(
+    () => GoogleAuthService.signIn('token', { verifier: verifier({ aud: 'other-client.apps.googleusercontent.com' }) }),
+    /Google sign-in failed/,
+  );
+  assert.equal(world.Account.length, 0);
+});
+
+test('a token from a non-Google issuer is rejected with the generic error', async () => {
+  seed();
+  await assert.rejects(
+    () => GoogleAuthService.signIn('token', { verifier: verifier({ iss: 'https://evil.example' }) }),
+    /Google sign-in failed/,
+  );
+  assert.equal(world.Account.length, 0);
+});
+
+test('an expired ID token is rejected with the generic error', async () => {
+  seed();
+  await assert.rejects(
+    () => GoogleAuthService.signIn('token', { verifier: verifier({ exp: Math.floor(Date.now() / 1000) - 60 }) }),
+    /Google sign-in failed/,
+  );
+  assert.equal(world.Account.length, 0);
 });

@@ -3,7 +3,7 @@
 // so Google options can simply hide — the app never blocks on GIS. Nothing
 // here touches web storage and no token is ever logged or persisted.
 
-import { ApiError } from './api.js'
+import { ApiError, fetchGoogleNonce } from './api.js'
 
 const GIS_SRC = 'https://accounts.google.com/gsi/client'
 
@@ -14,6 +14,13 @@ let scriptPromise = null
 // in; when the top handler leaves, the previous one takes over again.
 const credentialHandlers = []
 let initialized = false
+let initializedNonce = null
+// The server nonce binds each ID token to this app (single use, 10-minute
+// TTL). It is fetched before GIS initializes and refreshed well before the
+// TTL so a long-open dialog never sends a stale one.
+let nonceValue = null
+let nonceFetchedAt = 0
+const NONCE_REFRESH_MS = 8 * 60 * 1000
 // One Tap may be prompted at most once per page session, and never after
 // sign-in (the hosts simply stop calling this once a session exists).
 let oneTapPrompted = false
@@ -74,30 +81,51 @@ function handleCredential(response) {
   if (handler && typeof token === 'string' && token !== '') handler(token)
 }
 
+/** Resolves the current server nonce, or null when it cannot be issued. */
+function ensureNonce() {
+  if (nonceValue && Date.now() - nonceFetchedAt < NONCE_REFRESH_MS) {
+    return Promise.resolve(nonceValue)
+  }
+  return fetchGoogleNonce().then(
+    (data) => {
+      nonceValue = String(data?.nonce || '')
+      nonceFetchedAt = Date.now()
+      return nonceValue || null
+    },
+    () => null,
+  )
+}
+
 /**
- * Loads GIS and initializes it once (client id from VITE_GOOGLE_CLIENT_ID,
- * auto_select off). Resolves true when Google sign-in can be offered.
+ * Loads GIS and initializes it (client id from VITE_GOOGLE_CLIENT_ID,
+ * auto_select off, a fresh server nonce). Resolves true when Google sign-in
+ * can be offered; a missing nonce hides the Google options (fail closed).
  */
 export function ensureGoogleIdentity() {
   if (!googleSignInConfigured()) return Promise.resolve(false)
   return loadGoogleScript().then((loaded) => {
     if (!loaded) return false
-    try {
-      const id = gis()
-      if (!id) return false
-      if (!initialized) {
-        id.initialize({
-          client_id: clientId(),
-          callback: handleCredential,
-          auto_select: false,
-          cancel_on_tap_outside: true,
-        })
-        initialized = true
+    return ensureNonce().then((nonce) => {
+      if (!nonce) return false
+      try {
+        const id = gis()
+        if (!id) return false
+        if (!initialized || initializedNonce !== nonce) {
+          id.initialize({
+            client_id: clientId(),
+            callback: handleCredential,
+            auto_select: false,
+            cancel_on_tap_outside: true,
+            nonce,
+          })
+          initialized = true
+          initializedNonce = nonce
+        }
+        return true
+      } catch {
+        return false
       }
-      return true
-    } catch {
-      return false
-    }
+    })
   })
 }
 

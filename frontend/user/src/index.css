@@ -1480,3 +1480,47 @@ html[data-theme='light'] .auth-helper:hover {
     display: none;
   }
 }
+
+
+/* --- Google sign-in frame (wraps Google's own rendered button) ----------
+   The button itself is Google's and is never restyled; the frame around it
+   carries the app theme. color-scheme matches the mode so Google's iframe
+   cannot paint a mismatched rectangle behind the button. */
+.google-button-frame {
+  display: flex;
+  width: 100%;
+  min-height: 46px; /* same height as the sign-in buttons */
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border: 1px solid var(--gold);
+  border-radius: 4px; /* matches Google's rect button shape */
+  background: #131314; /* Google's dark button fill — button and frame match */
+  color-scheme: dark;
+  overflow: hidden;
+}
+
+html[data-theme='light'] .google-button-frame {
+  background: var(--color-surface);
+  border-color: #8f6c25; /* existing darker light-mode gold */
+  color-scheme: light;
+}
+
+.google-button-frame:focus-within {
+  outline: 2px solid var(--gold-bright);
+  outline-offset: 2px;
+}
+
+html[data-theme='light'] .google-button-frame:focus-within {
+  outline-color: #b08c2d;
+}
+
+.google-button-host {
+  display: flex;
+  width: 100%;
+  justify-content: center;
+}
+
+.google-button-host > div {
+  max-width: 100%;
+}
