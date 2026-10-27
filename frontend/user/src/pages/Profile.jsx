@@ -103,7 +103,8 @@ function Profile() {
               <div className="grid grid-cols-2 gap-4 max-[680px]:grid-cols-1">
                 <div className="flex flex-col gap-2">
                   <label htmlFor="firstName" className="text-xs font-medium uppercase tracking-wider text-[#918c82]">First Name</label>
-                  <input id="firstName" name="firstName" defaultValue={customer.firstName} className="w-full rounded-md border border-[rgba(212,180,92,0.3)] bg-[#0d0d0c] px-4 py-3 text-sm text-[#f4f1eb] placeholder-[#5a5550] outline-none transition-colors focus:border-(--gold)" />
+                  <input id="firstName" name="firstName" defaultValue={customer.firstName} readOnly aria-readonly="true" aria-describedby="firstName-hint" className="w-full rounded-md border border-[rgba(212,180,92,0.3)] bg-[#0d0d0c] px-4 py-3 text-sm text-[#f4f1eb] placeholder-[#5a5550] outline-none transition-colors focus:border-(--gold)" />
+                  <p id="firstName-hint" className="text-xs text-[#918c82]">Your first name is tied to your account. Contact the salon to change it.</p>
                 </div>
                 <div className="flex flex-col gap-2">
                   <label htmlFor="lastName" className="text-xs font-medium uppercase tracking-wider text-[#918c82]">Last Name</label>

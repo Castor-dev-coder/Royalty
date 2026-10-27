@@ -157,11 +157,15 @@ function Login({ onClose, onSwitch, onLogin = () => {} }) {
             Keep me logged in
           </label>
           <button
-            className="btn-pill mt-1 inline-flex min-h-[46px] w-full cursor-pointer items-center justify-center rounded-full border border-[var(--gold)] bg-[var(--gold)] px-[1.4rem] py-[0.8rem] text-[0.7rem] font-bold tracking-[0.13em] text-[#111] uppercase hover:bg-[var(--gold-bright)] disabled:cursor-default disabled:opacity-60"
+            className="btn-pill mt-1 inline-flex min-h-[46px] w-full cursor-pointer items-center justify-center gap-2 rounded-full border border-[var(--gold)] bg-[var(--gold)] px-[1.4rem] py-[0.8rem] text-[0.7rem] font-bold tracking-[0.13em] text-[#111] uppercase hover:bg-[var(--gold-bright)] active:translate-y-px motion-reduce:active:translate-y-0 disabled:cursor-wait focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--gold)]"
             disabled={submitting}
+            aria-busy={submitting}
             type="submit"
           >
-            LOG IN
+            {submitting && (
+              <span className="size-4 animate-spin rounded-full border-2 border-[#111]/30 border-t-[#111] motion-reduce:animate-none" aria-hidden="true" />
+            )}
+            {submitting ? 'Signing in…' : 'LOG IN'}
           </button>
         </form>
         {message && <p className="auth-note mt-[13px] text-center text-[0.68rem] leading-[1.5]" role="status">{message}</p>}

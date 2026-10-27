@@ -2,8 +2,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import BookingFlow from './BookingFlow.jsx'
+import { invalidatePublicCache } from '../lib/api.js'
 import { resetOutageState } from '../lib/outage.js'
-import { manilaTodayIso } from '../lib/hours.js'
+import { manilaMonthEndIso, manilaTodayIso } from '../lib/hours.js'
 
 const service = { id: 's1', name: 'Signature Haircut', durationMinutes: 60, price: 500 }
 
@@ -57,6 +58,9 @@ function nextWeekday(weekday) {
   return null
 }
 
+// Frozen before the module-level fixtures are computed so openDay/closedDay
+// stay inside the current-month booking window (2026-10-12 = a Monday).
+vi.setSystemTime(new Date('2026-10-12T01:16:00Z'))
 const openDay = nextWeekday(1) // a Monday, 09:00–18:00
 const closedDay = nextWeekday(0) // a Sunday, closed
 
@@ -118,7 +122,12 @@ function renderFlow(overrides = {}) {
 
 beforeEach(() => {
   vi.unstubAllGlobals()
+  invalidatePublicCache()
   resetOutageState()
+  // Frozen to a Monday mid-month so "next weekday" fixtures stay inside the
+  // current-month booking window in any real-world month (2026-10-12 09:16
+  // Manila). The suite stays deterministic as the real clock moves.
+  vi.setSystemTime(new Date('2026-10-12T01:16:00Z'))
   // Reduced motion: steps swap instantly instead of waiting for the swipe.
   vi.stubGlobal('matchMedia', () => ({
     matches: true,
@@ -132,6 +141,26 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  vi.useRealTimers()
+})
+
+describe('BookingFlow — booking window', () => {
+  it('bounds the date picker to the current Manila calendar month', async () => {
+    stubApi({})
+    renderFlow()
+    const dateInput = screen.getByLabelText(/^date$/i)
+    expect(dateInput.min).toBe(manilaTodayIso())
+    expect(dateInput.max).toBe(manilaMonthEndIso())
+    expect(screen.getByText(/bookings are open for .* only/i)).toBeTruthy()
+  })
+
+  it('will not submit a date outside the current Manila month', async () => {
+    stubApi({})
+    renderFlow()
+    fireEvent.change(screen.getByLabelText(/^date$/i), { target: { value: '2026-11-18' } })
+    fireEvent.click(screen.getByRole('button', { name: /review booking/i }))
+    expect(screen.queryByText(/appointment summary/i)).toBeNull()
+  })
 })
 
 describe('BookingFlow — slot matching', () => {
@@ -187,6 +216,7 @@ describe('BookingFlow — slot matching', () => {
             avgStaffRating: 4.2,
             bookingsToday: 2,
           }),
+          staffEntry('a2', 'Ava', 'Full', { coversAll: true, coversCategories: 2 }),
         ],
         reason: 'Covers all 2 categories · staff rating 4.8',
         partial: false,
@@ -203,19 +233,20 @@ describe('BookingFlow — slot matching', () => {
     expect(screen.getByText(/covers 1 of 2/)).toBeTruthy()
     expect(screen.getByText(/staff rating 4\.2 · 2 bookings that day/)).toBeTruthy()
 
-    fireEvent.click(screen.getByRole('button', { name: /alan alt/i }))
+    fireEvent.click(screen.getByRole('button', { name: /ava full/i }))
     const select = screen.getByLabelText(/preferred stylist/i)
-    await waitFor(() => expect(select.value).toBe('a1'))
+    await waitFor(() => expect(select.value).toBe('a2'))
 
     fireEvent.click(screen.getByRole('button', { name: /review booking/i }))
     await waitFor(() => expect(screen.getByText(/appointment summary/i)).toBeTruthy())
-    expect(screen.getByText(/Stylist: Alan Alt/)).toBeTruthy()
+    expect(screen.getByText(/Stylist: Ava Full/)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /confirm booking/i }))
     await waitFor(() => expect(posts.length).toBe(1))
-    expect(posts[0].staffId).toBe('a1')
+    expect(posts[0].staffId).toBe('a2')
   })
 
-  it('never auto-selects a partial match and blocks No preference with nobody available', async () => {
+  it('never auto-selects a partial match and lets review proceed but never confirms with nobody available', async () => {
+    const posts = []
     stubApi({
       matching: {
         recommended: null,
@@ -225,6 +256,7 @@ describe('BookingFlow — slot matching', () => {
         covers: 1,
         needed: 2,
       },
+      onPost: (body) => posts.push(body),
     })
     renderFlow()
     await fillSlot()
@@ -235,8 +267,15 @@ describe('BookingFlow — slot matching', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /no preference/i }))
     fireEvent.click(screen.getByRole('button', { name: /review booking/i }))
-    expect(screen.getByText('No stylist is available for this slot')).toBeTruthy()
-    expect(screen.queryByText(/appointment summary/i)).toBeNull()
+    // Unresolvable staff never traps the modal: the customer reaches review
+    // with the problem spelled out, but confirming is blocked and nothing is
+    // posted.
+    await waitFor(() => expect(screen.getByText(/appointment summary/i)).toBeTruthy())
+    expect(screen.getByText(/no stylist is available for this slot yet/i)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /confirm booking/i }))
+    await waitFor(() => expect(screen.getByText(/no stylist covers every category/i)).toBeTruthy())
+    expect(posts.length).toBe(0)
+    expect(screen.queryByText(/reference:/i)).toBeNull()
   })
 
   it('No preference falls back to the first alternative when there is no recommendation', async () => {
@@ -244,10 +283,10 @@ describe('BookingFlow — slot matching', () => {
     stubApi({
       matching: {
         recommended: null,
-        alternatives: [staffEntry('a1', 'Alan', 'Alt', { coversAll: false, coversCategories: 1 })],
+        alternatives: [staffEntry('a1', 'Alan', 'Alt', { coversAll: true, coversCategories: 2 })],
         reason: 'No stylist covers every category for this slot.',
         partial: true,
-        covers: 1,
+        covers: 2,
         needed: 2,
       },
       onPost: (body) => posts.push(body),
@@ -261,6 +300,34 @@ describe('BookingFlow — slot matching', () => {
     fireEvent.click(screen.getByRole('button', { name: /confirm booking/i }))
     await waitFor(() => expect(posts.length).toBe(1))
     expect(posts[0].staffId).toBe('a1')
+  })
+
+  it('blocks confirming a partial-coverage pick with a friendly explanation', async () => {
+    const posts = []
+    stubApi({
+      matching: {
+        recommended: staffEntry('m1', 'Mia', 'Reco'),
+        alternatives: [staffEntry('a1', 'Alan', 'Alt', { coversAll: false, coversCategories: 1 })],
+        reason: 'Covers all 2 categories · staff rating 4.8',
+        partial: false,
+        covers: 2,
+        needed: 2,
+      },
+      onPost: (body) => posts.push(body),
+    })
+    renderFlow()
+    await fillSlot()
+    await waitFor(() => expect(screen.getByRole('button', { name: /change stylist/i })).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: /change stylist/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Alan Alt/i }))
+    fireEvent.click(screen.getByRole('button', { name: /review booking/i }))
+    // The concern is spelled out up front and nothing is lost.
+    await waitFor(() => expect(screen.getByText(/does not cover every service/i)).toBeTruthy())
+    expect(screen.getByText(/appointment summary/i)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /confirm booking/i }))
+    await waitFor(() => expect(screen.getByText(/cover every service category/i)).toBeTruthy())
+    expect(posts.length).toBe(0)
+    expect(screen.queryByText(/reference:/i)).toBeNull()
   })
 })
 

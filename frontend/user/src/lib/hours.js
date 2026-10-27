@@ -30,6 +30,19 @@ export function manilaTodayIso() {
   return manilaNow().date
 }
 
+/**
+ * Last day ('YYYY-MM-DD') of the current Asia/Manila calendar month — the
+ * upper bound of the current-month-only booking policy. Computed from the
+ * Manila date itself, so the boundary follows the salon's calendar no matter
+ * where the browser is.
+ */
+export function manilaMonthEndIso(date = new Date()) {
+  const monthKey = manilaNow(date).date.slice(0, 7)
+  const [year, month] = monthKey.split('-').map(Number)
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate()
+  return `${monthKey}-${String(lastDay).padStart(2, '0')}`
+}
+
 /** 'Monday', 'Sunday', … for a calendar date string ('YYYY-MM-DD'). */
 export function weekdayName(date) {
   const parsed = new Date(`${date}T00:00:00Z`)

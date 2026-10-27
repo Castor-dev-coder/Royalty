@@ -3,6 +3,7 @@ import Dialog from './Dialog.jsx'
 import { ApiError, fetchPaymentQuote, submitOnlinePayment } from '../lib/api.js'
 import { makePreviewUrl, validatePhotoFile } from '../lib/reviewPhotos.js'
 import {
+  formatAmount,
   optionLabel,
   paymentFailureMessage,
   quoteSummaryRows,
@@ -35,6 +36,7 @@ function GCashPaymentDialog({ item, onClose, onSubmitted, preselectedOption = nu
 
   const [submitStatus, setSubmitStatus] = useState('idle') // idle | submitting | done
   const [submitError, setSubmitError] = useState('')
+  const [amountCopied, setAmountCopied] = useState(false)
   const submitRef = useRef(false)
   const proofRef = useRef(null)
 
@@ -230,10 +232,66 @@ function GCashPaymentDialog({ item, onClose, onSubmitted, preselectedOption = nu
                 </div>
               </div>
             ) : (
-              <p className="m-0 text-[13px] text-[#8d877c]" role="status">
-                The GCash QR code is unavailable right now.
-              </p>
+              /* Obvious non-scannable placeholder — never a fabricated QR. */
+              <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-[#4a463f] bg-[#151515] px-4 py-4" role="status">
+                <div className="grid size-[220px] place-items-center rounded-md border border-dashed border-[#4a463f] text-center">
+                  <p className="m-0 px-3 text-[12px] font-semibold uppercase tracking-[0.14em] text-[#8d877c]">
+                    QR placeholder — not scannable
+                  </p>
+                </div>
+                <p className="m-0 text-[13px] text-[#8d877c]">
+                  The salon&apos;s GCash QR has not been set up yet. Ask the salon to upload it in Admin → Payment Settings before paying online.
+                </p>
+              </div>
             )}
+
+            {/* Static QR guidance: the code carries no amount, so the customer
+                types the server's figure into GCash by hand. */}
+            <div className="flex flex-col gap-2 rounded-lg border border-[#27241f] bg-[#151515] px-4 py-4">
+              <p className="m-0 text-[13px] leading-[1.6] text-[#d8d4cb]">
+                This QR code does not include the amount. Scan it in GCash, then enter the exact amount shown
+                here yourself before sending.
+              </p>
+              {(() => {
+                const chosen = quote.options.find((option) => option.key === optionKey) ?? null
+                return (
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="m-0 text-[0.62rem] font-semibold tracking-[0.12em] text-[#918c82] uppercase">Amount to enter in GCash</p>
+                      <p className="m-0 mt-1 text-[20px] font-semibold tabular-nums text-[var(--gold)]">
+                        {chosen ? formatAmount(chosen.amount) : '—'}
+                      </p>
+                    </div>
+                    <button
+                      className="min-h-[40px] cursor-pointer rounded-full border border-[#3a352c] px-5 text-[11px] font-semibold tracking-[0.12em] text-[#d5cdbf] uppercase hover:border-[var(--gold)] hover:text-[#eeeae2] disabled:cursor-default disabled:opacity-100"
+                      disabled={!chosen}
+                      onClick={async () => {
+                        if (!chosen) return
+                        try {
+                          await navigator.clipboard.writeText(String(chosen.amount))
+                          setAmountCopied(true)
+                          setTimeout(() => setAmountCopied(false), 2000)
+                        } catch {
+                          setAmountCopied(false)
+                        }
+                      }}
+                      type="button"
+                    >
+                      {amountCopied ? 'Copied' : 'Copy amount'}
+                    </button>
+                  </div>
+                )
+              })()}
+              <p className="m-0 text-[12px] leading-[1.6] text-[#8d877c]">
+                Before sending, make sure the receiver name in GCash matches
+                {settings?.receiverName ? ` “${settings.receiverName}”` : ' the name on the salon’s GCash account'}
+                {' '}— then screenshot the confirmation and enter its reference number below.
+              </p>
+              <p className="m-0 text-[12px] leading-[1.6] text-[#8d877c]" role="note">
+                QA preview: payment testing here is for demonstration only. Opening this page or uploading a
+                screenshot does not mean the salon has confirmed your payment — staff verify every proof.
+              </p>
+            </div>
 
             <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
               <legend className="text-[0.62rem] font-semibold tracking-[0.12em] text-[#918c82] uppercase">Payment option</legend>
@@ -318,7 +376,7 @@ function GCashPaymentDialog({ item, onClose, onSubmitted, preselectedOption = nu
                           >
                             <div className="h-full rounded-full bg-[var(--gold)] transition-[width] duration-200" style={{ width: `${proof.progress}%` }} />
                           </div>
-                          <p className="m-0 mt-[4px] text-[0.62rem] text-[#aaa7a0]">Uploading… {proof.progress}%</p>
+                          <p className="m-0 mt-[4px] text-[0.62rem] text-[#aaa7a0]">Uploading receipt… {proof.progress}%</p>
                         </>
                       )}
                     </div>
@@ -365,11 +423,15 @@ function GCashPaymentDialog({ item, onClose, onSubmitted, preselectedOption = nu
               )}
 
               <button
-                className="btn-pill inline-flex min-h-[46px] w-full cursor-pointer items-center justify-center rounded-full border border-[var(--gold)] bg-[var(--gold)] px-[1.4rem] py-[0.8rem] text-[0.7rem] font-bold tracking-[0.13em] text-[#111] uppercase hover:bg-[var(--gold-bright)] disabled:cursor-default disabled:opacity-60"
+                aria-busy={submitStatus === 'submitting' ? 'true' : undefined}
+                className="btn-pill inline-flex min-h-[46px] w-full cursor-pointer items-center justify-center gap-2 rounded-full border border-[var(--gold)] bg-[var(--gold)] px-[1.4rem] py-[0.8rem] text-[0.7rem] font-bold tracking-[0.13em] text-[#111] uppercase hover:bg-[var(--gold-bright)] disabled:cursor-wait motion-reduce:[&_.animate-spin]:animate-none"
                 disabled={submitStatus === 'submitting'}
                 type="submit"
               >
-                {submitStatus === 'submitting' ? 'SUBMITTING…' : 'SUBMIT PAYMENT'}
+                {submitStatus === 'submitting' && (
+                  <span aria-hidden="true" className="size-4 animate-spin rounded-full border-2 border-[#111]/30 border-t-[#111]" />
+                )}
+                {submitStatus === 'submitting' ? 'Submitting payment…' : 'SUBMIT PAYMENT'}
               </button>
             </form>
           </>

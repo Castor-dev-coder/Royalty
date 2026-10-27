@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Dialog from './Dialog.jsx'
 import GCashPaymentDialog from './GCashPaymentDialog.jsx'
 import SafeImage from './SafeImage.jsx'
+import { categoryImage } from '../lib/categoryImage.js'
 import {
   ApiError,
   createAppointment,
@@ -13,6 +14,7 @@ import {
 import {
   hoursForDate,
   isBookableDate,
+  manilaMonthEndIso,
   manilaTodayIso,
   slotProblem,
   validSlots,
@@ -36,6 +38,15 @@ function todayIso() {
   // The salon's clock (Asia/Manila), not the browser's: a slot is "past"
   // when the salon says it is.
   return manilaTodayIso()
+}
+
+/** 'October 2026' — the month the current-month-only policy is open for. */
+function bookingMonthLabel() {
+  return new Date(`${manilaTodayIso().slice(0, 7)}-01T12:00:00Z`).toLocaleDateString('en-US', {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  })
 }
 
 // A2: show the server's own reason for a failed booking. A staffId detail
@@ -70,6 +81,9 @@ function alternativeLabel(entry, needed) {
 
 function BookingFlow({ service, user, onClose }) {
   const [step, setStep] = useState(1)
+  // Set when the customer advances with a staff/slot selection that still
+  // needs attention. Advancing is allowed; confirming is gated.
+  const [selectionWarning, setSelectionWarning] = useState('')
   const [slide, setSlide] = useState(null) // { from, to, dir } while swiping
   const [form, setForm] = useState({ staffId: '', date: '', time: '' })
   const [staff, setStaff] = useState([])
@@ -145,7 +159,10 @@ function BookingFlow({ service, user, onClose }) {
   // picker opens (A6) and again just before submit. A failed fetch leaves the
   // last known hours in place — the server is the final authority anyway.
   const loadHours = useCallback(() => {
-    return fetchBusinessHours().then(
+    // Always fresh: booking availability must reflect the live schedule (the
+    // pre-submit re-check re-reads it on purpose). The shared catalogue cache
+    // serves display-only consumers instead.
+    return fetchBusinessHours({ fresh: true }).then(
       (data) => {
         const rows = data?.businessHours ?? []
         setHours(rows)
@@ -202,6 +219,20 @@ function BookingFlow({ service, user, onClose }) {
         setMatch(result)
         setMatchStatus('ready')
         setShowAlternatives(false)
+        // A clean resolution (a matched stylist covering every service) clears
+        // a stale review-step warning; partial or unmatched picks keep theirs.
+        const resolvedId =
+          pickModeRef.current === 'none'
+            ? (result.recommended?.id ??
+              result.alternatives.find((entry) => entry.coversAll !== false)?.id ??
+              null)
+            : form.staffId || null
+        const resolvedEntry = [result.recommended, ...result.alternatives].find(
+          (entry) => entry?.id === resolvedId,
+        )
+        if (resolvedId && resolvedEntry && resolvedEntry.coversAll !== false) {
+          setSelectionWarning('')
+        }
         // A manual pick or 'No preference' survives a re-match; only the
         // automatic choice follows the recommendation.
         if (pickModeRef.current === 'recommended') {
@@ -218,6 +249,10 @@ function BookingFlow({ service, user, onClose }) {
     return () => {
       stale = true
     }
+    // Matching is keyed on date/time only; form.staffId is read through the
+    // closure for the stale-warning clear and must not re-run the fetch per
+    // staff pick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.date, form.time, service.id, matchNonce])
 
   // Total minutes the booking will occupy — the slot must fit inside hours.
@@ -264,7 +299,14 @@ function BookingFlow({ service, user, onClose }) {
   // alternative; with nobody at all the booking is blocked below.
   function resolveStaffId() {
     if (pickMode === 'none') {
-      return match?.recommended?.id ?? match?.alternatives?.[0]?.id ?? null
+      // Prefer a stylist who covers every category; a partial fallback is
+      // kept visible through the warning rather than silently booked.
+      return (
+        match?.recommended?.id ??
+        match?.alternatives?.find((entry) => entry.coversAll !== false)?.id ??
+        match?.alternatives?.[0]?.id ??
+        null
+      )
     }
     return form.staffId || null
   }
@@ -369,21 +411,31 @@ function BookingFlow({ service, user, onClose }) {
       return
     }
     const staffId = resolveStaffId()
+    // A pick outside the validated match set, or one that does not cover every
+    // service category, may be refused at booking. The customer can still
+    // review the booking; the concern is spelled out and confirming is gated.
+    const validatedIds = new Set(
+      [match?.recommended?.id, ...(match?.alternatives ?? []).map((entry) => entry.id)].filter(Boolean),
+    )
+    const needed = match?.needed ?? 0
+    const chosen = staffEntryFor(staffId)
+    const partialPick =
+      needed > 0 && chosen?.coversAll === false && match?.recommended?.id !== staffId
     if (!staffId) {
-      if (pickMode === 'none') {
-        setError('No stylist is available for this slot')
-      } else {
-        const anyoneAvailable =
-          Boolean(match?.recommended) || (match?.alternatives?.length ?? 0) > 0 || staff.length > 0
-        setError(
-          anyoneAvailable
-            ? 'Please choose a stylist before continuing.'
-            : 'No stylist is available for this slot',
-        )
-      }
-      return
+      setSelectionWarning(
+        pickMode === 'none'
+          ? 'No stylist is available for this slot yet. Choose a stylist or another time before confirming.'
+          : 'Please choose a stylist before confirming this booking.',
+      )
+    } else if ((validatedIds.size > 0 && !validatedIds.has(staffId)) || partialPick) {
+      setSelectionWarning(
+        'This stylist may not be scheduled at that time, or does not cover every service in this booking. You can still review the booking; confirm with a suitable stylist or time.',
+      )
+      setForm((current) => ({ ...current, staffId }))
+    } else {
+      setSelectionWarning('')
+      setForm((current) => ({ ...current, staffId }))
     }
-    setForm((current) => ({ ...current, staffId }))
     goToStep(2)
   }
 
@@ -433,6 +485,15 @@ function BookingFlow({ service, user, onClose }) {
       setError(matchNow?.reason || 'Please choose a stylist before booking.')
       return
     }
+    // Full category coverage is required to book: a partial match is refused
+    // here with a friendly explanation instead of a raw server rejection.
+    const neededNow = matchNow?.needed ?? 0
+    const chosenNow = staffEntryFor(staffId)
+    if (neededNow > 0 && chosenNow?.coversAll === false && matchNow?.recommended?.id !== staffId) {
+      setSubmitting(false)
+      setError("This stylist doesn't cover every service category for this booking. Please choose another stylist or another time.")
+      return
+    }
     setForm((current) => ({ ...current, staffId }))
     createAppointment({
       staffId,
@@ -476,7 +537,7 @@ function BookingFlow({ service, user, onClose }) {
 
     return (
       <div className="px-6 py-6">
-        <div className="mb-6 flex items-center gap-3 rounded border border-[rgba(212,180,92,.35)] bg-[#181612] p-3"><SafeImage className="size-14 rounded object-cover" src={undefined} alt="" /><div><p className="m-0 font-(--serif) text-lg text-[#f3eee5]">{service.name}</p><p className="m-0 mt-1 text-xs text-(--gold)\">{service.durationMinutes} MIN · {formatPeso(service.price)}</p></div></div>
+        <div className="mb-6 flex items-center gap-3 rounded border border-[rgba(212,180,92,.35)] bg-[#181612] p-3"><SafeImage className="size-14 rounded object-cover" src={categoryImage(service.categoryName)} alt="" /><div><p className="m-0 font-(--serif) text-lg text-[#f3eee5]">{service.name}</p><p className="m-0 mt-1 text-xs text-(--gold)\">{service.durationMinutes} MIN · {formatPeso(service.price)}</p></div></div>
         {staffStatus === 'missing' ? (
           <div className="grid gap-4 text-center">
             <p className="m-0 text-sm leading-6 text-[#bbb6ad]" role="alert">
@@ -487,7 +548,7 @@ function BookingFlow({ service, user, onClose }) {
         ) : number === 1 ? (
           <form className="grid gap-4" onSubmit={continueToReview}>
             <div className="grid grid-cols-2 gap-3">
-              <label className="grid gap-1 text-xs uppercase tracking-wider text-[#bcb5a9]">Date<input required type="date" min={todayIso()} value={form.date} onChange={(e) => update('date', e.target.value)} className="rounded border border-[#3a3835] bg-[#1c1b18] p-3 text-sm text-white outline-none focus:border-(--gold)" /></label>
+              <label className="grid gap-1 text-xs uppercase tracking-wider text-[#bcb5a9]">Date<input required type="date" min={todayIso()} max={manilaMonthEndIso()} value={form.date} onChange={(e) => update('date', e.target.value)} className="rounded border border-[#3a3835] bg-[#1c1b18] p-3 text-sm text-white outline-none focus:border-(--gold)" /></label>
               <div className="grid gap-1">
                 <span className="text-xs uppercase tracking-wider text-[#bcb5a9]" id="booking-time-label">Time</span>
                 <button
@@ -502,6 +563,9 @@ function BookingFlow({ service, user, onClose }) {
                 </button>
               </div>
             </div>
+            <p className="m-0 text-xs leading-5 text-[#bcb5a9]">
+              {`Bookings are open for ${bookingMonthLabel()} only.`}
+            </p>
             {pickerOpen && (
               <div className="rounded border border-[#3a3835] bg-[#1c1b18] p-3" id="booking-slot-picker">
                 {!dateValid ? (
@@ -597,6 +661,9 @@ function BookingFlow({ service, user, onClose }) {
               <p className="m-0">Stylist: {chosenStaff ? `${chosenStaff.firstName} ${chosenStaff.lastName}` : 'Assigned automatically'}</p>
               <p className="m-0">Total: <strong className="text-(--gold)\">{formatPeso(service.price)}</strong></p>
             </div>
+            {selectionWarning && (
+              <p className="m-0 rounded border border-[rgba(233,166,140,.4)] p-3 text-xs leading-5 text-[#e9a68c]" role="alert">{selectionWarning}</p>
+            )}
             <fieldset className="m-0 grid gap-2 rounded border border-[rgba(212,180,92,.25)] p-4">
               <legend className="text-[0.62rem] font-semibold tracking-[0.12em] text-[#918c82] uppercase">Payment</legend>
               {[

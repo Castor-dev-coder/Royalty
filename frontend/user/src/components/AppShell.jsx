@@ -1,5 +1,5 @@
 import { useCallback } from 'react'
-import { Outlet, useLocation } from 'react-router-dom'
+import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import OutageHost from './OutageHost.jsx'
 import ErrorBoundary from './ErrorBoundary.jsx'
 import Footer from './Footer.jsx'
@@ -17,6 +17,7 @@ function AppShell() {
   const { user, authView, login, logout, openAuth, closeAuth, switchAuth } = useAuth()
   const { showToast } = useToast()
   const location = useLocation()
+  const navigate = useNavigate()
 
   const handleLogin = useCallback(
     (nextUser) => {
@@ -27,8 +28,12 @@ function AppShell() {
           ? `Welcome, ${nextUser.name}. Your account is ready.`
           : `Welcome back, ${nextUser.name}.`,
       )
+      // Every new sign-in lands on Services (password and Google alike).
+      // Session restoration never passes through here, so refreshing the page
+      // keeps the current route.
+      navigate('/services')
     },
-    [authView, login, showToast],
+    [authView, login, navigate, showToast],
   )
 
   const handleLogout = useCallback(() => {

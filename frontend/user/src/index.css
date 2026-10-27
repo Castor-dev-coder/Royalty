@@ -1252,6 +1252,12 @@ html[data-theme='light'] .btn-pill[class~='bg-[var(--gold)]'] {
   opacity: 0.55;
 }
 
+/* While a request is in flight the spinner and label carry the signal — the
+   button keeps its full brand fill and text contrast (no dimmed loading state). */
+.btn-pill:disabled:has(.animate-spin) {
+  opacity: 1;
+}
+
 /* --- Booking progress + gold wipe transitions (P5) --- */
 
 .booking-progress {

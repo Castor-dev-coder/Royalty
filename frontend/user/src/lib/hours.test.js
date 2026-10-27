@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   candidateSlots,
   hoursForDate,
+  manilaMonthEndIso,
   manilaNow,
   slotProblem,
   validSlots,
@@ -39,6 +40,23 @@ describe('manilaNow', () => {
     expect(now.secondsOfDay).toBe(9 * 3600 + 16 * 60)
     expect(weekdayName(MONDAY)).toBe('Monday')
     expect(weekdayName(SUNDAY)).toBe('Sunday')
+  })
+})
+
+describe('manilaMonthEndIso', () => {
+  it('is the last day of the current Manila month', () => {
+    expect(manilaMonthEndIso()).toBe('2026-10-31')
+  })
+
+  it('rolls with the Manila calendar, not the UTC date', () => {
+    // 15:59 UTC on Oct 31 is still Oct 31 in Manila; 16:01 UTC is already Nov 1.
+    expect(manilaMonthEndIso(new Date('2026-10-31T15:59:00Z'))).toBe('2026-10-31')
+    expect(manilaMonthEndIso(new Date('2026-10-31T16:01:00Z'))).toBe('2026-11-30')
+  })
+
+  it('follows the leap-year rule for February', () => {
+    expect(manilaMonthEndIso(new Date('2024-02-10T04:00:00Z'))).toBe('2024-02-29')
+    expect(manilaMonthEndIso(new Date('2026-02-10T04:00:00Z'))).toBe('2026-02-28')
   })
 })
 

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import SafeImage from '../components/SafeImage.jsx'
 import WaveDivider from '../components/WaveDivider.jsx'
 import { fetchTeam } from '../lib/api.js'
+import './about-team.css'
 
 // Initials placeholder for team members without a photo.
 function initialsFor(member) {
@@ -11,6 +12,20 @@ function initialsFor(member) {
 
 function fullNameFor(member) {
   return [member.firstName, member.lastName].filter(Boolean).join(' ').trim() || 'Our team'
+}
+
+// QA demo profiles carry a fixed disclaimer sentence inside their bio. Split
+// it out so it renders as its own visible note instead of trailing body
+// text; the wording itself is preserved verbatim.
+const QA_DISCLAIMER_MARKER = 'QA demo profile'
+
+function splitBio(bio) {
+  const index = bio.indexOf(QA_DISCLAIMER_MARKER)
+  if (index === -1) return { body: bio, disclaimer: '' }
+  return {
+    body: bio.slice(0, index).trim(),
+    disclaimer: bio.slice(index).trim(),
+  }
 }
 
 function About() {
@@ -97,6 +112,7 @@ function About() {
           className="salon-atmosphere pb-16.5 max-[680px]:pb-12"
         >
           <div aria-hidden="true" className="salon-lines" />
+          <div aria-hidden="true" className="team-arcs" />
           <header className="text-center">
             <span className="mb-0.75 inline-block font-salon text-[17.5px] leading-tight font-semibold tracking-[1.3px] text-(--gold) uppercase">
               OUR TEAM
@@ -118,47 +134,67 @@ function About() {
             </p>
           )}
           {teamStatus === 'ready' && (
-            <ul className="mx-auto mt-19 grid w-[calc(100%-128px)] max-w-341 list-none grid-cols-3 gap-6 p-0 max-[980px]:grid-cols-2 max-[680px]:mt-9.5 max-[680px]:w-[calc(100%-36px)] max-[680px]:grid-cols-1">
+            <ul className="team-grid mx-auto mt-19 w-[calc(100%-128px)] max-w-341 max-[680px]:mt-9.5 max-[680px]:w-[calc(100%-36px)]">
               {team.map((member) => {
                 const name = fullNameFor(member)
                 const specialties = (member.specialties ?? []).map((specialty) => specialty.name).filter(Boolean)
                 const coveredRoles = member.coveredRoles ?? []
+                const { body: bioBody, disclaimer: bioDisclaimer } = splitBio(member.bio ?? '')
                 return (
                   <li key={member.id}>
-                    <article className="flex h-full flex-col gap-4 rounded-[18px] border border-[rgba(212,180,92,0.4)] bg-[#141311] p-7">
-                      {member.photoUrl ? (
-                        <SafeImage
-                          alt={name}
-                          className="size-20 rounded-full object-cover"
-                          src={member.photoUrl}
-                        />
-                      ) : (
-                        <div
-                          aria-hidden="true"
-                          className="grid size-20 place-items-center rounded-full border border-(--gold) font-serif text-[26px] leading-none font-semibold text-(--gold)"
-                        >
-                          {initialsFor(member)}
-                        </div>
-                      )}
-                      <div>
-                        <h3 className="m-0 font-serif text-[22px] leading-tight text-[#f6f2ea]">{name}</h3>
-                        {member.position && (
-                          <p className="m-0 mt-1.5 text-[12px] font-semibold tracking-[1.3px] text-(--gold) uppercase">
-                            {member.position}
-                          </p>
+                    <article className="team-card">
+                      <div className="team-card__photo">
+                        {member.photoUrl ? (
+                          <SafeImage
+                            alt={name}
+                            className="team-card__img"
+                            src={member.photoUrl}
+                          />
+                        ) : (
+                          <div
+                            aria-hidden="true"
+                            className="team-card__initials"
+                          >
+                            {initialsFor(member)}
+                          </div>
                         )}
                       </div>
-                      {specialties.length > 0 && (
-                        <p className="m-0 text-sm leading-[1.6] text-[#c8c3bb]">{specialties.join(' · ')}</p>
-                      )}
-                      {coveredRoles.length > 0 && (
-                        <p className="m-0 text-[11px] leading-[1.6] tracking-[1.2px] text-[#8d877c] uppercase">
-                          Covers {coveredRoles.join(' · ')}
-                        </p>
-                      )}
-                      {member.bio && (
-                        <p className="m-0 text-[14px] leading-[1.7] text-[#a7a198]">{member.bio}</p>
-                      )}
+                      <div className="team-card__body">
+                        <h3 className="team-card__name">{name}</h3>
+                        {member.position && (
+                          <p className="team-card__role">{member.position}</p>
+                        )}
+                        <span aria-hidden="true" className="team-card__rule" />
+                        {member.bio && (
+                          <>
+                            {bioBody && <p className="team-card__bio">{bioBody}</p>}
+                            {bioDisclaimer && (
+                              <p className="team-card__disclaimer">{bioDisclaimer}</p>
+                            )}
+                          </>
+                        )}
+                        {(specialties.length > 0 || coveredRoles.length > 0) && (
+                          <div className="team-card__meta">
+                            {coveredRoles.length > 0 && (
+                              <p className="team-card__covers">Covers {coveredRoles.join(' · ')}</p>
+                            )}
+                            {specialties.length > 0 && (
+                              <p className="team-card__tags">
+                                {specialties.map((specialty, index) => (
+                                  <span key={specialty}>
+                                    {index > 0 && (
+                                      <span className="team-card__tag-sep">
+                                        {' / '}
+                                      </span>
+                                    )}
+                                    {specialty}
+                                  </span>
+                                ))}
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </article>
                   </li>
                 )

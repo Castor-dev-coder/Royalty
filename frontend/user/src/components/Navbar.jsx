@@ -42,6 +42,7 @@ const signedInLinks = [
   { label: 'SERVICES', to: '/services' },
   { label: 'APPOINTMENTS', to: '/appointments' },
   { label: 'REVIEWS', to: '/reviews' },
+  { label: 'ABOUT', to: '/about' },
 ]
 
 const linkClass =

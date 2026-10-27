@@ -9,6 +9,7 @@ import { useAuth } from '../context/useAuth.jsx'
 import { useRecoveryTick } from '../lib/useOutage.js'
 import { useAutoRefresh } from '../lib/useAutoRefresh.js'
 import { NOT_MODIFIED, fetchMyAppointments, fetchServices } from '../lib/api.js'
+import { categoryImage } from '../lib/categoryImage.js'
 
 const ALL_SERVICES = 'All Services'
 
@@ -200,7 +201,7 @@ function Services() {
               <ServiceCard
                 description={service.description ?? ''}
                 duration={`${service.durationMinutes} MIN`}
-                image={undefined}
+                image={categoryImage(service.categoryName)}
                 key={service.id}
                 onBook={() => handleBook(service)}
                 price={formatPeso(service.price)}

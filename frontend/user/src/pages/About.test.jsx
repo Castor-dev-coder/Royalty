@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import About from './About.jsx'
+import { invalidatePublicCache } from '../lib/api.js'
 import { resetOutageState } from '../lib/outage.js'
 
 function jsonResponse(status, body = {}) {
@@ -23,6 +24,7 @@ function stubTeam(body, status = 200) {
 
 beforeEach(() => {
   vi.unstubAllGlobals()
+  invalidatePublicCache()
   resetOutageState()
 })
 
@@ -66,7 +68,11 @@ describe('About — Meet Our Team', () => {
     // Initials placeholder circle when photoUrl is null.
     expect(screen.getByText('MS')).toBeTruthy()
     expect(screen.getByText('Senior Stylist')).toBeTruthy()
-    expect(screen.getByText('Balayage · Updos')).toBeTruthy()
+    // Services are slash-separated tags (reference layout); the joined line
+    // lives in one paragraph whose text is split across styled spans.
+    expect(
+      screen.getByText((_, element) => element?.tagName === 'P' && element.textContent === 'Balayage / Updos'),
+    ).toBeTruthy()
     expect(screen.getByText(/Covers HAIR · NAILS/)).toBeTruthy()
     expect(screen.getByText('Twelve years behind the chair.')).toBeTruthy()
     // Never render email or phone, even when the payload carries them.
@@ -86,5 +92,44 @@ describe('About — Meet Our Team', () => {
     vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('failed to fetch') }))
     render(<About />)
     await waitFor(() => expect(screen.getByText('Our team profiles are not available yet.')).toBeTruthy())
+  })
+
+  it('keeps the QA demo disclaimers visible for the fictional QA staff', async () => {
+    stubTeam({
+      data: {
+        staff: [
+          {
+            id: 'q1',
+            firstName: 'Camille',
+            lastName: 'Rivera',
+            photoUrl: '/images/team/camille.jpg',
+            position: 'Senior Stylist',
+            bio: 'Camille Rivera takes a calm, detail-first approach to precision cutting and wearable styling. QA demo profile — illustrative demonstration content, not a real employee.',
+            specialties: [{ id: 'c1', name: 'Hair Cutting' }],
+            coveredRoles: [],
+          },
+          {
+            id: 'q2',
+            firstName: 'Marco',
+            lastName: 'Villanueva',
+            photoUrl: '/images/team/marco.jpg',
+            position: 'Hair Color Specialist',
+            bio: 'Marco Villanueva focuses on color work, from subtle root touch-ups to full transformations. QA demo profile — illustrative demonstration content, not a real employee.',
+            specialties: [{ id: 'c2', name: 'Hair Coloring' }],
+            coveredRoles: [],
+          },
+        ],
+      },
+    })
+    render(<About />)
+    await waitFor(() => expect(screen.getByText('Camille Rivera')).toBeTruthy())
+    expect(screen.getByText('Marco Villanueva')).toBeTruthy()
+    // The disclaimer renders verbatim as its own visible note on both cards.
+    expect(
+      screen.getAllByText('QA demo profile — illustrative demonstration content, not a real employee.'),
+    ).toHaveLength(2)
+    // The bio text before the disclaimer still renders in full.
+    expect(screen.getByText(/Camille Rivera takes a calm, detail-first approach/)).toBeTruthy()
+    expect(screen.getByText(/Marco Villanueva focuses on color work/)).toBeTruthy()
   })
 })

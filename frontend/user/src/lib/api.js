@@ -71,6 +71,42 @@ export const NOT_MODIFIED = Symbol.for('royalty.not-modified')
 // on conditional GETs. In-memory only; nothing is written to storage.
 const etagByPath = new Map()
 
+// --- public catalogue cache (stale-while-revalidate, in memory) ----------
+// Services, the team roster, opening hours, and the public gallery are
+// account-independent: re-entering a view serves them from memory instead of
+// refetching, and past the fresh window the stale value is served once more
+// while a background revalidation runs. Account-scoped data (appointments,
+// payments, profile) never enters this cache — those use conditional GETs
+// only. Everything here is dropped on sign-out and account switch.
+const PUBLIC_TTL_MS = 60_000
+const publicCache = new Map()
+
+function fetchPublicCached(path) {
+  const hit = publicCache.get(path)
+  const now = Date.now()
+  if (hit) {
+    if (now - hit.at < PUBLIC_TTL_MS) return Promise.resolve(hit.value)
+    // Stale: answer immediately, revalidate quietly behind the caller.
+    void apiFetch(path)
+      .then((value) => {
+        publicCache.set(path, { value, at: Date.now() })
+      })
+      .catch(() => {})
+    return Promise.resolve(hit.value)
+  }
+  return apiFetch(path).then((value) => {
+    publicCache.set(path, { value, at: Date.now() })
+    return value
+  })
+}
+
+/** Drops cached catalogue data — everything, or one path prefix. */
+export function invalidatePublicCache(prefix = '') {
+  for (const key of [...publicCache.keys()]) {
+    if (key.startsWith(prefix)) publicCache.delete(key)
+  }
+}
+
 // --- in-memory session (tokens are never written to web storage) ------------
 
 export function setSession({ user, accessToken }) {
@@ -94,6 +130,10 @@ export function getAccessToken() {
 export function clearSession() {
   memoryUser = null
   memoryToken = null
+  // Account-switch hygiene: no ETag or cached catalogue value may survive
+  // into the next user's session.
+  etagByPath.clear()
+  invalidatePublicCache()
   try {
     localStorage.removeItem(HINT_KEY)
   } catch {
@@ -338,9 +378,17 @@ export function fetchMyAppointments({ page = 1, limit = 20 } = {}) {
   return apiFetch(`/appointments/mine?page=${page}&limit=${limit}`, { conditional: true })
 }
 
-/** Public opening hours (no auth): { businessHours: [...] }. */
-export function fetchBusinessHours() {
-  return apiFetch('/schedules/business-hours')
+/**
+ * Public opening hours (no auth): { businessHours: [...] }.
+ * `fresh` bypasses and busts the catalogue cache — booking flows must always
+ * see the live schedule (the pre-submit re-check re-reads it on purpose).
+ */
+export function fetchBusinessHours({ fresh = false } = {}) {
+  if (fresh) {
+    invalidatePublicCache('/schedules/business-hours')
+    return apiFetch('/schedules/business-hours')
+  }
+  return fetchPublicCached('/schedules/business-hours')
 }
 
 export function cancelAppointmentRequest(appointmentId) {
@@ -348,7 +396,11 @@ export function cancelAppointmentRequest(appointmentId) {
 }
 
 export function submitReviewRequest(body) {
-  return apiFetch('/reviews', { method: 'POST', body })
+  return apiFetch('/reviews', { method: 'POST', body }).then((result) => {
+    // A new review changes the public gallery: drop its cached pages.
+    invalidatePublicCache('/reviews')
+    return result
+  })
 }
 
 /**
@@ -487,11 +539,11 @@ export function submitOnlinePayment(appointmentId, { option, referenceNo, file, 
 }
 
 export function fetchServices() {
-  return apiFetch('/services?limit=100')
+  return fetchPublicCached('/services?limit=100')
 }
 
 export function fetchReviewList({ page = 1, limit = 6 } = {}) {
-  return apiFetch(`/reviews?page=${page}&limit=${limit}`)
+  return fetchPublicCached(`/reviews?page=${page}&limit=${limit}`)
 }
 
 export function fetchEligibleStaff(serviceIds) {
@@ -500,7 +552,7 @@ export function fetchEligibleStaff(serviceIds) {
 
 /** Public team roster for the About page (no auth, never email/phone). */
 export function fetchTeam() {
-  return apiFetch('/staff/team')
+  return fetchPublicCached('/staff/team')
 }
 
 /**

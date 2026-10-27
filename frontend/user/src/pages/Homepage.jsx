@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import ClientsGallery from '../components/ClientsGallery.jsx'
 import EmptyState from '../components/EmptyState.jsx'
 import OurStory from '../components/OurStory.jsx'
 import ReviewsCarousel from '../components/ReviewsCarousel.jsx'
@@ -9,6 +10,7 @@ import WaveDivider from '../components/WaveDivider.jsx'
 import { useAuth } from '../context/useAuth.jsx'
 import { useRecoveryTick } from '../lib/useOutage.js'
 import { fetchReviewList, fetchServices } from '../lib/api.js'
+import { categoryImage } from '../lib/categoryImage.js'
 
 // Brand assets (not data) — they live in /public/images.
 const HERO_IMAGE = '/images/hero.jpg'
@@ -167,7 +169,7 @@ function Homepage() {
                 <ServiceCard
                   description={service.description ?? ''}
                   duration={`${service.durationMinutes} MIN`}
-                  image={undefined}
+                  image={categoryImage(service.categoryName)}
                   key={service.id}
                   onBook={handleBook}
                   price={formatPeso(service.price)}
@@ -229,13 +231,10 @@ function Homepage() {
             </h2>
             <div className="mx-auto my-[18px] h-0.5 w-12 bg-[var(--gold)] max-[680px]:my-4" />
           </header>
-          {/* No gallery endpoint exists yet — empty state instead of stock photos. */}
-          <EmptyState
-            image="/images/empty-states/empty-search.svg"
-            message="Client photos will appear here once the gallery is connected."
-            title="Gallery coming soon"
-          />
         </div>
+        {/* Gallery marquee rows bleed past the content container to the
+            section edges, so the component sits outside it. */}
+        <ClientsGallery />
       </section>
 
       <WaveDivider />
