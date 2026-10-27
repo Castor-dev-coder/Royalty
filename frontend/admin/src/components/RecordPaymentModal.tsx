@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { apiFetch, authHeader, getAccessToken } from '../api';
+import { AppointmentCodeInput } from './AppointmentCodeInput';
 import { useDialogBehavior } from './useDialogBehavior';
 import { FieldError, invalidField, formatMoney } from '../shared/ui';
 import {
@@ -57,10 +58,14 @@ export function RecordPaymentModal({
   );
 
   const matches = useMemo(() => {
+    // The search box is an appointment-code input (APT- + typed); the typed
+    // tail still matches the customer line so scanning stays easy.
     const needle = search.trim().toLowerCase();
+    const tail = needle.startsWith('apt-') ? needle.slice(4) : needle;
     const pool = needle
       ? options.filter((option) =>
-          `${option.appointmentCode} ${option.label}`.toLowerCase().includes(needle))
+          option.appointmentCode.toLowerCase().includes(needle) ||
+          option.label.toLowerCase().includes(tail))
       : options;
     return pool.slice(0, 8);
   }, [options, search]);
@@ -118,15 +123,11 @@ export function RecordPaymentModal({
 
         {!selected ? (
           <div className="record-appointment-picker">
-            <label className="field-label" htmlFor="record-payment-search">APPOINTMENT</label>
-            <input
-              id="record-payment-search"
-              className="modal-input"
-              type="search"
+            <AppointmentCodeInput
+              label="APPOINTMENT"
               value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search by appointment code…"
-              autoComplete="off"
+              onChange={setSearch}
+              placeholder="52C86F7E…"
             />
             {loadingOptions ? (
               <p className="empty-list">Loading appointments…</p>

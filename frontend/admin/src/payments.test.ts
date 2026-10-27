@@ -55,7 +55,7 @@ describe('toPaymentRow', () => {
     expect(mapped.outstanding).toBe(500);
     expect(mapped.appointmentCode).toBe('APT-0001');
     expect(mapped.referenceNo).toBe('GC-123');
-    expect(mapped.proofUrl).toBe('https://cdn.example.com/proof.png');
+    expect(mapped.hasProof).toBe(true); // the URL itself is minted on demand
   });
 
   it('normalizes method, channel and status case-insensitively', () => {
@@ -70,7 +70,7 @@ describe('toPaymentRow', () => {
     expect(mapped.paymentMethod).toBe('CASH');
     expect(mapped.channel).toBe('IN_PERSON');
     expect(mapped.status).toBe('UNVERIFIED');
-    expect(mapped.proofUrl).toBeNull();
+    expect(mapped.hasProof).toBe(false);
     expect(mapped.referenceNo).toBeNull();
     expect(mapped.amount).toBe(0);
   });
@@ -141,10 +141,10 @@ describe('settingsFormErrors', () => {
     receiverName: 'Maria Santos',
     accountNumberMasked: '0917 *** 4567',
     downPaymentKind: 'PERCENT',
-    downPaymentValue: '50',
+    downPaymentValue: '40',
   };
 
-  it('accepts the default 50 percent down payment', () => {
+  it('accepts the default 40 percent down payment', () => {
     expect(settingsFormErrors(form)).toEqual({});
   });
 
@@ -173,13 +173,13 @@ describe('settingsFormErrors', () => {
 });
 
 describe('settings display defaults', () => {
-  it('shows a 50 percent down payment when nothing is configured', () => {
+  it('shows a 40 percent down payment when nothing is configured', () => {
     const settings = toPaymentSettings({ configured: false });
     expect(settings.configured).toBe(false);
     expect(settings.downPaymentKind).toBe('PERCENT');
-    expect(settings.downPaymentValue).toBe(50);
+    expect(settings.downPaymentValue).toBe(40); // mirrors the server's DEPOSIT_PERCENT
     expect(settings.gcashQrUrl).toBeNull();
-    expect(describeDownPayment(settings.downPaymentKind, settings.downPaymentValue)).toBe('50% down payment');
+    expect(describeDownPayment(settings.downPaymentKind, settings.downPaymentValue)).toBe('40% down payment');
   });
 
   it('reads the server values when they are set', () => {

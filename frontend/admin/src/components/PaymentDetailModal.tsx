@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useDialogBehavior } from './useDialogBehavior';
 import { CustomerAvatar } from './CustomerAvatar';
 import { formatDate, formatMoney } from '../shared/ui';
 import {
   channelBadge,
   channelLabel,
+  fetchPaymentProofUrl,
   methodLabel,
   paymentHistoryFor,
   paymentStatusBadge,
@@ -42,6 +43,26 @@ export function PaymentDetailModal({
   // aside: one focus trap and one Escape handler at a time.
   const dialogRef = useDialogBehavior<HTMLElement>(onClose, !proofOpen);
   const history = paymentHistoryFor(payments, payment.appointmentId);
+  // The proof image is served by a short-lived signed URL minted on demand.
+  const [proofUrl, setProofUrl] = useState<string | null>(null);
+  const [proofError, setProofError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!payment.hasProof) return undefined;
+    let cancelled = false;
+    setProofUrl(null);
+    setProofError(null);
+    fetchPaymentProofUrl(payment.id).then(
+      (url) => {
+        if (!cancelled) setProofUrl(url);
+      },
+      () => {
+        if (!cancelled) setProofError('The proof link could not be created right now.');
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [payment.id, payment.hasProof]);
 
   return (
     <>
@@ -75,10 +96,16 @@ export function PaymentDetailModal({
 
         <div className="payment-proof">
           <h4>Payment proof</h4>
-          {payment.proofUrl ? (
-            <button type="button" className="payment-proof-thumb" onClick={() => setProofOpen(true)}>
-              <img src={payment.proofUrl} alt={proofAltText(payment.appointmentCode)} loading="lazy" />
-            </button>
+          {payment.hasProof ? (
+            proofUrl ? (
+              <button type="button" className="payment-proof-thumb" onClick={() => setProofOpen(true)}>
+                <img src={proofUrl} alt={proofAltText(payment.appointmentCode)} loading="lazy" />
+              </button>
+            ) : proofError ? (
+              <p className="empty-list">{proofError}</p>
+            ) : (
+              <p className="empty-list">Preparing the proof link…</p>
+            )
           ) : (
             <p className="empty-list">No proof image. Payments received in person as cash carry no uploaded proof.</p>
           )}
@@ -114,8 +141,8 @@ export function PaymentDetailModal({
         </div>
       </section>
     </div>
-      {proofOpen && payment.proofUrl && (
-        <PaymentProofLightbox url={payment.proofUrl} alt={proofAltText(payment.appointmentCode)} onClose={() => setProofOpen(false)} />
+      {proofOpen && proofUrl && (
+        <PaymentProofLightbox url={proofUrl} alt={proofAltText(payment.appointmentCode)} onClose={() => setProofOpen(false)} />
       )}
     </>
   );

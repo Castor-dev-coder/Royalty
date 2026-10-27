@@ -35,6 +35,7 @@ import { CheckboxMultiSelect, TagMultiSelect, ToggleSwitch } from './shared/prof
 import { CustomerAvatar } from './components/CustomerAvatar';
 import { ReviewPhotos } from './components/ReviewPhotos';
 import { PaymentDetailModal } from './components/PaymentDetailModal';
+import { AppointmentCodeInput } from './components/AppointmentCodeInput';
 import { RecordPaymentModal, type RecordPaymentOption } from './components/RecordPaymentModal';
 import { PaymentSettingsPanel } from './components/PaymentSettingsPanel';
 import {
@@ -2921,7 +2922,8 @@ function PaymentVerificationPage() {
   const navigate = useNavigate();
   const token = getAccessToken();
   const [payment, setPayment] = useState<any | null>(null);
-  const [verificationCode, setVerificationCode] = useState('');
+  // Appointment code for the manual validate step (APT- + typed part).
+  const [typedAppointmentCode, setTypedAppointmentCode] = useState('');
   const [codeError, setCodeError] = useState('');
   const [status, setStatus] = useState<'VERIFIED' | 'REJECTED' | null>(null);
   const [busy, setBusy] = useState(false);
@@ -2974,11 +2976,13 @@ function PaymentVerificationPage() {
 
   function validatePaymentCode() {
     if (!payment) return;
-    if (!/^\d{5}$/.test(verificationCode.trim())) {
-      setCodeError('Enter the five-digit code provided with this appointment.');
+    // The field carries the full appointment code (APT- + the typed part).
+    const typed = typedAppointmentCode.trim().toUpperCase();
+    if (!typed.startsWith('APT-') || typed.length <= 4) {
+      setCodeError('Enter the appointment code shown on the booking.');
       return;
     }
-    if (verificationCode.trim() !== String(payment.verificationCode ?? '')) {
+    if (typed !== String(payment.appointmentCode ?? '').toUpperCase()) {
       setCodeError('That code does not match this appointment. Check the booking reference and try again.');
       return;
     }
@@ -3011,7 +3015,14 @@ function PaymentVerificationPage() {
           <div><dt>Status</dt><dd>{payment.status === 'VERIFIED' ? 'Verified' : payment.status === 'REJECTED' ? 'Rejected' : 'Pending verification'}</dd></div>
         </dl>
         <div className="payment-verify-form">
-          <label className="field-label payment-code-field">PAYMENT CODE<input className="modal-input" inputMode="numeric" autoComplete="off" maxLength={5} value={verificationCode} onChange={(event) => { setVerificationCode(event.target.value.replace(/\D/g, '').slice(0, 5)); setCodeError(''); }} aria-describedby={codeError ? 'payment-code-error' : undefined} /></label>
+          <div className="payment-code-field">
+            <AppointmentCodeInput
+              label="APPOINTMENT CODE"
+              value={typedAppointmentCode}
+              onChange={(next) => { setTypedAppointmentCode(next); setCodeError(''); }}
+              describedBy={codeError ? 'payment-code-error' : undefined}
+            />
+          </div>
           {codeError && <p id="payment-code-error" className="form-error" role="alert">{codeError}</p>}
           {notice && <p className="table-message" role="status">{notice}</p>}
           <div className="modal-actions">

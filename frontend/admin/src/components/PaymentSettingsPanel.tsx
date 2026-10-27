@@ -172,6 +172,8 @@ export function PaymentSettingsPanel() {
               autoComplete="off"
               value={form.downPaymentValue}
               onChange={(event) => changeField('downPaymentValue', event.target.value)}
+              readOnly={form.downPaymentKind === 'PERCENT'}
+              title={form.downPaymentKind === 'PERCENT' ? 'The deposit percentage is one server-side setting.' : undefined}
               {...invalidField('payment-settings-value-error', fieldErrors.downPaymentValue)}
             />
             <FieldError id="payment-settings-value-error" message={fieldErrors.downPaymentValue} />

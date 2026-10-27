@@ -29,7 +29,8 @@ export interface PaymentRow {
   channel: PaymentChannel;
   status: PaymentStatus;
   referenceNo: string | null;
-  proofUrl: string | null;
+  /** A proof image is stored; its URL is minted on demand (signed, short-lived). */
+  hasProof: boolean;
   bookingStatus: string;
   recordedBy: string | null;
   verifiedBy: string | null;
@@ -39,6 +40,21 @@ export interface PaymentRow {
   appointmentTotal: number;
   verifiedTotal: number;
   outstanding: number;
+}
+
+/**
+ * Short-lived signed URL for one proof image (owner/manager/admin only — the
+ * server refuses staff). Never cached: the link expires in ~2 minutes.
+ */
+export async function fetchPaymentProofUrl(paymentId: string): Promise<string> {
+  const { apiFetch, authHeader, getAccessToken } = await import('./api');
+  const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+  const payload = await apiFetch(`${baseUrl}/payments/${encodeURIComponent(paymentId)}/proof`, {
+    headers: authHeader(getAccessToken()),
+  });
+  const url = String((payload as { data?: { url?: string }; url?: string })?.data?.url ?? (payload as { url?: string })?.url ?? '');
+  if (!url) throw new Error('The proof link could not be created right now.');
+  return url;
 }
 
 /** Map one API payment record to the row the payments pages render. */
@@ -58,7 +74,7 @@ export function toPaymentRow(raw: any): PaymentRow {
     channel: channel === 'ONLINE' ? 'ONLINE' : 'IN_PERSON',
     status: status === 'VERIFIED' ? 'VERIFIED' : status === 'REJECTED' ? 'REJECTED' : 'UNVERIFIED',
     referenceNo: raw?.referenceNo ? String(raw.referenceNo) : null,
-    proofUrl: raw?.proofUrl ? String(raw.proofUrl) : null,
+    hasProof: Boolean(raw?.hasProof ?? raw?.proofUrl ?? raw?.proofStoragePath),
     bookingStatus: String(raw?.bookingStatus ?? 'RESERVED'),
     recordedBy: raw?.recordedBy ? String(raw.recordedBy) : null,
     verifiedBy: raw?.verifiedBy ? String(raw.verifiedBy) : null,
@@ -180,7 +196,7 @@ export interface PaymentSettings {
 
 /** What the settings form starts from when the studio has not configured yet. */
 export const DEFAULT_DOWN_PAYMENT_KIND: DownPaymentKind = 'PERCENT';
-export const DEFAULT_DOWN_PAYMENT_VALUE = 50;
+export const DEFAULT_DOWN_PAYMENT_VALUE = 40; // mirrors the server's DEPOSIT_PERCENT
 
 /** Map one API settings record; unset values fall back to the display default. */
 export function toPaymentSettings(raw: any): PaymentSettings {

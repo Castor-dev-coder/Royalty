@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useDialogBehavior } from '../components/useDialogBehavior';
 import { CustomerAvatar } from '../components/CustomerAvatar';
+import { AppointmentCodeInput } from '../components/AppointmentCodeInput';
 import { RecordPaymentModal, type RecordPaymentOption } from '../components/RecordPaymentModal';
 import { canRecordPayment } from '../payments';
 import { getAccessToken } from '../api';
@@ -78,10 +79,17 @@ export function StaffAppointmentsPanel() {
     return appointments
       .filter((appointment) => statusFilter === 'all' || appointment.status === statusFilter)
       .filter((appointment) => {
-        if (!search.trim()) return true;
+        // Appointment-code input (APT- + typed); the typed tail still matches
+        // the customer and service lines for quick scanning.
+        const needle = search.trim().toLowerCase();
+        if (!needle) return true;
+        const tail = needle.startsWith('apt-') ? needle.slice(4) : needle;
         const client = appointment.customer ? `${appointment.customer.firstName} ${appointment.customer.lastName}` : '';
         const services = appointment.services.map((service) => service.serviceName).join(' ');
-        return `${appointment.appointmentCode} ${client} ${services}`.toLowerCase().includes(search.trim().toLowerCase());
+        return (
+          appointment.appointmentCode.toLowerCase().includes(needle) ||
+          `${client} ${services}`.toLowerCase().includes(tail)
+        );
       })
       .sort((left, right) => {
         const compare = `${left.appointmentDate}T${left.startTime}`.localeCompare(`${right.appointmentDate}T${right.startTime}`);
@@ -140,14 +148,15 @@ export function StaffAppointmentsPanel() {
         className="table-panel large-table"
         actions={(
           <>
-            <input
-              aria-label="Search my appointments"
-              type="search"
-              className="search-input"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search by code, client or service…"
-            />
+            <div style={{ minWidth: 230 }}>
+              <AppointmentCodeInput
+                label="APPOINTMENT CODE"
+                value={search}
+                onChange={setSearch}
+                inputClassName="search-input"
+                placeholder="52C86F7E…"
+              />
+            </div>
             <label className="sr-only" htmlFor="staff-appointment-status">Filter by status</label>
             <select
               id="staff-appointment-status"
