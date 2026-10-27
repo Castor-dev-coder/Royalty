@@ -3,7 +3,7 @@
 // rule tests, not database tests (the hosted-DB suite is test:integration).
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
-import { test } from 'node:test';
+import { after, before, mock, test } from 'node:test';
 
 process.env.DATABASE_URL = 'postgres://route-test:***@127.0.0.1:5/route-test';
 process.env.NODE_ENV = 'test';
@@ -49,6 +49,16 @@ function table(name: string) {
 const USER = 'acc-customer';
 const STAFF_ID = 'staff-1';
 const SVC = 'svc-1';
+
+// The booking policy allows only the current calendar month (Asia/Manila) and
+// rejects the past, so the clock is frozen at the start of the fixtures'
+// month: 2099-06-15 is then both in-month and future in every run.
+before(() => {
+  mock.timers.enable({ now: Date.parse('2099-06-01T02:00:00Z'), apis: ['Date'] });
+});
+after(() => {
+  mock.timers.reset();
+});
 
 /** A far-future date so the "must be in the future" rule never interferes. */
 const DATE = '2099-06-15';

@@ -270,12 +270,12 @@ export class SchedulesService {
     requestingUserId: string
   ): Promise<BusinessHoursInfo[]> {
     if (requestingUserId === '') {
-      throw new ForbiddenError('Only administrators can manage business hours');
+      throw new ForbiddenError('Business hours management requires an administrator or manager account');
     }
 
     const requester = await db.orm.public.Account.where({ id: requestingUserId }).first();
     if (!requester || (requester.role !== 'ADMIN' && requester.role !== 'MANAGER')) {
-      throw new ForbiddenError('Only administrators can manage business hours');
+      throw new ForbiddenError('Business hours management requires an administrator or manager account');
     }
 
     // Validate input
@@ -382,7 +382,7 @@ export class SchedulesService {
   /** Get all staff schedules */
   static async getAllStaffSchedules(requestingRole: string): Promise<StaffScheduleInfo[]> {
     if (requestingRole !== 'ADMIN' && requestingRole !== 'MANAGER') {
-      throw new ForbiddenError('Only administrators can view all staff schedules');
+      throw new ForbiddenError('Viewing all staff schedules requires an administrator or manager account');
     }
 
     const schedules = await db.orm.public.StaffSchedule.orderBy((s) => s.dayOfWeek.asc()).all();
@@ -443,12 +443,12 @@ export class SchedulesService {
     requestingUserId: string
   ): Promise<StaffScheduleInfo> {
     if (requestingUserId === '') {
-      throw new ForbiddenError('Only administrators can create staff schedules');
+      throw new ForbiddenError('Creating staff schedules requires an administrator or manager account');
     }
 
     const requester = await db.orm.public.Account.where({ id: requestingUserId }).first();
     if (!requester || (requester.role !== 'ADMIN' && requester.role !== 'MANAGER')) {
-      throw new ForbiddenError('Only administrators can create staff schedules');
+      throw new ForbiddenError('Creating staff schedules requires an administrator or manager account');
     }
 
     // Validate input
@@ -543,12 +543,12 @@ export class SchedulesService {
     requestingUserId: string
   ): Promise<StaffScheduleInfo> {
     if (requestingUserId === '') {
-      throw new ForbiddenError('Only administrators can update staff schedules');
+      throw new ForbiddenError('Updating staff schedules requires an administrator or manager account');
     }
 
     const requester = await db.orm.public.Account.where({ id: requestingUserId }).first();
     if (!requester || (requester.role !== 'ADMIN' && requester.role !== 'MANAGER')) {
-      throw new ForbiddenError('Only administrators can update staff schedules');
+      throw new ForbiddenError('Updating staff schedules requires an administrator or manager account');
     }
 
     const schedule = await db.orm.public.StaffSchedule.where({ id: scheduleId }).first();
@@ -655,12 +655,12 @@ export class SchedulesService {
     requestingUserId: string
   ): Promise<void> {
     if (requestingUserId === '') {
-      throw new ForbiddenError('Only administrators can delete staff schedules');
+      throw new ForbiddenError('Deleting staff schedules requires an administrator or manager account');
     }
 
     const requester = await db.orm.public.Account.where({ id: requestingUserId }).first();
     if (!requester || (requester.role !== 'ADMIN' && requester.role !== 'MANAGER')) {
-      throw new ForbiddenError('Only administrators can delete staff schedules');
+      throw new ForbiddenError('Deleting staff schedules requires an administrator or manager account');
     }
 
     const schedule = await db.orm.public.StaffSchedule.where({ id: scheduleId }).first();
@@ -691,7 +691,7 @@ export class SchedulesService {
   /** Get all schedule requests */
   static async getAllScheduleRequests(requestingRole: string): Promise<ScheduleRequestInfo[]> {
     if (requestingRole !== 'ADMIN' && requestingRole !== 'MANAGER') {
-      throw new ForbiddenError('Only administrators can view all schedule requests');
+      throw new ForbiddenError('Viewing schedule requests requires an administrator or manager account');
     }
 
     const requests = await db.orm.public.ScheduleRequest
@@ -809,12 +809,12 @@ export class SchedulesService {
     requestingUserId: string
   ): Promise<ScheduleRequestInfo> {
     if (requestingUserId === '') {
-      throw new ForbiddenError('Only administrators can approve schedule requests');
+      throw new ForbiddenError('Approving schedule requests requires an administrator or manager account');
     }
 
     const requester = await db.orm.public.Account.where({ id: requestingUserId }).first();
     if (!requester || (requester.role !== 'ADMIN' && requester.role !== 'MANAGER')) {
-      throw new ForbiddenError('Only administrators can approve schedule requests');
+      throw new ForbiddenError('Approving schedule requests requires an administrator or manager account');
     }
 
     const request = await db.orm.public.ScheduleRequest.where({ id: requestId }).first();
@@ -863,12 +863,12 @@ export class SchedulesService {
     requestingUserId: string
   ): Promise<ScheduleRequestInfo> {
     if (requestingUserId === '') {
-      throw new ForbiddenError('Only administrators can reject schedule requests');
+      throw new ForbiddenError('Rejecting schedule requests requires an administrator or manager account');
     }
 
     const requester = await db.orm.public.Account.where({ id: requestingUserId }).first();
     if (!requester || (requester.role !== 'ADMIN' && requester.role !== 'MANAGER')) {
-      throw new ForbiddenError('Only administrators can reject schedule requests');
+      throw new ForbiddenError('Rejecting schedule requests requires an administrator or manager account');
     }
 
     const request = await db.orm.public.ScheduleRequest.where({ id: requestId }).first();

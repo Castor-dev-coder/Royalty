@@ -3,6 +3,12 @@
 // schedule covers Monday+Tuesday only, so the booking rules correctly answer
 // 400 'The chosen stylist is not scheduled at that time.' with no field-level
 // detail paths (details are for schema failures only). Fake ORM, real router.
+//
+// Since then, new bookings are also limited to the current Asia/Manila
+// calendar month, so the harness's original November dates would now be
+// rejected even earlier. The clock is frozen at 2026-10-26 08:01 Manila and
+// the scenario dates moved inside October, keeping the same diagnosis
+// (Wednesday unscheduled vs Monday scheduled) deterministic in any month.
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import http from 'node:http';
@@ -103,19 +109,23 @@ after(() => {
   (globalThis as unknown as { __server: http.Server }).__server.close();
 });
 
-async function postAppointment(body: Record<string, unknown>): Promise<{ status: number; body: Record<string, unknown> }> {
+async function postAppointment(
+  body: Record<string, unknown>,
+  token: string = customerToken,
+): Promise<{ status: number; body: Record<string, unknown> }> {
   const response = await fetch(`${baseUrl}/appointments`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${customerToken}` },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify(body),
   });
   return { status: response.status, body: await response.json() as Record<string, unknown> };
 }
 
-test('the hosted-harness request (Wednesday) is rejected as unscheduled, with no detail paths', async () => {
+test('an in-month Wednesday with no staff schedule is rejected as unscheduled, with no detail paths', async (t) => {
+  t.mock.timers.enable({ now: Date.parse('2026-10-26T00:01:00Z'), apis: ['Date'] });
   seed();
   const { status, body } = await postAppointment({
-    staffId: STAFF_ID, appointmentDate: '2026-11-18', startTime: '10:00', serviceIds: [SVC_ID],
+    staffId: STAFF_ID, appointmentDate: '2026-10-28', startTime: '10:00', serviceIds: [SVC_ID],
   });
   const error = body.error as { code: string; message: string; details?: unknown };
   assert.equal(status, 400);
@@ -135,14 +145,53 @@ test('a schema-invalid startTime gets a 400 whose detail path names the field', 
   assert.ok(error.details?.some((detail) => detail.path === 'startTime'), `expected startTime detail path, got ${JSON.stringify(error.details)}`);
 });
 
-test('the same payload on a scheduled Monday creates the appointment', async () => {
+test('the same payload on an in-month scheduled Monday creates the appointment', async (t) => {
+  t.mock.timers.enable({ now: Date.parse('2026-10-26T00:01:00Z'), apis: ['Date'] });
   seed();
   const { status, body } = await postAppointment({
-    staffId: STAFF_ID, appointmentDate: '2026-11-16', startTime: '10:00', serviceIds: [SVC_ID],
+    staffId: STAFF_ID, appointmentDate: '2026-10-26', startTime: '10:00', serviceIds: [SVC_ID],
   });
   assert.equal(status, 201);
   assert.equal(world.Appointment.length, 1, 'the appointment row must exist after create');
   assert.ok(world.AppointmentService.length >= 1, 'the service row must exist after create');
   const data = body.data as { appointment?: { appointmentCode?: string } };
-  assert.ok(data?.appointment?.appointmentCode?.startsWith('APT-'), 'the response must carry the APT- reference');
+  assert.match(data?.appointment?.appointmentCode ?? '', /^APT-\d{5}$/, 'the response must carry a five-digit APT- reference');
+});
+
+test('an out-of-month date is rejected with the calendar-month error, even when otherwise valid', async (t) => {
+  t.mock.timers.enable({ now: Date.parse('2026-10-26T00:01:00Z'), apis: ['Date'] });
+  seed();
+  const { status, body } = await postAppointment({
+    staffId: STAFF_ID, appointmentDate: '2026-11-18', startTime: '10:00', serviceIds: [SVC_ID],
+  });
+  const error = body.error as { code: string; message: string; details?: unknown };
+  assert.equal(status, 400);
+  assert.equal(error.code, 'BAD_REQUEST');
+  assert.match(error.message, /current calendar month/i);
+  assert.equal(error.details, undefined, 'business-rule 400s carry the message, not field detail paths');
+});
+
+test('a past date is rejected before any booking rule runs', async (t) => {
+  t.mock.timers.enable({ now: Date.parse('2026-10-26T00:01:00Z'), apis: ['Date'] });
+  seed();
+  const { status, body } = await postAppointment({
+    staffId: STAFF_ID, appointmentDate: '2026-10-20', startTime: '10:00', serviceIds: [SVC_ID],
+  });
+  const error = body.error as { message: string };
+  assert.equal(status, 400);
+  assert.equal(error.message, 'Appointment date and time must be in the future');
+});
+
+test('the month boundary follows the Manila calendar, not UTC', async (t) => {
+  // 2026-10-31T16:01Z is already Nov 1 in Manila: Oct 31 must be rejected.
+  t.mock.timers.enable({ now: Date.parse('2026-10-31T16:01:00Z'), apis: ['Date'] });
+  // Minted after the clock freeze, so its expiry sits inside the frozen time.
+  const token = createAccessToken({ sub: CUSTOMER_ACCOUNT, email: 'customer@example.com', role: 'CUSTOMER' });
+  seed();
+  const { status, body } = await postAppointment({
+    staffId: STAFF_ID, appointmentDate: '2026-10-31', startTime: '10:00', serviceIds: [SVC_ID],
+  }, token);
+  const error = body.error as { message: string };
+  assert.equal(status, 400);
+  assert.match(error.message, /current calendar month/i);
 });

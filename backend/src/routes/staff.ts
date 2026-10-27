@@ -4,6 +4,7 @@ import { authenticate, requireRole } from '../middleware/auth.js';
 import { validateQuery, validateRequest } from '../middleware/validator.js';
 import { createStaffSchema, eligibleStaffQuerySchema, updateOwnStaffProfileSchema, updateStaffDetailsSchema } from '../modules/staff/staff.schemas.js';
 import { listTeamController } from '../modules/staff/team.controller.js';
+import { publicCacheMiddleware } from '../utils/http.js';
 import express from 'express';
 import { rateLimit } from '../middleware/rateLimit.js';
 import { uploadStaffPhotoController } from '../modules/images/images.controller.js';
@@ -12,7 +13,8 @@ export const staffRouter = Router();
 
 // All routes require authentication
 // Public team listing for "Meet Our Team" — no sign-in, display fields only.
-staffRouter.get('/team', listTeamController);
+// Public roster (never emails/phones): safe to cache and revalidate.
+staffRouter.get('/team', publicCacheMiddleware, listTeamController);
 
 staffRouter.use(authenticate);
 

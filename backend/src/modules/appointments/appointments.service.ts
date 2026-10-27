@@ -1,4 +1,8 @@
-import { randomUUID } from 'node:crypto';
+import {
+  createWithUniqueAppointmentCode,
+  normalizeAppointmentCode,
+} from './appointment-code.js';
+import { mapWithConcurrency } from '../../utils/concurrency.js';
 import { db } from '../../prisma/db.js';
 import { categoryRatingsFromRows, computeOverallRating, type CategoryRatings } from '../reviews/reviews.rules.js';
 import { ReviewPhotosService } from '../reviews/photos.service.js';
@@ -31,6 +35,7 @@ import {
   canTransitionStatus,
   dateOnly,
   dateString,
+  assertWithinBookingMonth,
   hasAppointmentTimePassed,
   isoDayOfWeek,
   incrementTime,
@@ -272,27 +277,32 @@ export class AppointmentsService {
     }
 
     let appointmentId = '';
-    await db.transaction(async (tx: TransactionContext) => {
-      const appointment = await tx.orm.public.Appointment.create(withStaffAssignment({
-        appointmentCode: pgVarchar<40>(`APT-${randomUUID().toUpperCase()}`),
-        customerId: customer.id,
-        appointmentDate: toPlainDate(plan.appointmentDate),
-        startTime: toPlainTime(data.startTime),
-        endTime: toPlainTime(plan.endTime),
-        totalAmount: pgNumeric(plan.totalAmount),
-        status: 'RESERVED',
-      }, data.staffId));
-      appointmentId = appointment.id;
+    // Short codes (APT- + five digits) share a 100k space, so the unique
+    // constraint appointments_appointment_code_key is the race-safe backstop:
+    // a code collision re-runs the whole transaction with fresh digits.
+    await createWithUniqueAppointmentCode(async (appointmentCode) => {
+      await db.transaction(async (tx: TransactionContext) => {
+        const appointment = await tx.orm.public.Appointment.create(withStaffAssignment({
+          appointmentCode: pgVarchar<40>(appointmentCode),
+          customerId: customer.id,
+          appointmentDate: toPlainDate(plan.appointmentDate),
+          startTime: toPlainTime(data.startTime),
+          endTime: toPlainTime(plan.endTime),
+          totalAmount: pgNumeric(plan.totalAmount),
+          status: 'RESERVED',
+        }, data.staffId));
+        appointmentId = appointment.id;
 
-      for (const service of plan.services) {
-        await tx.orm.public.AppointmentService.create({
-          appointmentId: appointment.id,
-          serviceId: service.id,
-          serviceName: pgVarchar<200>(service.name),
-          price: pgNumeric(service.price),
-          durationMinutes: service.durationMinutes,
-        });
-      }
+        for (const service of plan.services) {
+          await tx.orm.public.AppointmentService.create({
+            appointmentId: appointment.id,
+            serviceId: service.id,
+            serviceName: pgVarchar<200>(service.name),
+            price: pgNumeric(service.price),
+            durationMinutes: service.durationMinutes,
+          });
+        }
+      });
     });
 
     const appointment = await db.orm.public.Appointment.where({ id: appointmentId }).first();
@@ -341,7 +351,7 @@ export class AppointmentsService {
     const appointmentsRaw = await query.offset(skip).limit(limit).all();
     const appointments = await collect(appointmentsRaw as Iterable<AppointmentRecord> | AsyncIterable<AppointmentRecord>);
     return {
-      appointments: await Promise.all(appointments.map((appointment) => this.mapAppointment(toApplicationAppointment(appointment)))),
+      appointments: await mapWithConcurrency(appointments, 3, (appointment) => this.mapAppointment(toApplicationAppointment(appointment))),
       total,
     };
   }
@@ -368,7 +378,7 @@ export class AppointmentsService {
     const appointmentsRaw = await query.offset(skip).limit(limit).all();
     const appointments = await collect(appointmentsRaw as Iterable<AppointmentRecord> | AsyncIterable<AppointmentRecord>);
     return {
-      appointments: await Promise.all(appointments.map((appointment) => this.mapAppointment(toApplicationAppointment(appointment)))),
+      appointments: await mapWithConcurrency(appointments, 3, (appointment) => this.mapAppointment(toApplicationAppointment(appointment))),
       total,
     };
   }
@@ -404,7 +414,7 @@ export class AppointmentsService {
     const appointmentsRaw = await query.offset(skip).limit(limit).all();
     const mineRecords = await collect(appointmentsRaw as Iterable<AppointmentRecord> | AsyncIterable<AppointmentRecord>);
     return {
-      appointments: await Promise.all(mineRecords.map(async (appointment): Promise<MineAppointmentInfo> => {
+      appointments: await mapWithConcurrency(mineRecords, 2, async (appointment): Promise<MineAppointmentInfo> => {
         const [mapped, review, staffRecord] = await Promise.all([
           this.mapAppointment(toApplicationAppointment(appointment)),
           db.orm.public.Review.where({ appointmentId: appointment.id }).first(),
@@ -429,7 +439,7 @@ export class AppointmentsService {
             photos: await ReviewPhotosService.visiblePhotos(String(review.id)),
           },
         };
-      })),
+      }),
       total,
     };
   }
@@ -451,7 +461,7 @@ export class AppointmentsService {
       .orderBy((appointment) => appointment.appointmentDate.desc());
     const appointmentRecords = await appointmentsRaw.offset(skip).limit(limit).all();
     const appointments = await collect(appointmentRecords as Iterable<AppointmentRecord> | AsyncIterable<AppointmentRecord>);
-    const completed = await Promise.all(appointments.map(async (appointment): Promise<CompletedAppointmentInfo> => {
+    const completed = await mapWithConcurrency(appointments, 2, async (appointment): Promise<CompletedAppointmentInfo> => {
       const [mapped, staff, review] = await Promise.all([
         this.mapAppointment(toApplicationAppointment(appointment)),
         appointment.staffId ? db.orm.public.Staff.where({ id: appointment.staffId }).first() : Promise.resolve(null),
@@ -469,7 +479,7 @@ export class AppointmentsService {
         reviewEligible: !alreadyReviewed,
         alreadyReviewed,
       };
-    }));
+    });
 
     return { appointments: completed, total };
   }
@@ -492,7 +502,7 @@ export class AppointmentsService {
     const appointmentsRaw = await query.offset(skip).limit(limit).all();
     const appointments = await collect(appointmentsRaw as Iterable<AppointmentRecord> | AsyncIterable<AppointmentRecord>);
     return {
-      appointments: await Promise.all(appointments.map(async (appointment) => {
+      appointments: await mapWithConcurrency(appointments, 2, async (appointment) => {
         const [mapped, customer] = await Promise.all([
           this.mapAppointment(toApplicationAppointment(appointment)),
           db.orm.public.Customer.where({ id: appointment.customerId }).first(),
@@ -508,13 +518,21 @@ export class AppointmentsService {
               }
             : null,
         };
-      })),
+      }),
       total,
     };
   }
 
   static async getById(appointmentId: string, requestingUserId: string, role: string): Promise<AppointmentInfo> {
-    const appointment = await db.orm.public.Appointment.where({ id: appointmentId }).first();
+    let appointment = await db.orm.public.Appointment.where({ id: appointmentId }).first();
+    if (!appointment) {
+      // Customer-facing codes resolve here too (APT-12345 and legacy
+      // APT-<UUID>), always by exact match on the unique code column.
+      const code = normalizeAppointmentCode(appointmentId);
+      if (code.startsWith('APT-') && code.length > 4) {
+        appointment = await db.orm.public.Appointment.where({ appointmentCode: pgVarchar<40>(code) }).first();
+      }
+    }
     if (!appointment) throw new NotFoundError('Appointment not found');
     await this.assertCanView(appointment, requestingUserId, role);
     return this.mapAppointment(toApplicationAppointment(appointment));
@@ -573,6 +591,9 @@ export class AppointmentsService {
   private static async getBookingPlan(data: CreateAppointmentInput): Promise<BookingPlan> {
     const requestedDate = dateOnly(data.appointmentDate);
     const localNow = localDateAndTime(new Date(), env.STUDIO_TIME_ZONE);
+    // Current-month-only policy (Asia/Manila), checked before the past-date
+    // rule so a date outside the month gets the month-specific message.
+    assertWithinBookingMonth(data.appointmentDate, localNow.date);
     if (data.appointmentDate < localNow.date ||
       (data.appointmentDate === localNow.date && data.startTime <= localNow.time)) {
       throw new BadRequestError('Appointment date and time must be in the future');

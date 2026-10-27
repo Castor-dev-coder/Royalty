@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import { validateRequest } from '../middleware/validator.js';
+import { publicCacheMiddleware } from '../utils/http.js';
 import {
   listCategoriesController,
   getCategoryController,
@@ -32,10 +33,11 @@ export const servicesRouter = Router();
 
 // All routes require authentication
 // Public browsing: the catalogue and categories need no sign-in.
-servicesRouter.get('/categories', listCategoriesController);
-servicesRouter.get('/categories/:id', getCategoryController);
-servicesRouter.get('/', listServicesController);
-servicesRouter.get('/:id', getServiceController);
+// Public catalogue: safe to cache and revalidate (see utils/http.ts).
+servicesRouter.get('/categories', publicCacheMiddleware, listCategoriesController);
+servicesRouter.get('/categories/:id', publicCacheMiddleware, getCategoryController);
+servicesRouter.get('/', publicCacheMiddleware, listServicesController);
+servicesRouter.get('/:id', publicCacheMiddleware, getServiceController);
 
 servicesRouter.use(authenticate);
 

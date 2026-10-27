@@ -340,7 +340,7 @@ test('a staff member cannot read another staff member schedule requests', async 
   await SchedulesService.getMyScheduleRequests(staffAccountId);
   await assert.rejects(
     () => SchedulesService.getAllScheduleRequests('STAFF'),
-    /Only administrators can view all schedule requests/,
+    /Viewing schedule requests requires an administrator or manager account/,
   );
 });
 

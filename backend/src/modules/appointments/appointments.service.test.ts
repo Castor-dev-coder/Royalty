@@ -1,12 +1,22 @@
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
-import { mock, test } from 'node:test';
+import { after, before, mock, test } from 'node:test';
 import { db } from '../../prisma/db.js';
 import { StaffService } from '../staff/staff.service.js';
 
 process.env.JWT_SECRET ??= randomBytes(32).toString('hex');
 process.env.JWT_REFRESH_SECRET ??= randomBytes(32).toString('hex');
 const { AppointmentsService } = await import('./appointments.service.js');
+
+// The booking policy allows only the current calendar month (Asia/Manila) and
+// rejects the past: freeze the clock at the start of the fixtures' month so
+// 2099-01-04 is both in-month and future in every run.
+before(() => {
+  mock.timers.enable({ now: Date.parse('2099-01-01T02:00:00Z'), apis: ['Date'] });
+});
+after(() => {
+  mock.timers.reset();
+});
 
 test('calendar service combines duration, schedule, reservations, and studio timezone', async (context) => {
   const serviceId = '00000000-0000-4000-8000-000000000001';

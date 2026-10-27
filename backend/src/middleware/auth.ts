@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { verifyAccessToken } from '../lib/jwt.js';
-import { UnauthorizedError } from '../errors/index.js';
+import { ForbiddenError, UnauthorizedError } from '../errors/index.js';
 
 export interface AuthenticatedRequest extends Request {
   user?: {
@@ -40,7 +40,9 @@ export function requireRole(...allowedRoles: string[]) {
     }
 
     if (!allowedRoles.includes(req.user.role)) {
-      throw new UnauthorizedError(`Access denied. Required roles: ${allowedRoles.join(' or ')}`);
+      // Authenticated but not allowed: 403 FORBIDDEN, not 401. A 401 here
+      // makes clients silently retry a refresh like an expired session.
+      throw new ForbiddenError(`Access denied. Required roles: ${allowedRoles.join(' or ')}`);
     }
 
     next();

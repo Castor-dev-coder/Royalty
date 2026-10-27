@@ -125,6 +125,37 @@ export function sumDecimalStrings(values: string[]): string {
   return fraction ? `${whole}.${fraction}` : whole;
 }
 
+/**
+ * The current-month-only booking window for a Manila calendar date.
+ *
+ * New appointments may only be booked from the first through the last day of
+ * the month the salon is currently in (Asia/Manila). The window is computed
+ * from the Manila date string itself, so the server's UTC offset and DST
+ * rules can never move the boundary.
+ */
+export function bookingMonthWindow(nowDate: string): { first: string; last: string; monthKey: string } {
+  const monthKey = normalizeDateOnly(nowDate).slice(0, 7);
+  const [year, month] = monthKey.split('-').map(Number);
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return {
+    first: `${monthKey}-01`,
+    last: `${monthKey}-${String(lastDay).padStart(2, '0')}`,
+    monthKey,
+  };
+}
+
+/**
+ * Enforces the current-month-only policy for one booking date. Throws a clear
+ * validation error when the date falls outside the current Manila month; the
+ * past-date rule is checked separately by the caller.
+ */
+export function assertWithinBookingMonth(appointmentDate: string, nowDate: string): void {
+  const window = bookingMonthWindow(nowDate);
+  if (appointmentDate < window.first || appointmentDate > window.last) {
+    throw new BadRequestError('Appointments can only be booked within the current calendar month (Asia/Manila)');
+  }
+}
+
 export function hasAppointmentTimePassed(
   appointmentDate: Date,
   appointmentTime: string,

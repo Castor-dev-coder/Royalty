@@ -22,6 +22,20 @@ export function createApp() {
   // Middleware
   app.use(express.json());
   app.use(corsMiddleware);
+  // Safe default: nothing is cacheable unless a route opts in via publicCache
+  // (see utils/http.ts). Keeps auth, appointment, payment and admin responses
+  // out of every shared cache — including error responses.
+  app.use((_req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store');
+    next();
+  });
+  // Safe default: nothing is cacheable unless a route opts in via publicCache
+  // (see utils/http.ts). Keeps auth, appointment, payment and admin responses
+  // out of every shared cache — including error responses.
+  app.use((_req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store');
+    next();
+  });
 
   // Routes
   app.get('/health', async (_req, res) => {

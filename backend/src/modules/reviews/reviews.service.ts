@@ -2,6 +2,7 @@ import { db } from '../../prisma/db.js';
 import { staffIdOf } from '../../prisma/contract-compat.js';
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../errors/index.js';
 import { fromPrismaDateString, fromPrismaTime } from '../../utils/date-time.js';
+import { mapWithConcurrency } from '../../utils/concurrency.js';
 import {
   categoryRatingsFromRows,
   computeOverallRating,
@@ -132,7 +133,9 @@ export class ReviewsService {
     const queryRecords = ordered.offset((query.page - 1) * query.limit).limit(query.limit).all() as
       Iterable<ReviewRecord> | AsyncIterable<ReviewRecord>;
     const records = await collect(queryRecords);
-    const reviews = await Promise.all(records.map((review) => this.mapReview(review)));
+    // Bounded fan-out: each mapReview runs ~5 queries, so N parallel rows
+    // would exhaust the shared connection pool (hard cap: 15 sessions).
+    const reviews = await mapWithConcurrency(records, 2, (review) => this.mapReview(review));
     return { reviews, total };
   }
 

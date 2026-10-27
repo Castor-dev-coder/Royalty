@@ -292,10 +292,11 @@ test('rejects an unauthenticated request with 401', async () => {
   assert.equal(body.error.code, 'UNAUTHORIZED');
 });
 
-test('rejects a non-CUSTOMER role with the existing requireRole status (401, by design)', async () => {
+test('rejects a non-CUSTOMER role with 403 FORBIDDEN (not 401 session expiry)', async () => {
   installFakeOrm({});
   const { status, body } = await postJson('/reviews', validBody, managerToken);
-  assert.equal(status, 401);
+  assert.equal(status, 403);
+  assert.equal(body.error.code, 'FORBIDDEN');
   assert.match(body.error.message, /Required roles: CUSTOMER/);
 });
 

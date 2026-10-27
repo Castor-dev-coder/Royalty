@@ -1,6 +1,7 @@
 import express, { Router } from 'express';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import { validateQuery, validateRequest } from '../middleware/validator.js';
+import { publicCacheMiddleware } from '../utils/http.js';
 import { rateLimit } from '../middleware/rateLimit.js';
 import { createReviewController, listReviewsController } from '../modules/reviews/reviews.controller.js';
 import { setReviewPhotoHiddenController, uploadReviewPhotoController } from '../modules/reviews/photos.controller.js';
@@ -8,7 +9,8 @@ import { createReviewSchema, reviewListQuerySchema, setReviewPhotoHiddenSchema }
 
 export const reviewsRouter = Router();
 
-reviewsRouter.get('/', validateQuery(reviewListQuerySchema), listReviewsController);
+// Public gallery: safe to cache and revalidate.
+reviewsRouter.get('/', publicCacheMiddleware, validateQuery(reviewListQuerySchema), listReviewsController);
 // Photos: raw body (magic bytes decide the type); 10 uploads/hour/account.
 reviewsRouter.post(
   '/:id/photos',
