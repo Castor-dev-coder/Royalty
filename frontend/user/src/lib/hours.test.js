@@ -7,6 +7,8 @@ import {
   slotProblem,
   validSlots,
   weekdayName,
+  formatTime12,
+  bookingWindowEndIso,
 } from './hours.js'
 
 // Mon–Sat 09:00–18:00, Sunday closed (API encoding 1..7).
@@ -121,5 +123,32 @@ describe('slotProblem', () => {
   it('is null for a bookable slot and when hours were never loaded', () => {
     expect(slotProblem({ rows: ROWS, date: MONDAY, time: '14:00', durationMinutes: 60 })).toBeNull()
     expect(slotProblem({ rows: null, date: MONDAY, time: '14:00', durationMinutes: 60 })).toBeNull()
+  })
+})
+
+describe('formatTime12', () => {
+  it('renders 12-hour times with AM/PM', () => {
+    expect(formatTime12('09:00')).toBe('9:00 AM')
+    expect(formatTime12('12:00')).toBe('12:00 PM')
+    expect(formatTime12('00:30')).toBe('12:30 AM')
+    expect(formatTime12('17:45')).toBe('5:45 PM')
+    expect(formatTime12('23:59')).toBe('11:59 PM')
+    expect(formatTime12('')).toBe('')
+  })
+})
+
+describe('bookingWindowEndIso', () => {
+  it("ends three Manila months out, on that month's last day", () => {
+    // 2026-10-12 Manila -> window through 2026-12-31
+    expect(bookingWindowEndIso(new Date('2026-10-12T01:16:00Z'))).toBe('2026-12-31')
+    // November start -> through January 31
+    expect(bookingWindowEndIso(new Date('2026-11-02T01:16:00Z'))).toBe('2027-01-31')
+    // December start rolls the year -> through February 29 (2028 is a leap year)
+    expect(bookingWindowEndIso(new Date('2027-12-05T01:16:00Z'))).toBe('2028-02-29')
+  })
+
+  it('always outlasts the current month end', () => {
+    const at = new Date('2026-10-12T01:16:00Z')
+    expect(bookingWindowEndIso(at) > manilaMonthEndIso(at)).toBe(true)
   })
 })

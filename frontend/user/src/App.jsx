@@ -23,6 +23,7 @@ const MyReviews = lazy(() => import('./pages/MyReviews.jsx'))
 const Reviews = lazy(() => import('./pages/Reviews.jsx'))
 const NotFound = lazy(() => import('./pages/NotFound.jsx'))
 const About = lazy(() => import('./pages/About.jsx'))
+const PaymentReturnPage = lazy(() => import('./pages/PaymentReturnPage.jsx'))
 
 function lazily(element, fallback) {
   return <Suspense fallback={fallback}>{element}</Suspense>
@@ -65,6 +66,10 @@ function App() {
               <Route
                 element={lazily(<About />, <ContentPageSkeleton />)}
                 path="/about"
+              />
+              <Route
+                element={lazily(<PaymentReturnPage />, <ContentPageSkeleton />)}
+                path="/payment/return"
               />
               <Route
                 element={lazily(<NotFound />, <ContentPageSkeleton />)}

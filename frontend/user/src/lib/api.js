@@ -460,6 +460,38 @@ export function uploadReviewPhoto(reviewId, file, contentType, { onProgress } = 
   })
 }
 
+// --- payments (Maya checkout) ----------------------------------------------
+
+/**
+ * Start one idempotent Maya payment attempt against a RESERVED booking:
+ * server revalidates the booking, creates a 15-minute hold plus the payment
+ * attempt (the attempt token is the idempotency key), and opens one Maya
+ * sandbox checkout. Resolves to { payment: {..., checkoutUrl} }.
+ */
+export function createMayaCheckout({ appointmentId, plan, attemptToken }) {
+  return apiFetch('/payments/maya/checkout', {
+    method: 'POST',
+    body: { appointmentId, plan, attemptToken },
+  })
+}
+
+/** Authoritative Maya payment state (server re-verifies against Maya). */
+export function fetchMayaStatus(paymentId) {
+  return apiFetch(`/payments/maya/${encodeURIComponent(paymentId)}/status`)
+}
+
+/**
+ * The Maya redirect target: verifies the payment server-side and returns
+ * { payment: {...}, outcome }. Public (the browser arrives here straight
+ * from Maya); safe to call without a session.
+ */
+export function fetchMayaReturn(paymentId, attemptToken) {
+  return apiFetch(
+    `/payments/maya/return?payment=${encodeURIComponent(paymentId)}&attempt=${encodeURIComponent(attemptToken)}`,
+    { retryOn401: false },
+  )
+}
+
 // --- payments (GCash) -------------------------------------------------------
 
 /** Public GCash payment settings (QR URL, receiver, down-payment policy). */

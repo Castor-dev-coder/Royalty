@@ -43,6 +43,32 @@ export function manilaMonthEndIso(date = new Date()) {
   return `${monthKey}-${String(lastDay).padStart(2, '0')}`
 }
 
+/**
+ * 'HH:MM' (24h) -> '9:00 AM' style display. Values sent to the server stay in
+ * 24-hour form; this is presentation only. Midnight is 12:30 AM-style.
+ */
+export function formatTime12(hhmm) {
+  const [hours, minutes] = String(hhmm ?? '').split(':').map(Number)
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return ''
+  const suffix = hours >= 12 ? 'PM' : 'AM'
+  const hour12 = hours % 12 === 0 ? 12 : hours % 12
+  return `${hour12}:${String(minutes).padStart(2, '0')} ${suffix}`
+}
+
+/**
+ * Last day ('YYYY-MM-DD') of the three-month booking window: the current
+ * Asia/Manila month plus the two following months, keeping the month-end
+ * booking-window rule.
+ */
+export function bookingWindowEndIso(date = new Date()) {
+  const [year, month] = manilaNow(date).date.slice(0, 7).split('-').map(Number)
+  const endMonth = month + 2
+  const endYear = year + Math.floor((endMonth - 1) / 12)
+  const normalizedMonth = ((endMonth - 1) % 12) + 1
+  const lastDay = new Date(Date.UTC(endYear, normalizedMonth, 0)).getUTCDate()
+  return `${endYear}-${String(normalizedMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
+}
+
 /** 'Monday', 'Sunday', … for a calendar date string ('YYYY-MM-DD'). */
 export function weekdayName(date) {
   const parsed = new Date(`${date}T00:00:00Z`)

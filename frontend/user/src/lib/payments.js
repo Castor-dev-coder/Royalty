@@ -6,6 +6,55 @@ export const PAYMENT_STATUS_LABELS = {
   UNVERIFIED: 'Awaiting verification',
   VERIFIED: 'Verified',
   REJECTED: 'Rejected',
+  // Maya checkout lifecycle (provider-confirmed).
+  PENDING: 'Awaiting payment',
+  PAID: 'Paid',
+  FAILED: 'Failed',
+  EXPIRED: 'Expired',
+}
+
+/** Payment plan label ('FULL' | 'DOWN'); amounts always come from the server. */
+export function planLabel(plan, depositPercent) {
+  if (plan === 'FULL') return 'Pay in full'
+  if (plan === 'DOWN') return depositPercent != null ? `Down payment ${depositPercent}%` : 'Down payment'
+  return ''
+}
+
+/**
+ * The payment badge for a server payment view (Maya or manual):
+ *  - 'PAID_IN_FULL'   — everything settled
+ *  - 'DOWN_PAYMENT'   — deposit settled, balance due at the salon
+ *  - 'AWAITING'       — pending payment, with the hold countdown
+ *  - 'FAILED' / 'EXPIRED' / 'REJECTED'
+ * Text is composed only from server amounts.
+ */
+export function paymentBadge(view) {
+  // Accepts both server shapes: the Maya payment view (paidTotal/totalAmount)
+  // and a payment-history row (verifiedTotal/appointmentTotal).
+  const paid = Number(view?.paidTotal ?? view?.verifiedTotal ?? 0)
+  const total = Number(view?.totalAmount ?? view?.appointmentTotal ?? 0)
+  const outstanding = Number(view?.outstanding ?? Math.max(0, total - paid))
+  const status = String(view?.status ?? '')
+  if (status === 'FAILED' || status === 'REJECTED') return { kind: 'FAILED', text: 'Payment failed' }
+  if (status === 'EXPIRED') return { kind: 'EXPIRED', text: 'Payment expired' }
+  if (outstanding <= 0 && paid > 0) return { kind: 'PAID_IN_FULL', text: 'Paid in full' }
+  if (paid > 0 && outstanding > 0) {
+    // Exact badge wording from the payment spec: "PHP" amounts, two decimals.
+    const php = (value) => `PHP ${Number(value).toFixed(2)}`
+    return {
+      kind: 'DOWN_PAYMENT',
+      text: `Down payment paid: ${php(paid)}, balance ${php(outstanding)} due at the salon`,
+    }
+  }
+  return { kind: 'AWAITING', text: 'Awaiting payment' }
+}
+
+/** Hold countdown text for a pending attempt: 'mm:ss left to pay'. */
+export function holdCountdownText(holdSecondsRemaining) {
+  const seconds = Math.max(0, Number(holdSecondsRemaining ?? 0))
+  const minutes = Math.floor(seconds / 60)
+  const rest = seconds % 60
+  return `${minutes}:${String(rest).padStart(2, '0')} left to pay`
 }
 
 /**
@@ -18,6 +67,18 @@ export function formatAmount(value) {
     return `₱${value.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   }
   return `₱${String(value ?? '')}`
+}
+
+/**
+ * One idempotency token per payment attempt. Retrying a still-PENDING
+ * attempt reuses its token (never a second attempt or checkout); a new
+ * attempt after a terminal one uses a fresh token.
+ */
+export function makeAttemptToken() {
+  return (
+    globalThis.crypto?.randomUUID?.() ??
+    `attempt-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  )
 }
 
 /** Reference number gate: required, at least 3 characters (trimmed). */
@@ -73,8 +134,11 @@ export function quoteSummaryRows(quote) {
  * bookings and anything unpaid or partly paid. Unknown outstanding (payment
  * rows still loading) keeps the button — the server quote gates the dialog.
  */
-export function shouldShowPay(status, outstanding) {
+export function shouldShowPay(status, outstanding, paid) {
   if (status === 'CANCELLED' || status === 'NO_SHOW') return false
+  // A settled down payment means the remaining balance is due AT THE SALON
+  // (the badge says so), so no online pay action is offered for it.
+  if (Number(paid ?? 0) > 0) return false
   if (outstanding === null || outstanding === undefined) return true
   return Number(outstanding) > 0
 }

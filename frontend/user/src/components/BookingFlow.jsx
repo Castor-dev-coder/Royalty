@@ -1,20 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Dialog from './Dialog.jsx'
-import GCashPaymentDialog from './GCashPaymentDialog.jsx'
 import SafeImage from './SafeImage.jsx'
 import { categoryImage } from '../lib/categoryImage.js'
 import {
   ApiError,
   createAppointment,
+  createMayaCheckout,
   fetchBusinessHours,
   fetchEligibleStaff,
   fetchMatching,
   fetchPaymentSettings,
 } from '../lib/api.js'
+import { holdCountdownText, makeAttemptToken } from '../lib/payments.js'
 import {
+  bookingWindowEndIso,
+  formatTime12,
   hoursForDate,
   isBookableDate,
-  manilaMonthEndIso,
   manilaTodayIso,
   slotProblem,
   validSlots,
@@ -40,9 +42,9 @@ function todayIso() {
   return manilaTodayIso()
 }
 
-/** 'October 2026' — the month the current-month-only policy is open for. */
-function bookingMonthLabel() {
-  return new Date(`${manilaTodayIso().slice(0, 7)}-01T12:00:00Z`).toLocaleDateString('en-US', {
+/** 'December 2026' — the last month of the three-month booking window. */
+function bookingWindowLabel() {
+  return new Date(`${bookingWindowEndIso()}T12:00:00Z`).toLocaleDateString('en-US', {
     month: 'long',
     year: 'numeric',
     timeZone: 'UTC',
@@ -89,24 +91,36 @@ function BookingFlow({ service, user, onClose }) {
   const [staffStatus, setStaffStatus] = useState('loading') // loading | ready | missing
   const [match, setMatch] = useState(null) // last GET /matching result
   const [matchStatus, setMatchStatus] = useState('idle') // idle | loading | ready | error
-  // How the stylist was chosen: 'recommended' (auto), 'manual' (explicit pick)
-  // or 'none' (No preference — resolved at submit).
-  const [pickMode, setPickMode] = useState('recommended')
-  const [showAlternatives, setShowAlternatives] = useState(false)
+  // Per-slot stylist availability for the selected date: 'checking' while the
+  // probe runs, 'bookable' when at least one eligible stylist exists, 'empty'
+  // when none can staff it (the slot is disabled and grayed), 'unknown' when
+  // the probe failed (never silently shown as available).
+  const [slotAvailability, setSlotAvailability] = useState({})
+  // Probes are cached per date|service|duration|slot: reopening the picker
+  // (which reloads hours and re-runs the probe effect) must not re-storm the
+  // matcher — the cache keeps confirmed slots instantly rendered and only new
+  // combinations are probed. Preliminary by design: the server revalidates.
+  const probeCacheRef = useRef(new Map())
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [confirmation, setConfirmation] = useState(null) // created appointment ({ id, appointmentCode })
-  // Payment choice inside the Review step: 'SALON' (default), 'FULL', 'DOWN'.
-  const [paymentPlan, setPaymentPlan] = useState('SALON')
-  // Public payment settings (configured = a QR is set) gate the GCash options.
+  // Payment choice inside the Review step: 'FULL' (default) or 'DOWN' — the
+  // two Maya checkout options. The amounts are display-only; the server
+  // computes the authoritative amount in integer centavos.
+  const [paymentPlan, setPaymentPlan] = useState('FULL')
+  // Public payment settings supply the server's deposit percent.
   const [paySettings, setPaySettings] = useState(null)
   // The deposit percent is a server setting the UI reads, never a local guess.
   const depositPercent = paySettings?.downPaymentKind === 'PERCENT' ? paySettings.downPaymentValue : null
-  // Opened on the Confirmed step when a GCash plan was chosen.
-  const [payDialogOpen, setPayDialogOpen] = useState(false)
-  // True only after the backend stored the payment proof. The result screen
-  // must never claim a received or verified payment before that.
-  const [proofSubmitted, setProofSubmitted] = useState(false)
+  // The created Maya payment attempt (server view) while the checkout runs.
+  const [mayaPayment, setMayaPayment] = useState(null)
+  // True while the Maya checkout is being created (button spinner).
+  const [startingPayment, setStartingPayment] = useState(false)
+  // Hold countdown (seconds) while payment is pending.
+  const [holdSeconds, setHoldSeconds] = useState(null)
+  // One attempt token per booking submission: a retried checkout reuses it,
+  // so the backend can never create a second payment attempt.
+  const attemptTokenRef = useRef(null)
   // Shop hours drive the slot picker (GET /schedules/business-hours).
   const [hours, setHours] = useState(null) // business-hours rows, or null unknown
   const [hoursStatus, setHoursStatus] = useState('idle') // idle | loading | ready | error
@@ -116,9 +130,6 @@ function BookingFlow({ service, user, onClose }) {
   const transitioningRef = useRef(false)
   const slideTimerRef = useRef(null)
   const contentRef = useRef(null)
-  // The matching effect must not re-run when the pick mode changes, so it
-  // reads the current mode through a ref instead of state.
-  const pickModeRef = useRef('recommended')
 
   // Payment settings decide whether the GCash options are available at all.
   useEffect(() => {
@@ -136,10 +147,6 @@ function BookingFlow({ service, user, onClose }) {
     }
   }, [])
 
-  function applyPickMode(mode) {
-    pickModeRef.current = mode
-    setPickMode(mode)
-  }
 
   // The step shown in the header/progress during a swipe is the target step,
   // so the indicator moves in sync with the content the customer is moving to.
@@ -220,39 +227,20 @@ function BookingFlow({ service, user, onClose }) {
         }
         setMatch(result)
         setMatchStatus('ready')
-        setShowAlternatives(false)
-        // The only picks this match validates: the recommendation and its
-        // alternatives. Anything else was chosen against a different slot.
+        // The customer picks explicitly — nothing is auto-selected. A pick
+        // that the fresh match no longer validates (different slot, no longer
+        // available, no longer full-coverage) is cleared instead of silently
+        // kept, and the warning that belonged to it goes too.
         const eligibleIds = new Set(
-          [result.recommended?.id, ...result.alternatives.map((entry) => entry.id)].filter(Boolean),
+          [result.recommended, ...result.alternatives]
+            .filter((entry) => entry && entry.coversAll !== false)
+            .map((entry) => entry.id),
         )
-        // A clean resolution (a matched stylist covering every service) clears
-        // a stale review-step warning; partial or unmatched picks keep theirs.
-        const resolvedId =
-          pickModeRef.current === 'none'
-            ? (result.recommended?.id ??
-              result.alternatives.find((entry) => entry.coversAll !== false)?.id ??
-              null)
-            : form.staffId || null
-        const resolvedEntry = [result.recommended, ...result.alternatives].find(
-          (entry) => entry?.id === resolvedId,
-        )
-        if (resolvedId && resolvedEntry && resolvedEntry.coversAll !== false) {
-          setSelectionWarning('')
-        }
-        // A manual pick or 'No preference' survives a re-match; only the
-        // automatic choice follows the recommendation.
-        if (pickModeRef.current === 'recommended') {
-          setForm((current) => ({
-            ...current,
-            staffId: result.recommended ? result.recommended.id : '',
-          }))
-        } else if (form.staffId && !eligibleIds.has(form.staffId)) {
-          // The chosen stylist is not validated for this slot: reset the
-          // selection instead of silently keeping an unverified pick, and
-          // drop the warning that was about the old pick.
+        if (form.staffId && !eligibleIds.has(form.staffId)) {
           setSelectionWarning('')
           setForm((current) => ({ ...current, staffId: '' }))
+        } else if (form.staffId) {
+          setSelectionWarning('')
         }
       },
       () => {
@@ -277,6 +265,53 @@ function BookingFlow({ service, user, onClose }) {
   // Total minutes the booking will occupy — the slot must fit inside hours.
   const durationMinutes = Number(service.durationMinutes) || 0
 
+  // Probe every visible slot against the matcher whenever the date, service
+  // or hours change, so a slot no stylist can staff is disabled and grayed
+  // out immediately instead of leading to a dead end. Probes are pooled
+  // (bounded concurrency), keyed on the current date, and cancelled on
+  // change; a failed probe reports 'unknown' and is never shown as available.
+  useEffect(() => {
+    if (!form.date || !hours || !isBookableDate(form.date)) return undefined
+    let cancelled = false
+    const list = validSlots({ rows: hours, date: form.date, durationMinutes })
+    const cacheKey = `${form.date}|${service.id}|${durationMinutes}`
+    const results = {}
+    const pending = []
+    for (const slot of list) {
+      const cached = probeCacheRef.current.get(`${cacheKey}|${slot}`)
+      if (cached) results[slot] = cached
+      else pending.push(slot)
+    }
+    // The probe-state reset is deliberately synchronous in this effect: the
+    // grid must never render one frame with the previous date's slot states.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSlotAvailability({ ...results })
+    if (!pending.length) return () => { cancelled = true }
+    let index = 0
+    // Low concurrency on purpose: the selection request must not be starved
+    // by the probe run on a slow backend (it did — 13-26s selection latency).
+    const CONCURRENCY = 2
+    async function worker() {
+      while (!cancelled && index < pending.length) {
+        const slot = pending[index]
+        index += 1
+        try {
+          const data = await fetchMatching({ serviceIds: [service.id], date: form.date, startTime: slot })
+          const candidates = [data?.recommended, ...(data?.alternatives ?? [])]
+          results[slot] = candidates.some((entry) => entry && entry.coversAll !== false) ? 'bookable' : 'empty'
+          probeCacheRef.current.set(`${cacheKey}|${slot}`, results[slot])
+        } catch {
+          results[slot] = 'unknown'
+        }
+        if (!cancelled) setSlotAvailability({ ...results })
+      }
+    }
+    void Promise.all(Array.from({ length: Math.min(CONCURRENCY, pending.length) }, () => worker()))
+    return () => {
+      cancelled = true
+    }
+  }, [form.date, service.id, hours, durationMinutes])
+
   // Starts the customer may book for the selected date (A3): inside hours,
   // whole appointment before closing, and in the future per Asia/Manila.
   const dateValid = isBookableDate(form.date)
@@ -298,51 +333,31 @@ function BookingFlow({ service, user, onClose }) {
       setForm((current) => ({ ...current, time: '', staffId: '' }))
       setMatch(null)
       setMatchStatus('idle')
-      setShowAlternatives(false)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hours, form.date, durationMinutes])
 
-  // Known staff entries from the matcher only, deduplicated. The select
-  // offers just what the matcher validated for the chosen slot (active,
-  // scheduled, available, category-checked): the recommendation and its
-  // alternatives. The raw eligible-staff list is never selectable here
-  // because its eligibility cannot be verified for this slot.
+  // Matcher-validated staff for the chosen slot only — schedule, working
+  // hours, existing bookings and specialty coverage all checked server-side —
+  // and only full-coverage members: the list shows exactly who can perform the
+  // selected service. The raw eligible-staff list is never selectable here
+  // because its eligibility is not verified for this slot.
   const selectEntries = []
   const seenIds = new Set()
   for (const entry of [match?.recommended, ...(match?.alternatives ?? [])]) {
-    if (entry && !seenIds.has(entry.id)) {
+    if (entry && entry.coversAll !== false && !seenIds.has(entry.id)) {
       seenIds.add(entry.id)
       selectEntries.push(entry)
     }
   }
 
-  // A pick the customer can actually make for this slot: the recommendation
-  // or an alternative that covers every selected service.
-  const hasEligibleStaff = Boolean(
-    matchStatus === 'ready' &&
-      (match?.recommended || (match?.alternatives ?? []).some((entry) => entry.coversAll !== false)),
-  )
+  // A pick the customer can actually make for this slot: at least one
+  // full-coverage stylist is available.
+  const hasEligibleStaff = selectEntries.length > 0
 
   function staffEntryFor(id) {
     if (!id) return null
     return selectEntries.find((entry) => entry.id === id) ?? null
-  }
-
-  // 'No preference' sends the recommendation if any, else the first
-  // alternative; with nobody at all the booking is blocked below.
-  function resolveStaffId() {
-    if (pickMode === 'none') {
-      // Prefer a stylist who covers every category; a partial fallback is
-      // kept visible through the warning rather than silently booked.
-      return (
-        match?.recommended?.id ??
-        match?.alternatives?.find((entry) => entry.coversAll !== false)?.id ??
-        match?.alternatives?.[0]?.id ??
-        null
-      )
-    }
-    return form.staffId || null
   }
 
   function update(name, value) {
@@ -357,39 +372,39 @@ function BookingFlow({ service, user, onClose }) {
       if (!nextDate || !nextTime) {
         setMatch(null)
         setMatchStatus('idle')
-        setShowAlternatives(false)
         // No slot, no match, no validation: any pick is stale and is reset.
         setForm((current) => ({ ...current, staffId: '' }))
       } else {
         setMatchStatus('loading')
-        setShowAlternatives(false)
       }
     }
   }
 
-  // The empty option means 'No preference — best available stylist', so it
-  // picks the same mode as the No preference button. A pick that covers
+  // Explicit stylist pick — the only way to choose one. A pick that covers
   // every service corrects the selection, so its stale warning goes too.
-  function onStaffChange(value) {
-    applyPickMode(value ? 'manual' : 'none')
-    setShowAlternatives(false)
-    const entry = value ? selectEntries.find((candidate) => candidate.id === value) : null
-    if (!value || (entry && entry.coversAll !== false)) setSelectionWarning('')
-    update('staffId', value)
-  }
-
-  function chooseAlternative(entry) {
-    applyPickMode('manual')
-    setShowAlternatives(false)
+  function chooseStaff(entry) {
     if (entry.coversAll !== false) setSelectionWarning('')
     update('staffId', entry.id)
   }
 
-  function chooseNoPreference() {
-    applyPickMode('none')
-    setShowAlternatives(false)
-    setSelectionWarning('')
-    update('staffId', '')
+  // A date the booking rules refuse (past, outside the three-month window, or
+  // a closed day once hours are known) never becomes the selected date: the
+  // choice is rejected with a clear message instead of silently accepted.
+  function onDateChange(value) {
+    const today = todayIso()
+    const windowEnd = bookingWindowEndIso()
+    if (value && (value < today || value > windowEnd)) {
+      setError('That date is outside the booking window. Please choose a date within the next three months.')
+      return
+    }
+    if (value && hours) {
+      const row = hoursForDate(hours, value)
+      if (!row || !row.isOpen) {
+        setError(`The salon is closed on ${weekdayName(value)}. Please choose another day.`)
+        return
+      }
+    }
+    update('date', value)
   }
 
   // A6: every open of the picker re-fetches the shop hours and re-asks
@@ -401,10 +416,11 @@ function BookingFlow({ service, user, onClose }) {
   }
 
   // A stale rendered slot can never be selected: the click re-validates it
-  // against the freshest known hours before it reaches the form.
+  // against the freshest known hours before it reaches the form. The picker
+  // stays open — the stylist list is right below it and the customer still
+  // needs to pick a stylist; collapsing here reads as the UI breaking.
   function chooseSlot(slot) {
     if (!slots.includes(slot)) return
-    setPickerOpen(false)
     update('time', slot)
   }
 
@@ -450,32 +466,23 @@ function BookingFlow({ service, user, onClose }) {
       setError(problem)
       return
     }
-    const staffId = resolveStaffId()
-    // A pick outside the validated match set, or one that does not cover every
-    // service category, may be refused at booking. The customer can still
-    // review the booking; the concern is spelled out and confirming is gated.
-    const validatedIds = new Set(
-      [match?.recommended?.id, ...(match?.alternatives ?? []).map((entry) => entry.id)].filter(Boolean),
-    )
-    const needed = match?.needed ?? 0
+    // A stylist must be picked explicitly: no automatic choice and no
+    // 'No preference' shortcut. A pick outside the validated match set may be
+    // refused at booking, so it blocks here with the concern spelled out.
+    const staffId = form.staffId || null
+    const validatedIds = new Set(selectEntries.map((entry) => entry.id))
     const chosen = staffEntryFor(staffId)
-    const partialPick =
-      needed > 0 && chosen?.coversAll === false && match?.recommended?.id !== staffId
     if (!staffId) {
-      setSelectionWarning(
-        pickMode === 'none'
-          ? 'No stylist is available for this slot yet. Choose a stylist or another time before confirming.'
-          : 'Please choose a stylist before confirming this booking.',
-      )
-    } else if ((validatedIds.size > 0 && !validatedIds.has(staffId)) || partialPick) {
-      setSelectionWarning(
-        'This stylist may not be scheduled at that time, or does not cover every service in this booking. You can still review the booking; confirm with a suitable stylist or time.',
-      )
-      setForm((current) => ({ ...current, staffId }))
-    } else {
-      setSelectionWarning('')
-      setForm((current) => ({ ...current, staffId }))
+      setSelectionWarning('Please choose a stylist before continuing.')
+      return
     }
+    if ((validatedIds.size > 0 && !validatedIds.has(staffId)) || chosen?.coversAll === false) {
+      setSelectionWarning(
+        'This stylist may not be scheduled at that time, or does not cover every service in this booking. Please choose an available stylist or another time.',
+      )
+      return
+    }
+    setSelectionWarning('')
     goToStep(2)
   }
 
@@ -513,16 +520,9 @@ function BookingFlow({ service, user, onClose }) {
     }
     const matchNow = freshMatch ?? match
     if (freshMatch) setMatch(freshMatch)
-    // Never POST a missing staffId. 'No preference' resolves against the
-    // freshest recommendation/alternative; with nobody left the submit is
-    // blocked and the matching reason is shown.
-    const staffId =
-      pickModeRef.current === 'none'
-        ? matchNow?.recommended?.id ??
-          matchNow?.alternatives?.find((entry) => entry.coversAll !== false)?.id ??
-          matchNow?.alternatives?.[0]?.id ??
-          null
-        : form.staffId || null
+    // Never POST a missing staffId: the customer's explicit pick is required
+    // and anything else blocks the submit.
+    const staffId = form.staffId || null
     if (!staffId) {
       setSubmitting(false)
       setError(matchNow?.reason || 'Please choose a stylist before booking.')
@@ -540,6 +540,12 @@ function BookingFlow({ service, user, onClose }) {
       return
     }
     setForm((current) => ({ ...current, staffId }))
+    // One attempt token per submission series: a retried checkout reuses the
+    // same token, so the backend can only ever create one payment attempt.
+    // A new attempt after a terminal one needs a fresh token.
+    if (!attemptTokenRef.current || (mayaPayment && mayaPayment.status !== 'PENDING')) {
+      attemptTokenRef.current = makeAttemptToken()
+    }
     createAppointment({
       staffId,
       appointmentDate: form.date,
@@ -547,12 +553,10 @@ function BookingFlow({ service, user, onClose }) {
       serviceIds: [service.id],
     }).then(
       (data) => {
-        setSubmitting(false)
-        setConfirmation(data?.appointment ?? data ?? {})
+        const appointment = data?.appointment ?? data ?? {}
+        setConfirmation(appointment)
         goToStep(3)
-        // A GCash plan opens the existing payment dialog preselected; closing
-        // it leaves the booking in place and the card keeps its pay button.
-        if (paymentPlan !== 'SALON') setPayDialogOpen(true)
+        startMayaPayment(appointment.id)
       },
       (err) => {
         setSubmitting(false)
@@ -561,37 +565,93 @@ function BookingFlow({ service, user, onClose }) {
     )
   }
 
+  /* Starts the Maya payment attempt for the just-created booking and sends
+   * the browser to the sandbox checkout. The booking is NEVER marked paid
+   * here — only the server-side verification against Maya can do that. */
+  function startMayaPayment(appointmentId) {
+    if (!appointmentId) {
+      setSubmitting(false)
+      setStartingPayment(false)
+      setError('Payment could not be started for this booking.')
+      return
+    }
+    setStartingPayment(true)
+    createMayaCheckout({
+      appointmentId,
+      plan: paymentPlan === 'DOWN' ? 'DOWN' : 'FULL',
+      attemptToken: attemptTokenRef.current,
+    }).then(
+      (data) => {
+        const payment = data?.payment ?? data ?? {}
+        setMayaPayment(payment)
+        setStartingPayment(false)
+        setSubmitting(false)
+        setHoldSeconds(payment.holdSecondsRemaining ?? null)
+        if (payment.checkoutUrl) {
+          window.location.assign(payment.checkoutUrl)
+        }
+      },
+      (err) => {
+        setStartingPayment(false)
+        setSubmitting(false)
+        setError(bookingErrorMessage(err) || 'Payment could not be started. The booking is saved — you can start payment again from Appointments.')
+      },
+    )
+  }
+
+  // The hold countdown ticks while the payment attempt is pending.
+  useEffect(() => {
+    if (!mayaPayment || mayaPayment.status !== 'PENDING') return undefined
+    const timer = setInterval(() => {
+      setHoldSeconds((value) => (value === null ? null : Math.max(0, value - 1)))
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [mayaPayment])
+
   function renderStep(number) {
     if (number === 3) {
-      const payAtSalon = paymentPlan === 'SALON'
+      const paid = mayaPayment?.status === 'PAID'
+      const awaiting = !paid
       return (
         <div className="px-6 py-12 text-center">
           <div className="mx-auto grid size-16 place-items-center rounded-full border border-(--gold) text-3xl text-(--gold)">✓</div>
-          <h3 className="mt-5 font-(--serif) text-2xl text-(--gold)">{payAtSalon ? `Thank you, ${user?.name || 'guest'}!` : 'Appointment created'}</h3>
-          {payAtSalon ? (
+          <h3 className="mt-5 font-(--serif) text-2xl text-(--gold)">{paid ? 'Booked' : `Thank you, ${user?.name || 'guest'}!`}</h3>
+          {paid ? (
             <p className="mx-auto mt-3 max-w-sm text-sm leading-6 text-[#bbb6ad]">
-              Appointment booked. Payment is due at the salon: you can pay the outstanding balance with cash or GCash when you arrive.
+              {Number(mayaPayment?.outstanding ?? 0) <= 0
+                ? 'Paid in full. Your appointment is confirmed.'
+                : `Down payment paid: PHP ${Number(mayaPayment?.paidTotal ?? 0).toFixed(2)}, balance PHP ${Number(mayaPayment?.outstanding ?? 0).toFixed(2)} due at the salon.`}
             </p>
-          ) : proofSubmitted ? (
+          ) : startingPayment ? (
             <p className="mx-auto mt-3 max-w-sm text-sm leading-6 text-[#bbb6ad]">
-              Payment proof submitted. Your receipt is awaiting verification by the salon.
+              Starting your payment…
+            </p>
+          ) : mayaPayment ? (
+            <p className="mx-auto mt-3 max-w-sm text-sm leading-6 text-[#bbb6ad]">
+              Awaiting payment. Your slot is held while you complete the Maya checkout.
             </p>
           ) : (
             <p className="mx-auto mt-3 max-w-sm text-sm leading-6 text-[#bbb6ad]">
-              Your appointment is reserved pending payment. Submit your GCash payment and receipt to complete the payment step.
+              Your appointment is reserved. Complete the Maya payment to confirm the booking.
             </p>
           )}
+          {awaiting && mayaPayment?.status === 'PENDING' && holdSeconds !== null && (
+            <p className="mx-auto mt-2 max-w-sm text-[11px] leading-5 tracking-[1.2px] text-[#8d877c] uppercase">
+              {holdCountdownText(holdSeconds)}
+            </p>
+          )}
+          {error && <p className="mx-auto mt-3 max-w-sm text-xs text-[#e9a68c]" role="alert">{error}</p>}
           <p className="mx-auto mt-3 max-w-sm text-[11px] leading-5 tracking-[1.2px] text-[#8d877c] uppercase">
-            {payAtSalon ? 'Payment: due at the salon' : proofSubmitted ? 'Payment proof submitted — awaiting verification' : 'Payment: awaiting proof submission'}
+            {paid ? (Number(mayaPayment?.outstanding ?? 0) <= 0 ? 'Payment: paid in full' : 'Payment: down payment paid') : 'Payment: awaiting payment'}
           </p>
           {confirmation?.appointmentCode && (
             <p className="mx-auto mt-3 max-w-sm text-[11px] leading-5 tracking-[1.2px] text-[#8d877c] uppercase">
               Reference: {confirmation.appointmentCode}
             </p>
           )}
-          {!payAtSalon && !proofSubmitted && (
-            <button type="button" onClick={() => setPayDialogOpen(true)} className="btn-pill mt-5 border border-(--gold) px-7 py-3 text-xs font-bold uppercase tracking-wider text-(--gold)">
-              Open payment window
+          {awaiting && !startingPayment && (
+            <button type="button" onClick={() => startMayaPayment(confirmation?.id)} className="btn-pill mt-5 border border-(--gold) px-7 py-3 text-xs font-bold uppercase tracking-wider text-(--gold)">
+              {mayaPayment ? 'Open payment window' : 'Try payment again'}
             </button>
           )}
           <button type="button" onClick={onClose} className="btn-pill mt-7 border border-(--gold) bg-(--gold) px-7 py-3 text-xs font-bold uppercase tracking-wider text-[#111]">Done</button>
@@ -614,7 +674,7 @@ function BookingFlow({ service, user, onClose }) {
         ) : number === 1 ? (
           <form className="grid gap-4" onSubmit={continueToReview}>
             <div className="grid grid-cols-2 gap-3">
-              <label className="grid gap-1 text-xs uppercase tracking-wider text-[#bcb5a9]">Date<input required type="date" min={todayIso()} max={manilaMonthEndIso()} value={form.date} onChange={(e) => update('date', e.target.value)} className="rounded border border-[#3a3835] bg-[#1c1b18] p-3 text-sm text-white outline-none focus:border-(--gold)" /></label>
+              <label className="grid gap-1 text-xs uppercase tracking-wider text-[#bcb5a9]">Date<input required type="date" min={todayIso()} max={bookingWindowEndIso()} value={form.date} onChange={(e) => onDateChange(e.target.value)} onClick={(e) => { try { e.currentTarget.showPicker() } catch { /* unsupported: the icon still opens it */ } }} className="cursor-pointer rounded border border-[#3a3835] bg-[#1c1b18] p-3 text-sm text-white outline-none focus:border-(--gold)" /></label>
               <div className="grid gap-1">
                 <span className="text-xs uppercase tracking-wider text-[#bcb5a9]" id="booking-time-label">Time</span>
                 <button
@@ -625,12 +685,12 @@ function BookingFlow({ service, user, onClose }) {
                   onClick={togglePicker}
                   type="button"
                 >
-                  {form.time || 'Select a time'}
+                  {form.time ? formatTime12(form.time) : 'Select a time'}
                 </button>
               </div>
             </div>
             <p className="m-0 text-xs leading-5 text-[#bcb5a9]">
-              {`Bookings are open for ${bookingMonthLabel()} only.`}
+              {`Bookings are open for the next three months (through ${bookingWindowLabel()}).`}
             </p>
             {pickerOpen && (
               <div className="rounded border border-[#3a3835] bg-[#1c1b18] p-3" id="booking-slot-picker">
@@ -650,88 +710,82 @@ function BookingFlow({ service, user, onClose }) {
                 ) : slots.length === 0 ? (
                   <p className="m-0 text-xs leading-5 text-[#bcb5a9]">{`No available times on ${weekdayName(form.date)} — try another date.`}</p>
                 ) : (
+                  <>
                   <div aria-label="Available start times" className="grid grid-cols-4 gap-2 max-[420px]:grid-cols-3" role="group">
-                    {slots.map((slot) => (
-                      <button
-                        aria-pressed={form.time === slot}
-                        className={`btn-pill cursor-pointer rounded border px-2 py-2 text-center text-xs tabular-nums ${form.time === slot ? 'border-(--gold) bg-(--gold) text-[#111]' : 'border-[#3a3835] text-white hover:border-(--gold)'}`}
-                        key={slot}
-                        onClick={() => chooseSlot(slot)}
-                        type="button"
-                      >
-                        {slot}
-                      </button>
-                    ))}
+                    {slots.map((slot) => {
+                      const state = slotAvailability[slot] ?? 'checking'
+                      // Only a confirmed-unavailable slot is disabled: a slot
+                      // still being checked must stay clickable (the server
+                      // revalidates on submit), otherwise a slow probe run
+                      // makes every time slot unselectable.
+                      const blocked = state === 'empty'
+                      return (
+                        <button
+                          aria-pressed={form.time === slot}
+                          aria-disabled={blocked}
+                          disabled={blocked}
+                          className={`btn-pill rounded border px-2 py-2 text-center text-xs tabular-nums ${blocked ? 'cursor-not-allowed border-[#2a2825] text-[#6b665e] opacity-60' : form.time === slot ? 'cursor-pointer border-(--gold) bg-(--gold) text-[#111]' : 'cursor-pointer border-[#3a3835] text-white hover:border-(--gold)'}`}
+                          key={slot}
+                          title={state === 'empty' ? 'No stylist is available for this time' : state === 'checking' ? 'Checking stylist availability…' : state === 'unknown' ? 'Availability could not be confirmed — your booking is re-checked before it is confirmed' : undefined}
+                          onClick={() => chooseSlot(slot)}
+                          type="button"
+                        >
+                          {formatTime12(slot)}
+                        </button>
+                      )
+                    })}
                   </div>
+                  {Object.values(slotAvailability).some((state) => state === 'empty') && (
+                    <p className="m-0 mt-2 text-xs leading-5 text-[#8d877c]">Grayed times have no stylist available.</p>
+                  )}
+                  {Object.values(slotAvailability).some((state) => state === 'unknown') && (
+                    <p className="m-0 mt-2 text-xs leading-5 text-[#e9a68c]" role="alert">
+                      Stylist availability could not be confirmed for some times — your booking is re-checked before it is confirmed.
+                    </p>
+                  )}
+                  </>
                 )}
               </div>
             )}
             <div className="grid gap-2">
-              <label className="grid gap-1 text-xs uppercase tracking-wider text-[#bcb5a9]">Preferred stylist
-                <select value={form.staffId} onChange={(e) => onStaffChange(e.target.value)} className="rounded border border-[#3a3835] bg-[#1c1b18] p-3 text-sm normal-case tracking-normal text-white outline-none focus:border-(--gold)">
-                  {staffStatus === 'loading' && matchStatus !== 'ready' && <option value="">Loading stylists…</option>}
-                  {!(staffStatus === 'loading' && matchStatus !== 'ready') && (
-                    <option value="">{pickMode === 'none' ? 'No preference — best available stylist' : 'Select a stylist'}</option>
-                  )}
-                  {selectEntries.map((member) => (
-                    <option key={member.id} value={member.id} disabled={member.coversAll === false}>
-                      {member.firstName} {member.lastName} · {member.primaryRole}
-                      {member.coversAll === false ? ' (does not cover all selected services)' : ''}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {matchStatus === 'loading' && (
-                <p className="m-0 text-xs text-[#bcb5a9]" role="status">Finding the best stylist for this slot…</p>
-              )}
-              {matchStatus === 'ready' && match.reason && (
-                <p className="m-0 text-xs leading-5 text-[#bcb5a9]">{match.reason}</p>
-              )}
-              {matchStatus === 'error' && (
+              <p className="m-0 text-xs uppercase tracking-wider text-[#bcb5a9]" id="booking-stylist-label">Preferred stylist</p>
+              {!form.time ? (
+                <p className="m-0 text-xs leading-5 text-[#bcb5a9]">Pick a time to see the stylists available for it.</p>
+              ) : matchStatus === 'loading' ? (
+                <p className="m-0 text-xs text-[#bcb5a9]" role="status">Finding the stylists available for this time…</p>
+              ) : matchStatus === 'error' ? (
                 <p className="m-0 text-xs leading-5 text-[#e9a68c]" role="alert">
                   We cannot verify stylist availability right now. Try again shortly.
                 </p>
-              )}
-              {matchStatus === 'ready' && !hasEligibleStaff && (
+              ) : !hasEligibleStaff ? (
                 <p className="m-0 text-xs leading-5 text-[#e9a68c]" role="alert">
                   No staff are available for this date and time. Choose another time or date.
                 </p>
-              )}
-              {matchStatus === 'ready' && (
-                <div className="flex flex-wrap gap-2">
-                  <button type="button" aria-expanded={showAlternatives} onClick={() => setShowAlternatives((open) => !open)} className="btn-pill cursor-pointer rounded-full border border-[#635b4c] px-4 py-2 text-xs font-bold uppercase text-[#d5cdbf]">Change stylist</button>
-                  <button type="button" aria-pressed={pickMode === 'none'} onClick={chooseNoPreference} className={`btn-pill cursor-pointer rounded-full border px-4 py-2 text-xs font-bold uppercase ${pickMode === 'none' ? 'border-(--gold) bg-(--gold) text-[#111]' : 'border-[#635b4c] text-[#d5cdbf]'}`}>No preference</button>
-                </div>
-              )}
-              {showAlternatives && (
-                <ul className="m-0 grid list-none gap-2 p-0">
-                  {(match?.alternatives ?? []).length === 0 && (
-                    <li className="text-xs leading-5 text-[#bcb5a9]">No other stylist is available for this slot.</li>
-                  )}
-                  {(match?.alternatives ?? []).map((entry) => (
+              ) : (
+                <ul aria-labelledby="booking-stylist-label" className="m-0 grid list-none gap-2 p-0">
+                  {selectEntries.map((entry) => (
                     <li key={entry.id}>
                       <button
                         type="button"
                         aria-pressed={form.staffId === entry.id}
-                        aria-disabled={entry.coversAll === false}
-                        disabled={entry.coversAll === false}
-                        onClick={() => chooseAlternative(entry)}
-                        className={`w-full rounded border border-[#3a3835] bg-[#1c1b18] p-3 text-left text-sm text-white outline-none ${entry.coversAll === false ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-(--gold) focus:border-(--gold)'}`}
+                        onClick={() => chooseStaff(entry)}
+                        className={`w-full cursor-pointer rounded border p-3 text-left text-sm outline-none ${form.staffId === entry.id ? 'border-(--gold) bg-[rgba(212,180,92,0.14)] text-white' : 'border-[#3a3835] bg-[#1c1b18] text-white hover:border-(--gold) focus:border-(--gold)'}`}
                       >
                         <span className="block">{entry.firstName} {entry.lastName} · {entry.primaryRole}</span>
                         <span className="mt-1 block text-xs leading-5 text-[#bcb5a9]">{alternativeLabel(entry, match?.needed ?? 0)}</span>
-                        {entry.coversAll === false && (
-                          <span className="mt-1 block text-xs leading-5 text-[#e9a68c]">Does not cover all selected services.</span>
-                        )}
                       </button>
                     </li>
                   ))}
                 </ul>
               )}
-              {pickMode === 'none' && (
-                <p className="m-0 text-xs leading-5 text-[#bcb5a9]">
-                  No preference — we&apos;ll assign the best available stylist for this slot.
-                </p>
+              {matchStatus === 'ready' && match.reason && (
+                <p className="m-0 text-xs leading-5 text-[#bcb5a9]">{match.reason}</p>
+              )}
+              {matchStatus === 'ready' && hasEligibleStaff && !form.staffId && (
+                <p className="m-0 text-xs leading-5 text-[#bcb5a9]">Choose one stylist to continue.</p>
+              )}
+              {selectionWarning && (
+                <p className="m-0 text-xs leading-5 text-[#e9a68c]" role="alert">{selectionWarning}</p>
               )}
             </div>
             {error && <p className="m-0 text-xs text-[#e9a68c]" role="alert">{error}</p>}
@@ -742,7 +796,7 @@ function BookingFlow({ service, user, onClose }) {
             <div className="rounded border border-[rgba(212,180,92,.25)] p-4 text-sm leading-7 text-[#cbc5ba]">
               <p className="m-0 text-xs uppercase tracking-wider text-(--gold)\">Appointment summary</p>
               <p className="m-0 mt-2">{form.date} at {form.time}</p>
-              <p className="m-0">Stylist: {chosenStaff ? `${chosenStaff.firstName} ${chosenStaff.lastName}` : 'Assigned automatically'}</p>
+              <p className="m-0">Stylist: {chosenStaff ? `${chosenStaff.firstName} ${chosenStaff.lastName}` : 'No stylist selected'}</p>
               <p className="m-0">Total: <strong className="text-(--gold)\">{formatPeso(service.price)}</strong></p>
             </div>
             {selectionWarning && (
@@ -750,38 +804,29 @@ function BookingFlow({ service, user, onClose }) {
             )}
             <fieldset className="m-0 grid gap-2 rounded border border-[rgba(212,180,92,.25)] p-4">
               <legend className="text-[0.62rem] font-semibold tracking-[0.12em] text-[#918c82] uppercase">Payment</legend>
-              {[
-                ['SALON', 'Pay at the salon', null],
-                ['FULL', 'GCash: pay in full', service.price],
-                [
-                  'DOWN',
-                  depositPercent != null
-                    ? `GCash: ${depositPercent}% down payment`
-                    : 'GCash: down payment',
-                  // Display only (integer centavos); the server confirms the amount.
-                  depositPercent != null ? Math.round(service.price * 100 * depositPercent / 100) / 100 : null,
-                ],
-              ].map(([key, label, amount]) => {
-                const gcash = key !== 'SALON'
-                const disabled = gcash && paySettings?.configured !== true
-                return (
+              {(() => {
+                // Display only (integer centavos, server percent); the server
+                // computes the authoritative amount before the Maya checkout.
+                const downAmount =
+                  depositPercent != null ? Math.round(service.price * 100 * depositPercent / 100) / 100 : null
+                const downPercent = depositPercent != null ? depositPercent : 40
+                return [
+                  ['FULL', `MAYA: PAY IN FULL (${formatPeso(service.price)})`],
+                  ['DOWN', `MAYA: DOWN PAYMENT ${downPercent}% (${downAmount != null ? formatPeso(downAmount) : '…'})`],
+                ].map(([key, label]) => (
                   <button
                     key={key}
                     type="button"
                     aria-pressed={paymentPlan === key}
-                    disabled={disabled}
                     onClick={() => setPaymentPlan(key)}
                     className={`min-h-[44px] w-full cursor-pointer rounded-full border px-5 text-left text-[12px] font-semibold tracking-[0.12em] uppercase ${paymentPlan === key ? 'border-(--gold) bg-(--gold) text-[#111]' : 'border-[#3a352c] text-[#d8d4cb] hover:border-(--gold)'} disabled:cursor-not-allowed disabled:opacity-50`}
                   >
                     {label}
-                    {amount != null && ` — ${formatPeso(amount)}`}
                   </button>
-                )
-              })}
+                ))
+              })()}
               <p className="m-0 mt-1 text-[10px] leading-5 tracking-[1.2px] text-[#8d877c] uppercase">
-                {paySettings?.configured === true
-                  ? 'Amounts are display only; the server confirms them.'
-                  : "GCash isn't available yet"}
+                Amounts are display only; the server confirms them.
               </p>
             </fieldset>
             {error && <p className="m-0 text-xs text-[#e9a68c]" role="alert">{error}</p>}
@@ -848,14 +893,6 @@ function BookingFlow({ service, user, onClose }) {
           </div>
         </div>
     </Dialog>
-      {payDialogOpen && confirmation && (
-        <GCashPaymentDialog
-          item={confirmation}
-          preselectedOption={paymentPlan === 'DOWN' ? 'DOWN' : 'FULL'}
-          onClose={() => setPayDialogOpen(false)}
-          onSubmitted={() => { setProofSubmitted(true); setPayDialogOpen(false) }}
-        />
-      )}
     </>
   )
 }

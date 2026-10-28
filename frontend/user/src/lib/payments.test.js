@@ -31,6 +31,13 @@ describe('shouldShowPay — when the card offers PAY WITH GCASH', () => {
     expect(shouldShowPay('COMPLETED', 0)).toBe(false)
   })
 
+  it('hides it when a down payment settled: the balance is due at the salon', () => {
+    expect(shouldShowPay('CONFIRMED', 450, 300)).toBe(false)
+    expect(shouldShowPay('RESERVED', 450, 300)).toBe(false)
+    // Nothing settled yet keeps the online pay action.
+    expect(shouldShowPay('CONFIRMED', 450, 0)).toBe(true)
+  })
+
   it('keeps it while the outstanding balance is not known yet', () => {
     expect(shouldShowPay('RESERVED', null)).toBe(true)
     expect(shouldShowPay('RESERVED', undefined)).toBe(true)

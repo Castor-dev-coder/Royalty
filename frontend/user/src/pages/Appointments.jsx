@@ -10,19 +10,20 @@ import {
   AuthError,
   NOT_MODIFIED,
   cancelAppointmentRequest,
+  createMayaCheckout,
   fetchMyAppointments,
   fetchMyPayments,
   sessionDispositionAfter401,
 } from '../lib/api.js'
 import ReviewForm from '../components/ReviewForm.jsx'
-import GCashPaymentDialog from '../components/GCashPaymentDialog.jsx'
-import { formatAmount, groupPaymentsByAppointment, paymentStatusLabel, shouldShowPay } from '../lib/payments.js'
+import { formatAmount, groupPaymentsByAppointment, holdCountdownText, makeAttemptToken, paymentBadge, paymentStatusLabel, planLabel, shouldShowPay } from '../lib/payments.js'
 
 const PAGE_SIZE = 10
 
 const STATUS_LABELS = {
   RESERVED: 'Pending',
-  CONFIRMED: 'Confirmed',
+  // After verified payment the appointment reads "Booked" (payment spec).
+  CONFIRMED: 'Booked',
   COMPLETED: 'Completed',
   CANCELLED: 'Cancelled',
   NO_SHOW: 'No-show',
@@ -68,6 +69,11 @@ const PAYMENT_BADGE_STYLES = {
   UNVERIFIED: 'border-[rgba(212,180,92,0.45)] text-[var(--gold)]',
   VERIFIED: 'border-[#2f4a33] text-[#9fd0a5]',
   REJECTED: 'border-[#4a2f28] text-[#e9a68c]',
+  // Maya checkout lifecycle (provider-confirmed).
+  PENDING: 'border-[rgba(212,180,92,0.45)] text-[var(--gold)]',
+  PAID: 'border-[#2f4a33] text-[#9fd0a5]',
+  FAILED: 'border-[#4a2f28] text-[#e9a68c]',
+  EXPIRED: 'border-[#4a2f28] text-[#e9a68c]',
 }
 
 // Text label plus color — never colour alone.
@@ -93,18 +99,21 @@ function formatTimestamp(iso) {
     : date.toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
-function AppointmentCard({ item, customerName, outstanding, onCancel, onOpenPayment, onOpenReview, onReviewSuccess, cancelMessage, cancelBusy, reviewOpen, onCloseReview }) {
+function AppointmentCard({ item, customerName, outstanding, paymentRow, onCancel, onOpenPayment, onOpenReview, onReviewSuccess, cancelMessage, cancelBusy, reviewOpen, onCloseReview }) {
   const { month, day, weekdayShort } = formatDateParts(item.appointmentDate)
   const staffName = item.staff ? `${item.staff.firstName} ${item.staff.lastName}`.trim() : 'Unassigned'
   const reviewed = item.alreadyReviewed && item.review
   const titleService = item.services[0]?.serviceName ?? 'Appointment'
   const moreCount = item.services.length - 1
   const showReviewButton = item.status === 'COMPLETED' && !item.alreadyReviewed && !reviewOpen
-  const showCancel = item.status === 'RESERVED' || item.status === 'CONFIRMED'
+  // Paid bookings can only be cancelled by the salon (server-enforced): the
+  // customer's Cancel action disappears once money is settled.
+  const paidBooking = Number(paymentRow?.verifiedTotal ?? 0) > 0
+  const showCancel = (item.status === 'RESERVED' || item.status === 'CONFIRMED') && !paidBooking
   // PAY WITH GCASH for pay-at-salon bookings and anything unpaid or partly
   // paid; hidden for cancelled, no-show and fully paid. The server quote gates
   // what can actually be paid.
-  const showPay = shouldShowPay(item.status, outstanding)
+  const showPay = shouldShowPay(item.status, outstanding, paymentRow?.verifiedTotal)
   const hasActions = Boolean(showPay || showReviewButton || reviewed || showCancel)
   return (
     <article className="rounded-lg border border-[#27241f] bg-[#151515] px-6 py-6 max-[640px]:px-4 max-[640px]:py-4">
@@ -160,6 +169,21 @@ function AppointmentCard({ item, customerName, outstanding, onCancel, onOpenPaym
             ))}
           </ul>
 
+          {paymentRow && (
+            <p className="m-0 mt-2 text-[12px] leading-5 text-[#b3ada2]">
+              {paymentBadge(paymentRow).text}
+              {paymentRow.status === 'PENDING' && paymentRow.holdSecondsRemaining != null && (
+                <span className="ml-2 text-[11px] tracking-[1.2px] text-[#8d877c] uppercase">
+                  {holdCountdownText(paymentRow.holdSecondsRemaining)}
+                </span>
+              )}
+            </p>
+          )}
+          {paidBooking && (item.status === 'RESERVED' || item.status === 'CONFIRMED') && (
+            <p className="m-0 text-[11px] leading-5 text-[#8d877c]">
+              Paid bookings are changed or cancelled by the salon.
+            </p>
+          )}
           <div className="mt-2 flex flex-wrap items-baseline justify-between gap-2 border-t border-[#27241f] pt-2 max-[640px]:col-span-2 max-[640px]:row-start-5">
             <span className="text-[12px] tracking-[0.14em] text-[#8d877c] uppercase">{item.appointmentCode}</span>
             <span className="flex items-baseline gap-2">
@@ -176,7 +200,7 @@ function AppointmentCard({ item, customerName, outstanding, onCancel, onOpenPaym
                   onClick={() => onOpenPayment(item)}
                   type="button"
                 >
-                  PAY WITH GCASH
+                  PAY WITH MAYA
                 </button>
               )}
               {showReviewButton && (
@@ -185,7 +209,7 @@ function AppointmentCard({ item, customerName, outstanding, onCancel, onOpenPaym
                   onClick={() => onOpenReview(item.id)}
                   type="button"
                 >
-                  LEAVE A REVIEW
+                  Write a review
                 </button>
               )}
               {reviewed && (
@@ -241,7 +265,42 @@ function Appointments() {
   const [activeTab, setActiveTab] = useState('upcoming')
   const [cancelState, setCancelState] = useState({}) // id -> { busy, message }
   const [reviewOpenId, setReviewOpenId] = useState(null)
-  const [payItem, setPayItem] = useState(null) // appointment opened in the GCash dialog
+  // The appointment whose Maya checkout is being started (button busy state).
+  const [payingId, setPayingId] = useState(null)
+
+  /* PAY WITH MAYA: resume the appointment's still-pending Maya attempt (same
+   * idempotency token and plan — never a second checkout) or start a first
+   * attempt, then send the browser to the sandbox checkout. This never marks
+   * anything paid: only the server-side verification against Maya does. */
+  function startMayaPaymentFor(item) {
+    const rows = payments.filter((row) => row.appointmentId === item.id)
+    const pending = rows.find((row) => row.provider === 'MAYA' && row.status === 'PENDING') ?? null
+    const plan = pending?.plan === 'DOWN' ? 'DOWN' : 'FULL'
+    const attemptToken = pending?.referenceNo || makeAttemptToken()
+    setPayingId(item.id)
+    const start = (token) =>
+      createMayaCheckout({ appointmentId: item.id, plan, attemptToken: token }).then(
+        (data) => {
+          const payment = data?.payment ?? data ?? {}
+          if (payment.checkoutUrl) {
+            window.location.assign(payment.checkoutUrl)
+            return
+          }
+          // A terminal resume (expired/failed attempt) ends without a
+          // checkout: start one fresh attempt with a new token.
+          if (payment.status && payment.status !== 'PENDING' && !payment.checkoutUrl) {
+            void start(makeAttemptToken()).finally(() => setPayingId(null))
+            return
+          }
+          setPayingId(null)
+        },
+        () => {
+          setPayingId(null)
+          setPaymentsError('Payment could not be started. Try again.')
+        },
+      )
+    void start(attemptToken)
+  }
   const [payments, setPayments] = useState([])
   const [paymentsLoading, setPaymentsLoading] = useState(true)
   const [paymentsError, setPaymentsError] = useState(null)
@@ -369,7 +428,7 @@ function Appointments() {
   const cancelBusy = Object.values(cancelState).some((entry) => entry?.busy)
   useAutoRefresh(refreshAll, {
     enabled: Boolean(user) && user.role === 'CUSTOMER',
-    paused: reviewOpenId !== null || payItem !== null || cancelBusy,
+    paused: reviewOpenId !== null || payingId !== null || cancelBusy,
   })
 
   async function handleCancel(item) {
@@ -552,9 +611,10 @@ function Appointments() {
                         customerName={user.name || user.email || 'Guest'}
                         item={item}
                         outstanding={(payments.find((row) => row.appointmentId === item.id) ?? null)?.outstanding ?? null}
+                        paymentRow={payments.find((row) => row.appointmentId === item.id) ?? null}
                         onCancel={handleCancel}
                         onCloseReview={() => setReviewOpenId(null)}
-                        onOpenPayment={setPayItem}
+                        onOpenPayment={startMayaPaymentFor}
                         onOpenReview={(id) => setReviewOpenId(id)}
                         onReviewSuccess={handleReviewSuccess}
                         reviewOpen={reviewOpenId === item.id}
@@ -631,7 +691,7 @@ function Appointments() {
                           {[
                             ['Total', group.appointmentTotal],
                             ['Verified received', group.verifiedTotal],
-                            ['Outstanding', group.outstanding],
+                            ['Balance', group.outstanding],
                           ]
                             .filter(([, value]) => value !== null && value !== undefined)
                             .map(([label, value]) => (
@@ -650,7 +710,11 @@ function Appointments() {
                                   {payment.paymentMethod}
                                   {payment.channel ? ` · ${payment.channel === 'ONLINE' ? 'Online' : 'At the salon'}` : ''}
                                 </span>
-                                {payment.referenceNo && <span className="text-[12px] text-[#8d877c]">Ref {payment.referenceNo}</span>}
+                                {payment.serviceName && <span className="text-[12px] text-[#b3ada2]">{payment.serviceName}</span>}
+                                {payment.plan && <span className="text-[12px] text-[#8d877c]">{planLabel(payment.plan, null)}</span>}
+                                {payment.referenceNo && payment.provider !== 'MAYA' && (
+                                  <span className="text-[12px] text-[#8d877c]">Ref {payment.referenceNo}</span>
+                                )}
                                 {payment.createdAt && (
                                   <time className="text-[12px] text-[#8d877c]" dateTime={payment.createdAt}>
                                     {formatTimestamp(payment.createdAt)}
@@ -668,15 +732,8 @@ function Appointments() {
               )}
             </section>
 
-            {payItem && (
-              <GCashPaymentDialog
-                item={payItem}
-                onClose={() => setPayItem(null)}
-                onSubmitted={() => {
-                  load()
-                  loadPayments()
-                }}
-              />
+            {payingId && (
+              <p className="sr-only" role="status">Starting your Maya payment…</p>
             )}
           </>
         )}
