@@ -29,6 +29,8 @@ export function PaymentDetailModal({
   onClose,
   onVerify,
   onReject,
+  onComplete,
+  completing = false,
 }: {
   payment: PaymentRow;
   /** The full payment list, used to show this appointment's history. */
@@ -37,6 +39,9 @@ export function PaymentDetailModal({
   onClose: () => void;
   onVerify: () => void;
   onReject: () => void;
+  /** Mark the fully paid appointment completed. */
+  onComplete?: () => void;
+  completing?: boolean;
 }) {
   const [proofOpen, setProofOpen] = useState(false);
   // The lightbox is the top dialog while it is open, so this dialog steps
@@ -83,7 +88,18 @@ export function PaymentDetailModal({
           <div><dt>Amount</dt><dd>{formatMoney(payment.amount)}</dd></div>
           <div><dt>Method</dt><dd>{methodLabel(payment.paymentMethod)}</dd></div>
           <div><dt>Channel</dt><dd>{channelLabel(payment.channel)}</dd></div>
-          <div><dt>Reference number</dt><dd>{payment.referenceNo || '—'}</dd></div>
+          {payment.provider === 'MAYA' ? (
+            <>
+              <div>
+                <dt>Payment plan</dt>
+                <dd>{payment.plan === 'DOWN' ? 'Down payment' : payment.plan === 'FULL' ? 'Pay in full' : '—'}</dd>
+              </div>
+              <div><dt>Maya checkout</dt><dd>{payment.providerCheckoutId || '—'}</dd></div>
+              <div><dt>Maya payment</dt><dd>{payment.providerPaymentId || '—'}</dd></div>
+            </>
+          ) : (
+            <div><dt>Reference number</dt><dd>{payment.referenceNo || '—'}</dd></div>
+          )}
           <div><dt>Recorded by</dt><dd>{payment.recordedBy || '—'}</dd></div>
           {payment.verifiedAt && <div><dt>Verified</dt><dd>{formatDate(payment.verifiedAt)}{payment.verifiedBy ? ` · ${payment.verifiedBy}` : ''}</dd></div>}
         </dl>
@@ -93,6 +109,27 @@ export function PaymentDetailModal({
           <div><span>Total verified received</span><strong>{formatMoney(payment.verifiedTotal)}</strong></div>
           <div><span>Outstanding</span><strong>{formatMoney(payment.outstanding)}</strong></div>
         </div>
+
+        {payment.outstanding <= 0 && payment.verifiedTotal > 0 && (
+          <p className="payment-hint" role="status">
+            {payment.bookingStatus === 'COMPLETED'
+              ? 'Paid in full · completed'
+              : 'Paid in full, awaiting completion'}
+          </p>
+        )}
+        {payment.provider === 'MAYA' && payment.outstanding > 0 && payment.verifiedTotal > 0 && (
+          <p className="payment-hint" role="status">
+            Down payment verified by Maya, balance due ({formatMoney(payment.outstanding)} at the salon)
+          </p>
+        )}
+        {payment.provider === 'MAYA' && payment.status === 'PENDING' && (
+          <p className="payment-hint" role="status">
+            Awaiting payment through Maya
+            {payment.holdSecondsRemaining != null
+              ? ` · hold expires in ${Math.floor(payment.holdSecondsRemaining / 60)}:${String(payment.holdSecondsRemaining % 60).padStart(2, '0')}`
+              : ''}
+          </p>
+        )}
 
         <div className="payment-proof">
           <h4>Payment proof</h4>
@@ -128,6 +165,11 @@ export function PaymentDetailModal({
 
         <div className="modal-actions">
           <button type="button" className="secondary-action" onClick={onClose}>Close</button>
+          {onComplete && payment.outstanding <= 0 && payment.verifiedTotal > 0 && payment.bookingStatus === 'CONFIRMED' && (
+            <button type="button" className="primary-action" onClick={onComplete} disabled={completing}>
+              {completing ? 'Completing…' : 'Mark completed'}
+            </button>
+          )}
           {payment.status === 'UNVERIFIED' && (
             canReview ? (
               <>

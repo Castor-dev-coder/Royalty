@@ -3109,6 +3109,7 @@ function PaymentPage() {
   const [selectedPayment, setSelectedPayment] = useState<PaymentRow | null>(null);
   const [paymentConfirmation, setPaymentConfirmation] = useState<{ payment: PaymentRow; status: 'VERIFIED' | 'REJECTED' } | null>(null);
   const [recordOpen, setRecordOpen] = useState(false);
+  const [completing, setCompleting] = useState(false);
   const [pickerOptions, setPickerOptions] = useState<RecordPaymentOption[] | null>(null);
   const [pickerLoading, setPickerLoading] = useState(false);
   const [notice, setNotice] = useState('');
@@ -3158,6 +3159,36 @@ function PaymentPage() {
       }
     }
   }, [location.state, payments]);
+
+  /**
+   * Mark a fully paid appointment completed. The server owns the transition
+   * rules (paid + past end time); this only sends the request and refreshes
+   * the ledger with the confirmed result.
+   */
+  async function completeAppointment(payment: PaymentRow) {
+    if (!token || !payment.appointmentId) {
+      setNotice('Sign in with an administrator account to complete appointments.');
+      return;
+    }
+    setCompleting(true);
+    try {
+      const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+      const response = await apiFetch(`${baseUrl}/appointments/${payment.appointmentId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+        body: JSON.stringify({ status: 'COMPLETED' }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(payload?.message ?? 'Unable to complete the appointment.');
+      await loadPayments();
+      setSelectedPayment(null);
+      setNotice(`Appointment ${payment.appointmentCode} marked completed.`);
+    } catch (cause) {
+      setNotice(cause instanceof Error ? cause.message : 'Unable to complete the appointment.');
+    } finally {
+      setCompleting(false);
+    }
+  }
 
   async function updatePaymentStatus(payment: PaymentRow, status: 'VERIFIED' | 'REJECTED') {
     if (!token) {
@@ -3218,7 +3249,7 @@ function PaymentPage() {
     }
   }
 
-  const pendingPayments = payments.filter((payment) => payment.status === 'UNVERIFIED');
+  const pendingPayments = payments.filter((payment) => payment.status === 'UNVERIFIED' || payment.status === 'PENDING');
   const historyPayments = payments.filter((payment) => payment.status !== 'UNVERIFIED');
   const paymentToday = new Date();
   const todayKey = `${paymentToday.getFullYear()}-${String(paymentToday.getMonth() + 1).padStart(2, '0')}-${String(paymentToday.getDate()).padStart(2, '0')}`;
@@ -3311,6 +3342,8 @@ function PaymentPage() {
           payment={selectedPayment}
           payments={payments}
           canReview={canReview}
+          onComplete={() => completeAppointment(selectedPayment)}
+          completing={completing}
           onClose={() => setSelectedPayment(null)}
           onVerify={() => {
             setPaymentConfirmation({ payment: selectedPayment, status: 'VERIFIED' });

@@ -11,9 +11,9 @@ import { isValidAmount, POSITIVE_AMOUNT_MESSAGE } from './shared/validation';
 
 export { POSITIVE_AMOUNT_MESSAGE };
 
-export type PaymentMethod = 'CASH' | 'GCASH';
+export type PaymentMethod = 'CASH' | 'GCASH' | 'MAYA';
 export type PaymentChannel = 'ONLINE' | 'IN_PERSON';
-export type PaymentStatus = 'UNVERIFIED' | 'VERIFIED' | 'REJECTED';
+export type PaymentStatus = 'UNVERIFIED' | 'VERIFIED' | 'REJECTED' | 'PENDING' | 'PAID' | 'FAILED' | 'EXPIRED';
 export type DownPaymentKind = 'NONE' | 'FIXED' | 'PERCENT';
 
 /** One payment transaction row as the payments pages render it. */
@@ -40,6 +40,15 @@ export interface PaymentRow {
   appointmentTotal: number;
   verifiedTotal: number;
   outstanding: number;
+  /** 'MANUAL' (human-recorded) or 'MAYA' (provider-confirmed). */
+  provider: string;
+  /** Maya references (null for manual rows). */
+  providerCheckoutId: string | null;
+  providerPaymentId: string | null;
+  /** Payment plan for Maya rows: FULL or DOWN; null for manual rows. */
+  plan: 'FULL' | 'DOWN' | null;
+  /** Seconds left on the payment hold (server clock); null when no hold. */
+  holdSecondsRemaining: number | null;
 }
 
 /**
@@ -49,11 +58,15 @@ export interface PaymentRow {
 export async function fetchPaymentProofUrl(paymentId: string): Promise<string> {
   const { apiFetch, authHeader, getAccessToken } = await import('./api');
   const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
-  const payload = await apiFetch(`${baseUrl}/payments/${encodeURIComponent(paymentId)}/proof`, {
+  const response = await apiFetch(`${baseUrl}/payments/${encodeURIComponent(paymentId)}/proof`, {
     headers: authHeader(getAccessToken()),
   });
-  const url = String((payload as { data?: { url?: string }; url?: string })?.data?.url ?? (payload as { url?: string })?.url ?? '');
-  if (!url) throw new Error('The proof link could not be created right now.');
+  // apiFetch returns the raw Response. The JSON body must be read explicitly:
+  // treating the Response as the payload would surface its .url (the request
+  // URL) as the "signed link" and the proof image would 404 behind it.
+  const payload = (await response.json().catch(() => null)) as { data?: { url?: string }; url?: string } | null;
+  const url = String(payload?.data?.url ?? payload?.url ?? '');
+  if (!response.ok || !url) throw new Error('The proof link could not be created right now.');
   return url;
 }
 
@@ -70,9 +83,11 @@ export function toPaymentRow(raw: any): PaymentRow {
     customerEmail: String(raw?.customerEmail ?? ''),
     serviceName: String(raw?.serviceName ?? 'Salon appointment'),
     amount: Number(raw?.amount ?? 0),
-    paymentMethod: method === 'GCASH' ? 'GCASH' : 'CASH',
+    paymentMethod: method === 'MAYA' ? 'MAYA' : method === 'GCASH' ? 'GCASH' : 'CASH',
     channel: channel === 'ONLINE' ? 'ONLINE' : 'IN_PERSON',
-    status: status === 'VERIFIED' ? 'VERIFIED' : status === 'REJECTED' ? 'REJECTED' : 'UNVERIFIED',
+    status: (['VERIFIED', 'REJECTED', 'PENDING', 'PAID', 'FAILED', 'EXPIRED'] as string[]).includes(status)
+      ? (status as PaymentStatus)
+      : 'UNVERIFIED',
     referenceNo: raw?.referenceNo ? String(raw.referenceNo) : null,
     hasProof: Boolean(raw?.hasProof ?? raw?.proofUrl ?? raw?.proofStoragePath),
     bookingStatus: String(raw?.bookingStatus ?? 'RESERVED'),
@@ -83,6 +98,11 @@ export function toPaymentRow(raw: any): PaymentRow {
     appointmentTotal: Number(raw?.appointmentTotal ?? 0),
     verifiedTotal: Number(raw?.verifiedTotal ?? 0),
     outstanding: Number(raw?.outstanding ?? 0),
+    provider: String(raw?.provider ?? 'MANUAL'),
+    providerCheckoutId: raw?.providerCheckoutId ? String(raw.providerCheckoutId) : null,
+    providerPaymentId: raw?.providerPaymentId ? String(raw.providerPaymentId) : null,
+    plan: raw?.plan === 'FULL' || raw?.plan === 'DOWN' ? raw.plan : null,
+    holdSecondsRemaining: raw?.holdSecondsRemaining != null ? Number(raw.holdSecondsRemaining) : null,
   };
 }
 
@@ -91,18 +111,27 @@ export function channelLabel(channel: PaymentChannel): string {
   return channel === 'ONLINE' ? 'Online' : 'In-person';
 }
 
-/** The method label as the studio says it: GCash or cash. */
+/** The method label as the studio says it: Maya, GCash or cash. */
 export function methodLabel(method: PaymentMethod): string {
-  return method === 'GCASH' ? 'GCash' : 'Cash';
+  return method === 'MAYA' ? 'Maya' : method === 'GCASH' ? 'GCash' : 'Cash';
 }
 
 export function paymentStatusLabel(status: PaymentStatus): string {
-  return status === 'VERIFIED' ? 'Verified' : status === 'REJECTED' ? 'Rejected' : 'Pending';
+  if (status === 'VERIFIED') return 'Verified';
+  if (status === 'REJECTED') return 'Rejected';
+  if (status === 'PAID') return 'Paid (verified by Maya)';
+  if (status === 'FAILED') return 'Failed';
+  if (status === 'EXPIRED') return 'Expired';
+  if (status === 'PENDING') return 'Awaiting payment';
+  return 'Pending';
 }
 
 /** The badge class for a payment state; always paired with its text label. */
 export function paymentStatusBadge(status: PaymentStatus): string {
-  return status === 'VERIFIED' ? 'success' : status === 'REJECTED' ? 'danger' : 'warning';
+  if (status === 'VERIFIED' || status === 'PAID') return 'success';
+  if (status === 'REJECTED' || status === 'FAILED') return 'danger';
+  if (status === 'EXPIRED') return 'neutral';
+  return 'warning';
 }
 
 /** The badge class for a collection channel. */

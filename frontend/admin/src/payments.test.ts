@@ -1,4 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+vi.mock('./api', () => ({
+  apiFetch: vi.fn(),
+  authHeader: vi.fn(() => ({ Authorization: 'Bearer test-token' })),
+  getAccessToken: vi.fn(() => 'test-token'),
+}));
 import {
   AMOUNT_REQUIRED_MESSAGE,
   OVERPAYMENT_MESSAGE,
@@ -17,7 +23,9 @@ import {
   toPaymentSettings,
   type PaymentRow,
   type PaymentSettingsForm,
+  fetchPaymentProofUrl,
 } from './payments';
+import { apiFetch } from './api';
 
 const API_PAYMENT = {
   id: 'pay-1',
@@ -194,5 +202,36 @@ describe('settings display defaults', () => {
     expect(settings.downPaymentKind).toBe('FIXED');
     expect(describeDownPayment(settings.downPaymentKind, settings.downPaymentValue)).toBe('₱500 fixed down payment');
     expect(describeDownPayment('NONE', 0)).toBe('No down payment required');
+  });
+});
+
+describe('fetchPaymentProofUrl', () => {
+  const requestUrl = 'http://localhost:3000/payments/pay-1/proof';
+
+  function responseLike(body: unknown, ok = true, status = 200) {
+    return {
+      ok,
+      status,
+      // A real Response carries .url (the request URL). The helper must never
+      // return it as the "signed link" — that regression broke the proof image.
+      url: requestUrl,
+      json: async () => body,
+    } as unknown as Response;
+  }
+
+  it('returns the minted signed URL from the JSON body, not the request URL', async () => {
+    const signed = 'https://storage.example/object/sign/payment-proofs/payments/x.png?token=abc';
+    vi.mocked(apiFetch).mockResolvedValueOnce(responseLike({ data: { url: signed, expiresIn: 120 } }));
+    await expect(fetchPaymentProofUrl('pay-1')).resolves.toBe(signed);
+  });
+
+  it('throws when the server reports an error', async () => {
+    vi.mocked(apiFetch).mockResolvedValueOnce(responseLike({ message: 'No proof is stored for this payment' }, false, 404));
+    await expect(fetchPaymentProofUrl('pay-1')).rejects.toThrow('The proof link could not be created right now.');
+  });
+
+  it('throws when the body carries no URL', async () => {
+    vi.mocked(apiFetch).mockResolvedValueOnce(responseLike({ data: {} }));
+    await expect(fetchPaymentProofUrl('pay-1')).rejects.toThrow('The proof link could not be created right now.');
   });
 });

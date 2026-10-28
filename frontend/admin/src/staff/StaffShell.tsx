@@ -1,10 +1,10 @@
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useEffect, useRef, useState } from 'react';
-import { clearAccessTokens, getAccessToken } from '../api';
+import { clearAccessTokens, getAccessToken, tryRefreshAccessToken } from '../api';
 import { ThemeSwitch } from '../components/ThemeSwitch';
 import { AttendanceIcon, CalendarIcon, DashboardIcon, ServicesIcon, StaffIcon, UserIcon } from '../components/icons';
 import { SignOutControl } from '../components/SignOutControl';
-import { clearAccountSession } from '../session';
+import { clearAccountSession, readAccountSession } from '../session';
 import { StaffSignIn } from './StaffSignIn';
 
 /**
@@ -56,6 +56,31 @@ const pageTitles: Record<string, { title: string; description: string }> = {
 export function StaffShell() {
   const location = useLocation();
   const [isAuthenticated, setIsAuthenticated] = useState(Boolean(getAccessToken()));
+  // The access token lives in memory only; a full page load (the sign-in flow
+  // ends in one) must silently restore the httpOnly-cookie session or the
+  // staff member is asked to sign in again in a loop. Same pattern as the
+  // administrator shell: a stored session hint triggers the restore and the
+  // sign-in form never flashes over a valid session.
+  const [restoring, setRestoring] = useState(() => Boolean(getAccessToken()) || Boolean(readAccountSession()));
+
+  useEffect(() => {
+    if (!restoring) return;
+    let cancelled = false;
+    void (async () => {
+      const restored = await tryRefreshAccessToken();
+      if (cancelled) return;
+      if (restored) {
+        setIsAuthenticated(true);
+      } else {
+        clearAccessTokens();
+        clearAccountSession();
+      }
+      setRestoring(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [restoring]);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const mobileNavToggleRef = useRef<HTMLButtonElement | null>(null);
 
@@ -76,6 +101,18 @@ export function StaffShell() {
   }, [mobileNavOpen]);
 
   const page = pageTitles[location.pathname] ?? pageTitles['/my'];
+
+  if (restoring) {
+    return (
+      <div className="login-page" role="status" aria-live="polite">
+        <main className="login-form-panel">
+          <div className="login-pane">
+            <p className="login-lede">Restoring your session…</p>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   if (!isAuthenticated) {
     return <StaffSignIn onSignedIn={() => { setIsAuthenticated(true); window.location.reload(); }} />;
