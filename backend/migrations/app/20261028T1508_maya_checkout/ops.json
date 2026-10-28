@@ -1,0 +1,500 @@
+[
+  {
+    "id": "addNativeEnumValue.payment_status.PENDING",
+    "label": "Add value \"PENDING\" to enum type \"payment_status\"",
+    "summary": "Adds value \"PENDING\" to enum type \"payment_status\". A newly added enum value cannot be used until the transaction that adds it commits, so a migration that both appends a value and uses it in the same step will fail at apply.",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "type",
+        "name": "payment_status"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure enum type \"payment_status\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_type\" AS \"t\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"t\".\"typnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"t\".\"typname\" = $2 AND \"t\".\"typtype\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "payment_status",
+          "e"
+        ]
+      },
+      {
+        "description": "ensure value \"PENDING\" is absent from enum type \"payment_status\"",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_enum\" AS \"e\" INNER JOIN \"pg_type\" AS \"t\" ON \"t\".\"oid\" = \"e\".\"enumtypid\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"t\".\"typnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"t\".\"typname\" = $2 AND \"e\".\"enumlabel\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "payment_status",
+          "PENDING"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add value \"PENDING\" to enum type \"payment_status\"",
+        "sql": "ALTER TYPE \"public\".\"payment_status\" ADD VALUE 'PENDING'"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify value \"PENDING\" exists on enum type \"payment_status\"",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_enum\" AS \"e\" INNER JOIN \"pg_type\" AS \"t\" ON \"t\".\"oid\" = \"e\".\"enumtypid\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"t\".\"typnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"t\".\"typname\" = $2 AND \"e\".\"enumlabel\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "payment_status",
+          "PENDING"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "addNativeEnumValue.payment_status.PAID",
+    "label": "Add value \"PAID\" to enum type \"payment_status\"",
+    "summary": "Adds value \"PAID\" to enum type \"payment_status\". A newly added enum value cannot be used until the transaction that adds it commits, so a migration that both appends a value and uses it in the same step will fail at apply.",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "type",
+        "name": "payment_status"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure enum type \"payment_status\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_type\" AS \"t\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"t\".\"typnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"t\".\"typname\" = $2 AND \"t\".\"typtype\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "payment_status",
+          "e"
+        ]
+      },
+      {
+        "description": "ensure value \"PAID\" is absent from enum type \"payment_status\"",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_enum\" AS \"e\" INNER JOIN \"pg_type\" AS \"t\" ON \"t\".\"oid\" = \"e\".\"enumtypid\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"t\".\"typnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"t\".\"typname\" = $2 AND \"e\".\"enumlabel\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "payment_status",
+          "PAID"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add value \"PAID\" to enum type \"payment_status\"",
+        "sql": "ALTER TYPE \"public\".\"payment_status\" ADD VALUE 'PAID'"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify value \"PAID\" exists on enum type \"payment_status\"",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_enum\" AS \"e\" INNER JOIN \"pg_type\" AS \"t\" ON \"t\".\"oid\" = \"e\".\"enumtypid\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"t\".\"typnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"t\".\"typname\" = $2 AND \"e\".\"enumlabel\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "payment_status",
+          "PAID"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "addNativeEnumValue.payment_status.FAILED",
+    "label": "Add value \"FAILED\" to enum type \"payment_status\"",
+    "summary": "Adds value \"FAILED\" to enum type \"payment_status\". A newly added enum value cannot be used until the transaction that adds it commits, so a migration that both appends a value and uses it in the same step will fail at apply.",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "type",
+        "name": "payment_status"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure enum type \"payment_status\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_type\" AS \"t\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"t\".\"typnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"t\".\"typname\" = $2 AND \"t\".\"typtype\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "payment_status",
+          "e"
+        ]
+      },
+      {
+        "description": "ensure value \"FAILED\" is absent from enum type \"payment_status\"",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_enum\" AS \"e\" INNER JOIN \"pg_type\" AS \"t\" ON \"t\".\"oid\" = \"e\".\"enumtypid\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"t\".\"typnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"t\".\"typname\" = $2 AND \"e\".\"enumlabel\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "payment_status",
+          "FAILED"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add value \"FAILED\" to enum type \"payment_status\"",
+        "sql": "ALTER TYPE \"public\".\"payment_status\" ADD VALUE 'FAILED'"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify value \"FAILED\" exists on enum type \"payment_status\"",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_enum\" AS \"e\" INNER JOIN \"pg_type\" AS \"t\" ON \"t\".\"oid\" = \"e\".\"enumtypid\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"t\".\"typnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"t\".\"typname\" = $2 AND \"e\".\"enumlabel\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "payment_status",
+          "FAILED"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "addNativeEnumValue.payment_status.EXPIRED",
+    "label": "Add value \"EXPIRED\" to enum type \"payment_status\"",
+    "summary": "Adds value \"EXPIRED\" to enum type \"payment_status\". A newly added enum value cannot be used until the transaction that adds it commits, so a migration that both appends a value and uses it in the same step will fail at apply.",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "type",
+        "name": "payment_status"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure enum type \"payment_status\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_type\" AS \"t\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"t\".\"typnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"t\".\"typname\" = $2 AND \"t\".\"typtype\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "payment_status",
+          "e"
+        ]
+      },
+      {
+        "description": "ensure value \"EXPIRED\" is absent from enum type \"payment_status\"",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_enum\" AS \"e\" INNER JOIN \"pg_type\" AS \"t\" ON \"t\".\"oid\" = \"e\".\"enumtypid\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"t\".\"typnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"t\".\"typname\" = $2 AND \"e\".\"enumlabel\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "payment_status",
+          "EXPIRED"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add value \"EXPIRED\" to enum type \"payment_status\"",
+        "sql": "ALTER TYPE \"public\".\"payment_status\" ADD VALUE 'EXPIRED'"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify value \"EXPIRED\" exists on enum type \"payment_status\"",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_enum\" AS \"e\" INNER JOIN \"pg_type\" AS \"t\" ON \"t\".\"oid\" = \"e\".\"enumtypid\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"t\".\"typnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"t\".\"typname\" = $2 AND \"e\".\"enumlabel\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "payment_status",
+          "EXPIRED"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "column.public.appointments.hold_expires_at",
+    "label": "Add column \"hold_expires_at\" to \"appointments\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "hold_expires_at",
+        "table": "appointments"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"hold_expires_at\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "appointments",
+          "hold_expires_at"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"hold_expires_at\"",
+        "sql": "ALTER TABLE \"public\".\"appointments\" ADD COLUMN \"hold_expires_at\" timestamptz"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"hold_expires_at\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "appointments",
+          "hold_expires_at"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "column.public.payments.provider",
+    "label": "Add column \"provider\" to \"payments\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "provider",
+        "table": "payments"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"provider\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "payments",
+          "provider"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"provider\"",
+        "sql": "ALTER TABLE \"public\".\"payments\" ADD COLUMN \"provider\" character varying(20) DEFAULT ('MANUAL') NOT NULL"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"provider\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "payments",
+          "provider"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "column.public.payments.provider_checkout_id",
+    "label": "Add column \"provider_checkout_id\" to \"payments\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "provider_checkout_id",
+        "table": "payments"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"provider_checkout_id\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "payments",
+          "provider_checkout_id"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"provider_checkout_id\"",
+        "sql": "ALTER TABLE \"public\".\"payments\" ADD COLUMN \"provider_checkout_id\" character varying(100)"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"provider_checkout_id\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "payments",
+          "provider_checkout_id"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "column.public.payments.provider_payment_id",
+    "label": "Add column \"provider_payment_id\" to \"payments\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "provider_payment_id",
+        "table": "payments"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"provider_payment_id\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "payments",
+          "provider_payment_id"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"provider_payment_id\"",
+        "sql": "ALTER TABLE \"public\".\"payments\" ADD COLUMN \"provider_payment_id\" character varying(100)"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"provider_payment_id\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "payments",
+          "provider_payment_id"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "checkConstraint.payments.payments_provider_check",
+    "label": "Add check constraint \"payments_provider_check\" on \"payments\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "checkConstraint",
+        "name": "payments_provider_check",
+        "table": "payments"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure constraint \"payments_provider_check\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "payments_provider_check",
+          "public",
+          "\"public\".\"payments\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add check constraint \"payments_provider_check\"",
+        "sql": "ALTER TABLE \"public\".\"payments\" ADD CONSTRAINT \"payments_provider_check\" CHECK (((provider)::text = ANY (ARRAY['MANUAL'::character varying, 'MAYA'::character varying])))"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify constraint \"payments_provider_check\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "payments_provider_check",
+          "public",
+          "\"public\".\"payments\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "unique.payments.payments_provider_checkout_id_key",
+    "label": "Add unique constraint on \"payments\" (provider_checkout_id)",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "unique",
+        "name": "payments_provider_checkout_id_key",
+        "table": "payments"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure constraint \"payments_provider_checkout_id_key\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "payments_provider_checkout_id_key",
+          "public",
+          "\"public\".\"payments\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add unique constraint \"payments_provider_checkout_id_key\"",
+        "sql": "ALTER TABLE \"public\".\"payments\" ADD CONSTRAINT \"payments_provider_checkout_id_key\" UNIQUE (\"provider_checkout_id\")"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify constraint \"payments_provider_checkout_id_key\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "payments_provider_checkout_id_key",
+          "public",
+          "\"public\".\"payments\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "unique.payments.payments_provider_payment_id_key",
+    "label": "Add unique constraint on \"payments\" (provider_payment_id)",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "unique",
+        "name": "payments_provider_payment_id_key",
+        "table": "payments"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure constraint \"payments_provider_payment_id_key\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "payments_provider_payment_id_key",
+          "public",
+          "\"public\".\"payments\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add unique constraint \"payments_provider_payment_id_key\"",
+        "sql": "ALTER TABLE \"public\".\"payments\" ADD CONSTRAINT \"payments_provider_payment_id_key\" UNIQUE (\"provider_payment_id\")"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify constraint \"payments_provider_payment_id_key\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "payments_provider_payment_id_key",
+          "public",
+          "\"public\".\"payments\""
+        ]
+      }
+    ]
+  }
+]

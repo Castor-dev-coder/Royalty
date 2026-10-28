@@ -55,6 +55,9 @@ namespace public {
   native_enum PaymentMethod {
     CASH = "CASH"
     GCASH = "GCASH"
+    // Server-confirmed Maya checkout payments. Never labelled GCASH: Maya rows
+    // carry provider='MAYA' and provider reference ids instead of GCash refs.
+    MAYA = "MAYA"
     @@map("payment_method")
   }
 
@@ -68,6 +71,12 @@ namespace public {
     UNVERIFIED = "UNVERIFIED"
     VERIFIED = "VERIFIED"
     REJECTED = "REJECTED"
+    // Maya checkout lifecycle (provider-side); legacy rows keep the three
+    // values above. PAID means the provider confirmed the money.
+    PENDING = "PENDING"
+    PAID = "PAID"
+    FAILED = "FAILED"
+    EXPIRED = "EXPIRED"
     @@map("payment_status")
   }
 
@@ -152,6 +161,9 @@ namespace public {
     createdAt           Timestamptz                @default(now()) @map("created_at")
     updatedAt           Timestamptz                @default(now()) @map("updated_at")
     staffId             Uuid?                      @map("staff_id")
+    // Maya payment hold: while unexpired the RESERVED appointment blocks the
+    // slot; an expired hold frees the slot lazily (no cron).
+    holdExpiresAt       Timestamptz?               @map("hold_expires_at")
     appointmentServices AppointmentService[]
     payments            Payment[]
     reviews             Review?
@@ -273,6 +285,12 @@ namespace public {
     referenceNo      VarChar(100)?          @unique(map: "payments_reference_no_key") @map("reference_no")
     proofUrl         VarChar(500)?          @map("proof_url")
     proofStoragePath VarChar(500)?          @map("proof_storage_path")
+    // Payment provider: MANUAL (human-recorded cash / GCash-era rows) or
+    // MAYA (server-confirmed Maya checkout). Provider identity columns are
+    // unique where set (Postgres UNIQUE ignores NULLs).
+    provider         VarChar(20)             @default(sql`'MANUAL'`) @map("provider")
+    providerCheckoutId VarChar(100)?         @unique(map: "payments_provider_checkout_id_key") @map("provider_checkout_id")
+    providerPaymentId  VarChar(100)?         @unique(map: "payments_provider_payment_id_key") @map("provider_payment_id")
     recordedBy       Uuid?                  @map("recorded_by")
     verifiedBy       Uuid?                  @map("verified_by")
     verifiedAt       Timestamptz?           @map("verified_at")
@@ -288,7 +306,8 @@ namespace public {
     @@index([verifiedBy], map: "idx_payments_verified_by")
     @@check(expression: "(amount >= (0)::numeric)", map: "payment_amount_positive")
     @@check(expression: "((status <> 'VERIFIED'::payment_status) OR ((verified_by IS NOT NULL) AND (verified_at IS NOT NULL)))", map: "valid_verified_payment")
-    @@check(expression: "((channel <> 'ONLINE'::payment_channel) OR ((reference_no IS NOT NULL) AND (proof_url IS NOT NULL)))", map: "online_payment_requires_proof")
+    @@check(expression: "(((provider)::text <> 'MANUAL'::text) OR ((channel <> 'ONLINE'::payment_channel) OR ((reference_no IS NOT NULL) AND (proof_url IS NOT NULL))))", map: "online_payment_requires_proof")
+    @@check(expression: "((provider)::text = ANY ((ARRAY['MANUAL'::character varying, 'MAYA'::character varying])::text[]))", map: "payments_provider_check")
     @@rls
     @@map("payments")
   }

@@ -1,0 +1,137 @@
+[
+  {
+    "id": "addNativeEnumValue.payment_method.MAYA",
+    "label": "Add value \"MAYA\" to enum type \"payment_method\"",
+    "summary": "Adds value \"MAYA\" to enum type \"payment_method\". A newly added enum value cannot be used until the transaction that adds it commits, so a migration that both appends a value and uses it in the same step will fail at apply.",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "type",
+        "name": "payment_method"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure enum type \"payment_method\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_type\" AS \"t\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"t\".\"typnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"t\".\"typname\" = $2 AND \"t\".\"typtype\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "payment_method",
+          "e"
+        ]
+      },
+      {
+        "description": "ensure value \"MAYA\" is absent from enum type \"payment_method\"",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_enum\" AS \"e\" INNER JOIN \"pg_type\" AS \"t\" ON \"t\".\"oid\" = \"e\".\"enumtypid\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"t\".\"typnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"t\".\"typname\" = $2 AND \"e\".\"enumlabel\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "payment_method",
+          "MAYA"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add value \"MAYA\" to enum type \"payment_method\"",
+        "sql": "ALTER TYPE \"public\".\"payment_method\" ADD VALUE 'MAYA'"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify value \"MAYA\" exists on enum type \"payment_method\"",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_enum\" AS \"e\" INNER JOIN \"pg_type\" AS \"t\" ON \"t\".\"oid\" = \"e\".\"enumtypid\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"t\".\"typnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"t\".\"typname\" = $2 AND \"e\".\"enumlabel\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "payment_method",
+          "MAYA"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "dropCheckConstraint.payments.online_payment_requires_proof",
+    "label": "Drop check constraint \"online_payment_requires_proof\" on \"payments\"",
+    "operationClass": "destructive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "checkConstraint",
+        "name": "online_payment_requires_proof",
+        "table": "payments"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure constraint \"online_payment_requires_proof\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "online_payment_requires_proof",
+          "public",
+          "\"public\".\"payments\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop check constraint \"online_payment_requires_proof\"",
+        "sql": "ALTER TABLE \"public\".\"payments\" DROP CONSTRAINT \"online_payment_requires_proof\""
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify constraint \"online_payment_requires_proof\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "online_payment_requires_proof",
+          "public",
+          "\"public\".\"payments\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "checkConstraint.payments.online_payment_requires_proof",
+    "label": "Add check constraint \"online_payment_requires_proof\" on \"payments\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "checkConstraint",
+        "name": "online_payment_requires_proof",
+        "table": "payments"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure constraint \"online_payment_requires_proof\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "online_payment_requires_proof",
+          "public",
+          "\"public\".\"payments\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add check constraint \"online_payment_requires_proof\"",
+        "sql": "ALTER TABLE \"public\".\"payments\" ADD CONSTRAINT \"online_payment_requires_proof\" CHECK ((((provider)::text <> 'MANUAL'::text) OR ((channel <> 'ONLINE'::payment_channel) OR ((reference_no IS NOT NULL) AND (proof_url IS NOT NULL)))))"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify constraint \"online_payment_requires_proof\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "online_payment_requires_proof",
+          "public",
+          "\"public\".\"payments\""
+        ]
+      }
+    ]
+  }
+]

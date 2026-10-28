@@ -377,6 +377,13 @@
                   "kind": "scalar"
                 }
               },
+              "holdExpiresAt": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "kind": "scalar"
+                }
+              },
               "id": {
                 "nullable": false,
                 "type": {
@@ -523,6 +530,9 @@
                 },
                 "endTime": {
                   "column": "end_time"
+                },
+                "holdExpiresAt": {
+                  "column": "hold_expires_at"
                 },
                 "id": {
                   "column": "id"
@@ -1472,6 +1482,36 @@
                   }
                 }
               },
+              "provider": {
+                "nullable": false,
+                "type": {
+                  "codecId": "sql/varchar@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "length": 20
+                  }
+                }
+              },
+              "providerCheckoutId": {
+                "nullable": true,
+                "type": {
+                  "codecId": "sql/varchar@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "length": 100
+                  }
+                }
+              },
+              "providerPaymentId": {
+                "nullable": true,
+                "type": {
+                  "codecId": "sql/varchar@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "length": 100
+                  }
+                }
+              },
               "recordedBy": {
                 "nullable": true,
                 "type": {
@@ -1596,6 +1636,15 @@
                 },
                 "proofUrl": {
                   "column": "proof_url"
+                },
+                "provider": {
+                  "column": "provider"
+                },
+                "providerCheckoutId": {
+                  "column": "provider_checkout_id"
+                },
+                "providerPaymentId": {
+                  "column": "provider_payment_id"
                 },
                 "recordedBy": {
                   "column": "recorded_by"
@@ -3246,7 +3295,8 @@
               "kind": "postgres-enum",
               "members": [
                 "CASH",
-                "GCASH"
+                "GCASH",
+                "MAYA"
               ],
               "typeName": "payment_method"
             },
@@ -3255,7 +3305,11 @@
               "members": [
                 "UNVERIFIED",
                 "VERIFIED",
-                "REJECTED"
+                "REJECTED",
+                "PENDING",
+                "PAID",
+                "FAILED",
+                "EXPIRED"
               ],
               "typeName": "payment_status"
             },
@@ -3714,6 +3768,11 @@
                   "codecId": "pg/time-temporal@1",
                   "nativeType": "time",
                   "nullable": false
+                },
+                "hold_expires_at": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
+                  "nullable": true
                 },
                 "id": {
                   "codecId": "pg/uuid@1",
@@ -4314,12 +4373,16 @@
             "payments": {
               "checks": [
                 {
-                  "expression": "((channel <> 'ONLINE'::payment_channel) OR ((reference_no IS NOT NULL) AND (proof_url IS NOT NULL)))",
+                  "expression": "(((provider)::text <> 'MANUAL'::text) OR ((channel <> 'ONLINE'::payment_channel) OR ((reference_no IS NOT NULL) AND (proof_url IS NOT NULL))))",
                   "name": "online_payment_requires_proof"
                 },
                 {
                   "expression": "(amount >= (0)::numeric)",
                   "name": "payment_amount_positive"
+                },
+                {
+                  "expression": "((provider)::text = ANY ((ARRAY['MANUAL'::character varying, 'MAYA'::character varying])::text[]))",
+                  "name": "payments_provider_check"
                 },
                 {
                   "expression": "((status <> 'VERIFIED'::payment_status) OR ((verified_by IS NOT NULL) AND (verified_at IS NOT NULL)))",
@@ -4401,6 +4464,34 @@
                   "nullable": true,
                   "typeParams": {
                     "length": 500
+                  }
+                },
+                "provider": {
+                  "codecId": "sql/varchar@1",
+                  "default": {
+                    "expression": "'MANUAL'",
+                    "kind": "function"
+                  },
+                  "nativeType": "character varying",
+                  "nullable": false,
+                  "typeParams": {
+                    "length": 20
+                  }
+                },
+                "provider_checkout_id": {
+                  "codecId": "sql/varchar@1",
+                  "nativeType": "character varying",
+                  "nullable": true,
+                  "typeParams": {
+                    "length": 100
+                  }
+                },
+                "provider_payment_id": {
+                  "codecId": "sql/varchar@1",
+                  "nativeType": "character varying",
+                  "nullable": true,
+                  "typeParams": {
+                    "length": 100
                   }
                 },
                 "recorded_by": {
@@ -4547,6 +4638,18 @@
                 "name": "payments_pkey"
               },
               "uniques": [
+                {
+                  "columns": [
+                    "provider_checkout_id"
+                  ],
+                  "name": "payments_provider_checkout_id_key"
+                },
+                {
+                  "columns": [
+                    "provider_payment_id"
+                  ],
+                  "name": "payments_provider_payment_id_key"
+                },
                 {
                   "columns": [
                     "reference_no"
@@ -6164,7 +6267,8 @@
               "kind": "valueSet",
               "values": [
                 "CASH",
-                "GCASH"
+                "GCASH",
+                "MAYA"
               ]
             },
             "PaymentStatus": {
@@ -6172,7 +6276,11 @@
               "values": [
                 "UNVERIFIED",
                 "VERIFIED",
-                "REJECTED"
+                "REJECTED",
+                "PENDING",
+                "PAID",
+                "FAILED",
+                "EXPIRED"
               ]
             },
             "ReviewRatingCategory": {
@@ -6206,7 +6314,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "3aec5a97c479eb3cc479b1fde9ab9d2c61bef24a4f81b3f6d5e57db40eca2356"
+    "storageHash": "8647299e69f5dc4feae7652244dfa4ffa4251af1fc50dd3237764be4668401a5"
   },
   "capabilities": {
     "postgres": {

@@ -34,7 +34,7 @@ import type {
 } from '@prisma/orm-postgres/contract/types';
 
 export type StorageHash =
-  StorageHashBase<'3aec5a97c479eb3cc479b1fde9ab9d2c61bef24a4f81b3f6d5e57db40eca2356'>;
+  StorageHashBase<'8647299e69f5dc4feae7652244dfa4ffa4251af1fc50dd3237764be4668401a5'>;
 export type ExecutionHash = ExecutionHashBase<string>;
 export type ProfileHash =
   ProfileHashBase<'3916f444a8a17ad749191acf9e08dad97d1a327b88c2f1d45d12f240296aa8b2'>;
@@ -266,6 +266,7 @@ export type FieldOutputTypes = {
       readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
       readonly customerId: CodecTypes['pg/uuid@1']['output'];
       readonly endTime: CodecTypes['pg/time-temporal@1']['output'];
+      readonly holdExpiresAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
       readonly id: CodecTypes['pg/uuid@1']['output'];
       readonly staffId: CodecTypes['pg/uuid@1']['output'] | null;
       readonly startTime: CodecTypes['pg/time-temporal@1']['output'];
@@ -351,12 +352,16 @@ export type FieldOutputTypes = {
       readonly channel: 'ONLINE' | 'IN_PERSON';
       readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
       readonly id: CodecTypes['pg/uuid@1']['output'];
-      readonly paymentMethod: 'CASH' | 'GCASH';
+      readonly paymentMethod: 'CASH' | 'GCASH' | 'MAYA';
       readonly proofStoragePath: Varchar<500> | null;
       readonly proofUrl: Varchar<500> | null;
+      readonly provider: Varchar<20>;
+      readonly providerCheckoutId: Varchar<100> | null;
+      readonly providerPaymentId: Varchar<100> | null;
       readonly recordedBy: CodecTypes['pg/uuid@1']['output'] | null;
       readonly referenceNo: Varchar<100> | null;
-      readonly status: 'UNVERIFIED' | 'VERIFIED' | 'REJECTED';
+      readonly status:
+        'UNVERIFIED' | 'VERIFIED' | 'REJECTED' | 'PENDING' | 'PAID' | 'FAILED' | 'EXPIRED';
       readonly updatedAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
       readonly verifiedAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
       readonly verifiedBy: CodecTypes['pg/uuid@1']['output'] | null;
@@ -497,6 +502,7 @@ export type FieldInputTypes = {
       readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['input'];
       readonly customerId: CodecTypes['pg/uuid@1']['input'];
       readonly endTime: CodecTypes['pg/time-temporal@1']['input'];
+      readonly holdExpiresAt: CodecTypes['pg/timestamptz-temporal@1']['input'] | null;
       readonly id: CodecTypes['pg/uuid@1']['input'];
       readonly staffId: CodecTypes['pg/uuid@1']['input'] | null;
       readonly startTime: CodecTypes['pg/time-temporal@1']['input'];
@@ -582,12 +588,16 @@ export type FieldInputTypes = {
       readonly channel: 'ONLINE' | 'IN_PERSON';
       readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['input'];
       readonly id: CodecTypes['pg/uuid@1']['input'];
-      readonly paymentMethod: 'CASH' | 'GCASH';
+      readonly paymentMethod: 'CASH' | 'GCASH' | 'MAYA';
       readonly proofStoragePath: CodecTypes['sql/varchar@1']['input'] | null;
       readonly proofUrl: CodecTypes['sql/varchar@1']['input'] | null;
+      readonly provider: CodecTypes['sql/varchar@1']['input'];
+      readonly providerCheckoutId: CodecTypes['sql/varchar@1']['input'] | null;
+      readonly providerPaymentId: CodecTypes['sql/varchar@1']['input'] | null;
       readonly recordedBy: CodecTypes['pg/uuid@1']['input'] | null;
       readonly referenceNo: CodecTypes['sql/varchar@1']['input'] | null;
-      readonly status: 'UNVERIFIED' | 'VERIFIED' | 'REJECTED';
+      readonly status:
+        'UNVERIFIED' | 'VERIFIED' | 'REJECTED' | 'PENDING' | 'PAID' | 'FAILED' | 'EXPIRED';
       readonly updatedAt: CodecTypes['pg/timestamptz-temporal@1']['input'];
       readonly verifiedAt: CodecTypes['pg/timestamptz-temporal@1']['input'] | null;
       readonly verifiedBy: CodecTypes['pg/uuid@1']['input'] | null;
@@ -737,6 +747,7 @@ export type StorageColumnTypes = {
       readonly created_at: CodecTypes['pg/timestamptz-temporal@1']['output'];
       readonly customer_id: CodecTypes['pg/uuid@1']['output'];
       readonly end_time: CodecTypes['pg/time-temporal@1']['output'];
+      readonly hold_expires_at: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
       readonly id: CodecTypes['pg/uuid@1']['output'];
       readonly staff_id: CodecTypes['pg/uuid@1']['output'] | null;
       readonly start_time: CodecTypes['pg/time-temporal@1']['output'];
@@ -791,12 +802,16 @@ export type StorageColumnTypes = {
       readonly channel: 'ONLINE' | 'IN_PERSON';
       readonly created_at: CodecTypes['pg/timestamptz-temporal@1']['output'];
       readonly id: CodecTypes['pg/uuid@1']['output'];
-      readonly payment_method: 'CASH' | 'GCASH';
+      readonly payment_method: 'CASH' | 'GCASH' | 'MAYA';
       readonly proof_storage_path: Varchar<500> | null;
       readonly proof_url: Varchar<500> | null;
+      readonly provider: Varchar<20>;
+      readonly provider_checkout_id: Varchar<100> | null;
+      readonly provider_payment_id: Varchar<100> | null;
       readonly recorded_by: CodecTypes['pg/uuid@1']['output'] | null;
       readonly reference_no: Varchar<100> | null;
-      readonly status: 'UNVERIFIED' | 'VERIFIED' | 'REJECTED';
+      readonly status:
+        'UNVERIFIED' | 'VERIFIED' | 'REJECTED' | 'PENDING' | 'PAID' | 'FAILED' | 'EXPIRED';
       readonly updated_at: CodecTypes['pg/timestamptz-temporal@1']['output'];
       readonly verified_at: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
       readonly verified_by: CodecTypes['pg/uuid@1']['output'] | null;
@@ -968,6 +983,7 @@ export type StorageColumnInputTypes = {
       readonly created_at: CodecTypes['pg/timestamptz-temporal@1']['input'];
       readonly customer_id: CodecTypes['pg/uuid@1']['input'];
       readonly end_time: CodecTypes['pg/time-temporal@1']['input'];
+      readonly hold_expires_at: CodecTypes['pg/timestamptz-temporal@1']['input'] | null;
       readonly id: CodecTypes['pg/uuid@1']['input'];
       readonly staff_id: CodecTypes['pg/uuid@1']['input'] | null;
       readonly start_time: CodecTypes['pg/time-temporal@1']['input'];
@@ -1022,12 +1038,16 @@ export type StorageColumnInputTypes = {
       readonly channel: 'ONLINE' | 'IN_PERSON';
       readonly created_at: CodecTypes['pg/timestamptz-temporal@1']['input'];
       readonly id: CodecTypes['pg/uuid@1']['input'];
-      readonly payment_method: 'CASH' | 'GCASH';
+      readonly payment_method: 'CASH' | 'GCASH' | 'MAYA';
       readonly proof_storage_path: CodecTypes['sql/varchar@1']['input'] | null;
       readonly proof_url: CodecTypes['sql/varchar@1']['input'] | null;
+      readonly provider: CodecTypes['sql/varchar@1']['input'];
+      readonly provider_checkout_id: CodecTypes['sql/varchar@1']['input'] | null;
+      readonly provider_payment_id: CodecTypes['sql/varchar@1']['input'] | null;
       readonly recorded_by: CodecTypes['pg/uuid@1']['input'] | null;
       readonly reference_no: CodecTypes['sql/varchar@1']['input'] | null;
-      readonly status: 'UNVERIFIED' | 'VERIFIED' | 'REJECTED';
+      readonly status:
+        'UNVERIFIED' | 'VERIFIED' | 'REJECTED' | 'PENDING' | 'PAID' | 'FAILED' | 'EXPIRED';
       readonly updated_at: CodecTypes['pg/timestamptz-temporal@1']['input'];
       readonly verified_at: CodecTypes['pg/timestamptz-temporal@1']['input'] | null;
       readonly verified_by: CodecTypes['pg/uuid@1']['input'] | null;
@@ -1207,6 +1227,7 @@ export namespace Models {
     createdAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
     customerId: CodecTypes['pg/uuid@1']['output'];
     endTime: CodecTypes['pg/time-temporal@1']['output'];
+    holdExpiresAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
     id: CodecTypes['pg/uuid@1']['output'];
     staffId: CodecTypes['pg/uuid@1']['output'] | null;
     startTime: CodecTypes['pg/time-temporal@1']['output'];
@@ -1316,12 +1337,15 @@ export namespace Models {
     channel: 'ONLINE' | 'IN_PERSON';
     createdAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
     id: CodecTypes['pg/uuid@1']['output'];
-    paymentMethod: 'CASH' | 'GCASH';
+    paymentMethod: 'CASH' | 'GCASH' | 'MAYA';
     proofStoragePath: Varchar<500> | null;
     proofUrl: Varchar<500> | null;
+    provider: Varchar<20>;
+    providerCheckoutId: Varchar<100> | null;
+    providerPaymentId: Varchar<100> | null;
     recordedBy: CodecTypes['pg/uuid@1']['output'] | null;
     referenceNo: Varchar<100> | null;
-    status: 'UNVERIFIED' | 'VERIFIED' | 'REJECTED';
+    status: 'UNVERIFIED' | 'VERIFIED' | 'REJECTED' | 'PENDING' | 'PAID' | 'FAILED' | 'EXPIRED';
     updatedAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
     verifiedAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
     verifiedBy: CodecTypes['pg/uuid@1']['output'] | null;
@@ -1762,6 +1786,11 @@ type ContractBase = Omit<
                   readonly nativeType: 'time';
                   readonly codecId: 'pg/time-temporal@1';
                   readonly nullable: false;
+                };
+                readonly hold_expires_at: {
+                  readonly nativeType: 'timestamptz';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                  readonly nullable: true;
                 };
                 readonly id: {
                   readonly nativeType: 'uuid';
@@ -2252,6 +2281,25 @@ type ContractBase = Omit<
                   readonly nullable: true;
                   readonly typeParams: { readonly length: 500 };
                 };
+                readonly provider: {
+                  readonly nativeType: 'character varying';
+                  readonly codecId: 'sql/varchar@1';
+                  readonly nullable: false;
+                  readonly default: { readonly kind: 'function'; readonly expression: "'MANUAL'" };
+                  readonly typeParams: { readonly length: 20 };
+                };
+                readonly provider_checkout_id: {
+                  readonly nativeType: 'character varying';
+                  readonly codecId: 'sql/varchar@1';
+                  readonly nullable: true;
+                  readonly typeParams: { readonly length: 100 };
+                };
+                readonly provider_payment_id: {
+                  readonly nativeType: 'character varying';
+                  readonly codecId: 'sql/varchar@1';
+                  readonly nullable: true;
+                  readonly typeParams: { readonly length: 100 };
+                };
                 readonly recorded_by: {
                   readonly nativeType: 'uuid';
                   readonly codecId: 'pg/uuid@1';
@@ -2292,6 +2340,14 @@ type ContractBase = Omit<
               };
               primaryKey: { readonly columns: readonly ['id']; readonly name: 'payments_pkey' };
               uniques: readonly [
+                {
+                  readonly columns: readonly ['provider_checkout_id'];
+                  readonly name: 'payments_provider_checkout_id_key';
+                },
+                {
+                  readonly columns: readonly ['provider_payment_id'];
+                  readonly name: 'payments_provider_payment_id_key';
+                },
                 {
                   readonly columns: readonly ['reference_no'];
                   readonly name: 'payments_reference_no_key';
@@ -3556,11 +3612,19 @@ type ContractBase = Omit<
             };
             readonly PaymentMethod: {
               readonly kind: 'valueSet';
-              readonly values: readonly ['CASH', 'GCASH'];
+              readonly values: readonly ['CASH', 'GCASH', 'MAYA'];
             };
             readonly PaymentStatus: {
               readonly kind: 'valueSet';
-              readonly values: readonly ['UNVERIFIED', 'VERIFIED', 'REJECTED'];
+              readonly values: readonly [
+                'UNVERIFIED',
+                'VERIFIED',
+                'REJECTED',
+                'PENDING',
+                'PAID',
+                'FAILED',
+                'EXPIRED',
+              ];
             };
             readonly ReviewRatingCategory: {
               readonly kind: 'valueSet';
@@ -3847,6 +3911,13 @@ type ContractBase = Omit<
                 readonly nullable: false;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/time-temporal@1' };
               };
+              readonly holdExpiresAt: {
+                readonly nullable: true;
+                readonly type: {
+                  readonly kind: 'scalar';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                };
+              };
               readonly id: {
                 readonly nullable: false;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/uuid@1' };
@@ -3952,6 +4023,7 @@ type ContractBase = Omit<
                 readonly createdAt: { readonly column: 'created_at' };
                 readonly customerId: { readonly column: 'customer_id' };
                 readonly endTime: { readonly column: 'end_time' };
+                readonly holdExpiresAt: { readonly column: 'hold_expires_at' };
                 readonly id: { readonly column: 'id' };
                 readonly staffId: { readonly column: 'staff_id' };
                 readonly startTime: { readonly column: 'start_time' };
@@ -4600,6 +4672,30 @@ type ContractBase = Omit<
                   readonly typeParams: { readonly length: 500 };
                 };
               };
+              readonly provider: {
+                readonly nullable: false;
+                readonly type: {
+                  readonly kind: 'scalar';
+                  readonly codecId: 'sql/varchar@1';
+                  readonly typeParams: { readonly length: 20 };
+                };
+              };
+              readonly providerCheckoutId: {
+                readonly nullable: true;
+                readonly type: {
+                  readonly kind: 'scalar';
+                  readonly codecId: 'sql/varchar@1';
+                  readonly typeParams: { readonly length: 100 };
+                };
+              };
+              readonly providerPaymentId: {
+                readonly nullable: true;
+                readonly type: {
+                  readonly kind: 'scalar';
+                  readonly codecId: 'sql/varchar@1';
+                  readonly typeParams: { readonly length: 100 };
+                };
+              };
               readonly recordedBy: {
                 readonly nullable: true;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/uuid@1' };
@@ -4689,6 +4785,9 @@ type ContractBase = Omit<
                 readonly paymentMethod: { readonly column: 'payment_method' };
                 readonly proofStoragePath: { readonly column: 'proof_storage_path' };
                 readonly proofUrl: { readonly column: 'proof_url' };
+                readonly provider: { readonly column: 'provider' };
+                readonly providerCheckoutId: { readonly column: 'provider_checkout_id' };
+                readonly providerPaymentId: { readonly column: 'provider_payment_id' };
                 readonly recordedBy: { readonly column: 'recorded_by' };
                 readonly referenceNo: { readonly column: 'reference_no' };
                 readonly status: { readonly column: 'status' };
