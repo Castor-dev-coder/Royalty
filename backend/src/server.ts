@@ -15,6 +15,7 @@ import { reviewsRouter } from './routes/reviews.js';
 import { matchingRouter } from './routes/matching.js';
 import { attendanceRouter } from './routes/attendance.js';
 import { paymentsRouter } from './routes/payments.js';
+import { PaymentsService } from './modules/payments/payments.service.js';
 
 export function createApp() {
   const app = express();
@@ -88,6 +89,11 @@ const PORT = process.env.PORT || 3000;
 if (process.env.NODE_ENV !== 'test') {
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
+    // Controlled warm-up of the one-row payment settings cache so the first
+    // payment screen is not charged a cold read. A failure here only leaves
+    // the cache empty — every read then falls back to a live query and
+    // serves the database's answer, never a stale one.
+    void PaymentsService.warmSettingsCache();
   });
 }
 

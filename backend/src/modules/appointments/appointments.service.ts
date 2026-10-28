@@ -26,6 +26,7 @@ import {
   toPlainTime,
 } from '../../utils/date-time.js';
 import { StaffService, type EligibleStaffInfo } from '../staff/staff.service.js';
+import { PaymentsService } from '../payments/payments.service.js';
 import type { CreateAppointmentInput } from './appointments.schemas.js';
 import type { CalendarAvailabilityQuery } from './appointments.schemas.js';
 import {
@@ -172,6 +173,15 @@ function toApplicationAppointment(appointment: AppointmentRecord): ApplicationAp
   };
 }
 
+// Per staff+date mutex for booking creation (see AppointmentsService.create).
+const staffSlotLocks = new Map<string, Promise<unknown>>();
+async function withStaffSlotLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const previous = staffSlotLocks.get(key) ?? Promise.resolve();
+  const run = previous.then(fn, fn);
+  staffSlotLocks.set(key, run.then(() => undefined, () => undefined));
+  return run;
+}
+
 export class AppointmentsService {
   static async getCalendarAvailability(input: CalendarAvailabilityQuery): Promise<{
     timezone: string;
@@ -247,7 +257,20 @@ export class AppointmentsService {
     return { timezone: env.STUDIO_TIME_ZONE, dates };
   }
 
+  /**
+   * Serialize the availability plan and the insert per staff member and day,
+   * so two concurrent requests can never both pass the conflict check and
+   * double-book the same stylist (single-process mutex, mirroring the
+   * payments module's appointment lock; the unique appointment-code
+   * constraint remains the race-safe backstop for code collisions).
+   */
   static async create(data: CreateAppointmentInput, requestingUserId: string): Promise<AppointmentInfo> {
+    return withStaffSlotLock(`${data.staffId ?? 'auto'}|${String(data.appointmentDate)}`, () =>
+      this.createLocked(data, requestingUserId),
+    );
+  }
+
+  private static async createLocked(data: CreateAppointmentInput, requestingUserId: string): Promise<AppointmentInfo> {
     const customer = await db.orm.public.Customer.where({ accountId: requestingUserId }).first();
     if (!customer) throw new NotFoundError('No customer profile found for this account');
 
@@ -552,6 +575,15 @@ export class AppointmentsService {
       throw new ConflictError(`Appointment cannot transition from ${appointment.status} to ${nextStatus}`);
     }
 
+    if (nextStatus === 'CANCELLED') {
+      // Paid bookings can only be cancelled by a MANAGER or ADMIN — a
+      // customer or STAFF cancellation is rejected on the server.
+      const settled = await PaymentsService.settledCentsFor(appointmentId);
+      if (settled > 0 && role !== 'MANAGER' && role !== 'ADMIN') {
+        throw new ForbiddenError('Paid bookings can only be cancelled by a manager or admin');
+      }
+    }
+
     if (role === 'CUSTOMER') {
       if (nextStatus !== 'CANCELLED') {
         throw new ForbiddenError('Customers may only cancel their own appointments');
@@ -582,13 +614,75 @@ export class AppointmentsService {
       entityType: 'Appointment',
       entityId: appointmentId,
       oldData: { status: appointment.status },
-      newData: { status: updated.status },
+      // Every cancellation carries an audit note.
+      newData: nextStatus === 'CANCELLED'
+        ? { status: updated.status, note: `Cancelled by ${role}` }
+        : { status: updated.status },
     });
 
     return this.mapAppointment(toApplicationAppointment(updated));
   }
 
-  private static async getBookingPlan(data: CreateAppointmentInput): Promise<BookingPlan> {
+  /**
+   * Re-run every booking rule for an existing appointment before a payment
+   * attempt is created (the payment spec's revalidation gate): the services
+   * must still be active, the stylist still assigned to every selected
+   * service, the slot still inside the salon's schedule, and the slot still
+   * free of other bookings. The appointment itself is excluded from the
+   * conflict scan. Throws the first failing rule's message.
+   */
+  static async revalidateForPayment(appointmentId: string): Promise<void> {
+    const appointment = await db.orm.public.Appointment.where({ id: appointmentId }).first();
+    if (!appointment) throw new NotFoundError('Appointment not found');
+    const services = await db.orm.public.AppointmentService.where({ appointmentId }).all();
+    const data: CreateAppointmentInput = {
+      appointmentDate: String(appointment.appointmentDate),
+      startTime: normalizeTimeOnly(String(appointment.startTime)),
+      serviceIds: services.map((service) => String(service.serviceId)),
+      staffId: staffIdOf(appointment) ?? '',
+    };
+    const plan = await AppointmentsService.getBookingPlan(data, appointmentId);
+    if (!plan.available) {
+      throw new BadRequestError(plan.unavailableReason ?? 'The booking is no longer available');
+    }
+  }
+
+  /**
+   * Payment-hold hygiene: an unpaid RESERVED appointment whose 15-minute
+   * hold has passed is cancelled (with an audit note) so it can never keep
+   * blocking the slot.
+   */
+  static async releaseExpiredHolds(now: Date = new Date()): Promise<number> {
+    const reserved = await db.orm.public.Appointment.where({ status: 'RESERVED' }).all();
+    let released = 0;
+    for (const appointment of reserved) {
+      const holdExpiresAt = appointment.holdExpiresAt ? new Date(String(appointment.holdExpiresAt)) : null;
+      if (!holdExpiresAt || holdExpiresAt.getTime() > now.getTime()) continue;
+      const settled = await PaymentsService.settledCentsFor(String(appointment.id));
+      if (settled > 0) continue;
+      const updated = await db.orm.public.Appointment
+        .where({ id: String(appointment.id), status: 'RESERVED' })
+        .update({ status: 'CANCELLED' })
+        .catch(() => null);
+      if (updated) {
+        released += 1;
+        await generateAuditLog({
+          actorAccountId: undefined,
+          action: 'APPOINTMENT_CANCELLED',
+          entityType: 'Appointment',
+          entityId: String(appointment.id),
+          oldData: { status: 'RESERVED' },
+          newData: { status: 'CANCELLED', note: 'Payment hold expired before payment' },
+        });
+      }
+    }
+    return released;
+  }
+
+  private static async getBookingPlan(data: CreateAppointmentInput, excludeAppointmentId?: string): Promise<BookingPlan> {
+    // Payment-hold hygiene: an unpaid hold past its 15 minutes no longer
+    // reserves the slot, so release those before checking availability.
+    await AppointmentsService.releaseExpiredHolds();
     const requestedDate = dateOnly(data.appointmentDate);
     const localNow = localDateAndTime(new Date(), env.STUDIO_TIME_ZONE);
     // Current-month-only policy (Asia/Manila), checked before the past-date
@@ -668,6 +762,7 @@ export class AppointmentsService {
 
     const staffAppointments = await db.orm.public.Appointment.where(staffWhere({ staffId: staff.id })).all();
     const hasConflict = staffAppointments.some((appointment) => {
+      if (excludeAppointmentId && String(appointment.id) === excludeAppointmentId) return false;
       if (fromPrismaDateString(appointment.appointmentDate) !== data.appointmentDate) return false;
       if (appointment.status !== 'RESERVED' && appointment.status !== 'CONFIRMED') return false;
       return timeRangesOverlap(data.startTime, endTime, fromPrismaTime(appointment.startTime), fromPrismaTime(appointment.endTime));

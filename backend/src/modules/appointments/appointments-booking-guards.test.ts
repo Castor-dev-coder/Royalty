@@ -199,3 +199,13 @@ test('the guards hold on the availability check too', async () => {
     /Service is inactive: Haircut/,
   );
 });
+
+test('two concurrent bookings for the same stylist and slot cannot both succeed', async () => {
+  seed({});
+  const results = await Promise.allSettled([book('10:00'), book('10:00')]);
+  const fulfilled = results.filter((result) => result.status === 'fulfilled');
+  assert.equal(fulfilled.length, 1, 'exactly one concurrent booking may succeed');
+  const rejection = results.find((result) => result.status === 'rejected') as PromiseRejectedResult;
+  assert.equal((rejection.reason as Error).message, 'The chosen stylist already has a booking at that time.');
+  assert.equal(world.Appointment.length, 1);
+});

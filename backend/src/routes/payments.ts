@@ -3,6 +3,13 @@ import { authenticate, requireRole } from '../middleware/auth.js';
 import { rateLimit } from '../middleware/rateLimit.js';
 import { validateQuery, validateRequest } from '../middleware/validator.js';
 import {
+  mayaCheckoutController,
+  mayaReturnController,
+  mayaStatusController,
+  mayaWebhookController,
+  mayaCheckoutSchema,
+} from '../modules/payments/maya.controller.js';
+import {
   getPaymentSettingsController,
   listMyPaymentsController,
   listPaymentsController,
@@ -28,7 +35,24 @@ export const paymentsRouter = Router();
 // configured down-payment policy. Never contains secrets.
 paymentsRouter.get('/settings', getPaymentSettingsController);
 
+// PUBLIC: the Maya redirect target and the provider webhook. The webhook body
+// is never trusted — payments are re-verified server-side against the Maya
+// API. Rate-limited like every other public surface.
+paymentsRouter.get('/maya/return', rateLimit({ max: 30, windowMs: 60 * 1000 }), mayaReturnController);
+paymentsRouter.post('/maya/webhook', rateLimit({ max: 60, windowMs: 60 * 1000 }), express.json({ limit: '256kb' }), mayaWebhookController);
+
 paymentsRouter.use(authenticate);
+
+// CUSTOMER: start one idempotent Maya payment attempt (15-minute hold).
+paymentsRouter.post(
+  '/maya/checkout',
+  requireRole('CUSTOMER'),
+  rateLimit({ max: 20, windowMs: 60 * 1000 }),
+  validateRequest(mayaCheckoutSchema),
+  mayaCheckoutController,
+);
+// Authenticated: authoritative payment state (owner/staff/manager/admin).
+paymentsRouter.get('/maya/:id/status', mayaStatusController);
 
 // Server-calculated amounts for one appointment (owner customer + staff).
 paymentsRouter.get('/quote/:appointmentId', paymentQuoteController);

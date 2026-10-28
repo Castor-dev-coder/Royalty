@@ -28,7 +28,8 @@ function isUniqueViolation(error: unknown): boolean {
 }
 
 export type PaymentChannelValue = 'ONLINE' | 'IN_PERSON'
-export type PaymentMethodValue = 'CASH' | 'GCASH'
+export type PaymentMethodValue = 'CASH' | 'GCASH' | 'MAYA'
+export type PaymentStatusValue = 'UNVERIFIED' | 'VERIFIED' | 'REJECTED' | 'PENDING' | 'PAID' | 'FAILED' | 'EXPIRED'
 
 export interface PaymentTransaction {
   id: string
@@ -40,8 +41,15 @@ export interface PaymentTransaction {
   amount: number
   paymentMethod: PaymentMethodValue
   channel: PaymentChannelValue
-  status: 'UNVERIFIED' | 'VERIFIED' | 'REJECTED'
+  status: PaymentStatusValue
   referenceNo: string | null
+  /** 'MANUAL' (human-recorded) or 'MAYA' (provider-confirmed). */
+  provider: string
+  /** Maya references (null for manual rows). */
+  providerCheckoutId: string | null
+  providerPaymentId: string | null
+  /** Payment plan for Maya rows: FULL or DOWN; null for manual rows. */
+  plan: 'FULL' | 'DOWN' | null
   /** True when a proof image is stored; the path/URL itself is never exposed. */
   hasProof: boolean
   bookingStatus: string
@@ -49,6 +57,8 @@ export interface PaymentTransaction {
   verifiedBy: string | null
   verifiedAt: string | null
   createdAt: string
+  /** Seconds left on the payment hold (server clock); null when no hold. */
+  holdSecondsRemaining: number | null
   /** Server-computed appointment money state (never trust the browser). */
   appointmentTotal: number
   verifiedTotal: number
@@ -82,10 +92,10 @@ export const DEPOSIT_PERCENT = 40
 
 const APPROVED_DEFAULTS = { kind: 'PERCENT' as const, value: DEPOSIT_PERCENT }
 
-function cents(value: unknown): number {
+export function cents(value: unknown): number {
   return Math.round(Number(value ?? 0) * 100)
 }
-function fromCents(value: number): number {
+export function fromCents(value: number): number {
   return Math.round(value) / 100
 }
 
@@ -93,7 +103,7 @@ function fromCents(value: number): number {
 // both collect the same remaining balance (single-process mutex + the
 // in-transaction outstanding recheck below).
 const appointmentLocks = new Map<string, Promise<unknown>>()
-async function withAppointmentLock<T>(appointmentId: string, fn: () => Promise<T>): Promise<T> {
+export async function withAppointmentLock<T>(appointmentId: string, fn: () => Promise<T>): Promise<T> {
   const previous = appointmentLocks.get(appointmentId) ?? Promise.resolve()
   const run = previous.then(fn, fn)
   appointmentLocks.set(appointmentId, run.then(() => undefined, () => undefined))
@@ -104,6 +114,44 @@ async function withAppointmentLock<T>(appointmentId: string, fn: () => Promise<T
       // keep the settled promise until the next caller chains onto it
     }
   }
+}
+
+/** Money counted as received (VERIFIED / PAID) summed over payment rows. */
+function settledCentsFromRows(rows: ReadonlyArray<Record<string, unknown>>): number {
+  return rows.reduce((sum, row) => {
+    const status = String(row.status)
+    return status === 'VERIFIED' || status === 'PAID' ? sum + cents(row.amount) : sum
+  }, 0)
+}
+
+/** settledCentsFromRows grouped per appointment id (list paths). */
+function settledCentsByAppointment(rows: ReadonlyArray<Record<string, unknown>>): Map<string, number> {
+  const totals = new Map<string, number>()
+  for (const row of rows) {
+    const status = String(row.status)
+    if (status !== 'VERIFIED' && status !== 'PAID') continue
+    const key = String(row.appointmentId)
+    totals.set(key, (totals.get(key) ?? 0) + cents(row.amount))
+  }
+  return totals
+}
+
+// ---- display settings cache --------------------------------------------
+// PaymentSetting is a single row of admin-written, rarely changing reference
+// data (QR display fields and the deposit policy) and every write to it goes
+// through PaymentsService.updateSettings below. Display reads (the settings
+// panel, quote screens) may be served from this short-lived in-process cache
+// so each payment screen is not charged a full network round-trip; updates
+// invalidate it and a TTL bounds any staleness from out-of-band database
+// writes. MONEY PATHS NEVER READ THE CACHE: submitOnline computes amounts
+// from getSettings() live, so authorization always sees current rows. On any
+// miss or read failure the code falls through to a live query and serves the
+// database's answer — never a stale or fabricated value.
+const SETTINGS_CACHE_TTL_MS = 30_000
+let settingsCache: { value: PaymentSettingsView; expiresAt: number } | null = null
+
+export function invalidateSettingsCache(): void {
+  settingsCache = null
 }
 
 export class PaymentsService {
@@ -128,6 +176,37 @@ export class PaymentsService {
       // PERCENT always reports the server setting; the row value serves FIXED.
       downPaymentValue:
         String(row.downPaymentKind) === 'PERCENT' ? DEPOSIT_PERCENT : fromCents(cents(row.downPaymentValue)),
+    }
+  }
+
+  /** Cached settings for display paths only (see the cache rules above). */
+  static async getSettingsCached(): Promise<PaymentSettingsView> {
+    if (process.env.NODE_ENV === 'test') return this.getSettings()
+    const now = Date.now()
+    const cached = settingsCache
+    if (cached && now < cached.expiresAt) return cached.value
+    try {
+      const value = await this.getSettings()
+      settingsCache = { value, expiresAt: now + SETTINGS_CACHE_TTL_MS }
+      return value
+    } catch (error) {
+      // A read we could not complete is never cached; the next caller
+      // retries live and serves the database's answer or the real error.
+      invalidateSettingsCache()
+      throw error
+    }
+  }
+
+  /**
+   * Startup warm-up for the settings cache. Failure only leaves the cache
+   * empty — every read then falls back to a live query, so an unreachable
+   * database at boot can never leave stale or wrong values in service.
+   */
+  static async warmSettingsCache(): Promise<void> {
+    try {
+      await this.getSettingsCached()
+    } catch {
+      // Cache stays empty; requests fall back to live reads.
     }
   }
 
@@ -161,20 +240,41 @@ export class PaymentsService {
       entityId: String((saved ?? existing)!.id),
       newData: { kind: patch.downPaymentKind, value: patch.downPaymentValue },
     })
+    // The only writer of PaymentSetting: invalidate the display cache so the
+    // next read reflects this save (the fresh return below is already live).
+    invalidateSettingsCache()
     return this.getSettings()
   }
 
   /** Server-authoritative amounts for one appointment. */
   static async quote(appointmentId: string, actor: { userId: string; role: string }): Promise<PaymentQuote> {
-    const appointment = await db.orm.public.Appointment.where({ id: appointmentId }).first()
+    // The three reads are independent (each keys off the appointment id or
+    // is one-row reference data), so they run in parallel instead of as a
+    // three-round-trip chain. Visibility is checked right after, exactly as
+    // before; a missing appointment still answers 404 first.
+    const [appointment, verifiedTotal, settings] = await Promise.all([
+      db.orm.public.Appointment.where({ id: appointmentId }).first(),
+      this.settledCentsFor(appointmentId),
+      this.getSettingsCached(),
+    ])
     if (!appointment) throw new NotFoundError('Appointment not found')
     await this.assertCanViewAppointment(appointment, actor)
+    return this.quoteFrom(appointmentId, appointment, verifiedTotal, settings)
+  }
 
+  /**
+   * Pure quote math, one copy shared by display and money paths. The
+   * caller always supplies live money rows; `settings` is cached for
+   * display quotes and read live for submissions.
+   */
+  private static quoteFrom(
+    appointmentId: string,
+    appointment: Record<string, unknown>,
+    verifiedTotal: number,
+    settings: PaymentSettingsView,
+  ): PaymentQuote {
     const total = cents(appointment.totalAmount)
-    const verifiedTotal = await this.verifiedCentsFor(appointmentId)
     const outstanding = Math.max(0, total - verifiedTotal)
-    const settings = await this.getSettings()
-
     const options: PaymentQuote['options'] = []
     if (outstanding > 0) {
       options.push({ key: 'FULL', amount: fromCents(outstanding) })
@@ -209,15 +309,28 @@ export class PaymentsService {
   ): Promise<PaymentTransaction> {
     if (actor.role !== 'CUSTOMER') throw new ForbiddenError('Only customers can submit online payments')
     return withAppointmentLock(appointmentId, async () => {
-      const appointment = await db.orm.public.Appointment.where({ id: appointmentId }).first()
+      // Independent reads run in parallel; the guards below throw in the
+      // same order as before (missing appointment, then visibility, then
+      // the pending guard, then the option guard).
+      const [appointment, paymentRows, settings] = await Promise.all([
+        db.orm.public.Appointment.where({ id: appointmentId }).first(),
+        db.orm.public.Payment.where({ appointmentId }).all(),
+        // Money path: live settings, never the display cache.
+        this.getSettings(),
+      ])
       if (!appointment) throw new NotFoundError('Appointment not found')
       await this.assertCanViewAppointment(appointment, actor)
 
-      const pending = (await db.orm.public.Payment.where({ appointmentId }).all())
+      const pending = paymentRows
         .find((row) => String(row.channel) === 'ONLINE' && String(row.status) === 'UNVERIFIED')
       if (pending) throw new ConflictError('An online payment for this appointment is already awaiting verification')
 
-      const quote = await this.quote(appointmentId, actor)
+      // Same quote math as the display endpoint, computed from the rows and
+      // live settings already fetched. The created row is UNVERIFIED, so it
+      // never counts toward the settled total and the pre-insert value stays
+      // exact for the returned transaction.
+      const settledCents = settledCentsFromRows(paymentRows)
+      const quote = this.quoteFrom(appointmentId, appointment, settledCents, settings)
       const option = quote.options.find((entry) => entry.key === input.option)
       if (!option) throw new BadRequestError('That payment option is not available for this appointment')
       const amount = option.amount
@@ -252,7 +365,7 @@ export class PaymentsService {
         entityId: String(created.id),
         newData: { appointmentId, amount, option: input.option },
       })
-      return this.rowToTransaction(created, appointment)
+      return this.rowToTransaction(created, appointment, settledCents)
     })
   }
 
@@ -271,7 +384,7 @@ export class PaymentsService {
       const appointment = await db.orm.public.Appointment.where({ id: input.appointmentId }).first()
       if (!appointment) throw new NotFoundError('Appointment not found')
 
-      const outstanding = fromCents(Math.max(0, cents(appointment.totalAmount) - await this.verifiedCentsFor(input.appointmentId)))
+      const outstanding = fromCents(Math.max(0, cents(appointment.totalAmount) - await this.settledCentsFor(input.appointmentId)))
       if (amount > outstanding) {
         throw new ConflictError('The amount exceeds the outstanding balance')
       }
@@ -342,15 +455,63 @@ export class PaymentsService {
   /** GET /payments — ADMIN/MANAGER (also used by STAFF views of their own work). */
   static async listAll(actor: { userId: string; role: string }): Promise<{ payments: PaymentTransaction[] }> {
     const rows = await db.orm.public.Payment.all()
-    const payments: PaymentTransaction[] = []
+    if (rows.length === 0) return { payments: [] }
+
+    // STAFF see only their own appointments; one staff lookup for the whole
+    // list instead of one per payment row.
+    let staffId: string | null = null
+    if (actor.role === 'STAFF') {
+      const staff = await db.orm.public.Staff.where({ accountId: actor.userId }).first()
+      if (!staff) return { payments: [] }
+      staffId = String(staff.id)
+    }
+
+    // Batched reads: one IN query per related table instead of 6-7 queries
+    // per payment row. Each batch fetches exactly the rows the response
+    // needs (the ids collected from the visible rows).
+    const appointmentIds = [...new Set(rows.map((row) => String(row.appointmentId)))]
+    const appointments = await this.batchWhereIn(db.orm.public.Appointment, 'id', appointmentIds)
+    const appointmentById = new Map(appointments.map((appointment) => [String(appointment.id), appointment]))
+
+    const kept: Array<{ row: Record<string, unknown>; appointment: Record<string, unknown> }> = []
     for (const row of rows) {
-      const appointment = await db.orm.public.Appointment.where({ id: row.appointmentId }).first()
+      const appointment = appointmentById.get(String(row.appointmentId))
       if (!appointment) continue
-      if (actor.role === 'STAFF') {
-        const staff = await db.orm.public.Staff.where({ accountId: actor.userId }).first()
-        if (!staff || String(appointment.staffId ?? '') !== String(staff.id)) continue
-      }
-      payments.push(await this.rowToTransaction(row, appointment))
+      if (actor.role === 'STAFF' && String(appointment.staffId ?? '') !== staffId) continue
+      kept.push({ row, appointment })
+    }
+
+    const customerIds = [...new Set(kept.map(({ appointment }) => String(appointment.customerId)))]
+    const keptAppointmentIds = [...new Set(kept.map(({ appointment }) => String(appointment.id)))]
+    const [customers, serviceRows] = await Promise.all([
+      this.batchWhereIn(db.orm.public.Customer, 'id', customerIds),
+      this.batchWhereIn(db.orm.public.AppointmentService, 'appointmentId', keptAppointmentIds),
+    ])
+    const accountIds = [...new Set(customers.map((customer) => String(customer.accountId)))]
+    const accounts = await this.batchWhereIn(db.orm.public.Account, 'id', accountIds)
+    const customerById = new Map(customers.map((customer) => [String(customer.id), customer]))
+    const accountById = new Map(accounts.map((account) => [String(account.id), account]))
+    const serviceNamesByAppointment = new Map<string, string[]>()
+    for (const service of serviceRows) {
+      const key = String(service.appointmentId)
+      const names = serviceNamesByAppointment.get(key) ?? []
+      names.push(String(service.serviceName))
+      serviceNamesByAppointment.set(key, names)
+    }
+
+    // rows is every payment row, so summing it per appointment reproduces
+    // settledCentsFor exactly — zero extra reads.
+    const settledByAppointment = settledCentsByAppointment(rows)
+
+    const payments: PaymentTransaction[] = []
+    for (const { row, appointment } of kept) {
+      const customer = customerById.get(String(appointment.customerId)) ?? null
+      payments.push(this.buildTransaction(row, appointment, {
+        customer,
+        account: customer ? accountById.get(String(customer.accountId)) ?? null : null,
+        serviceNames: serviceNamesByAppointment.get(String(appointment.id)) ?? [],
+        settledCents: settledByAppointment.get(String(row.appointmentId)) ?? 0,
+      }))
     }
     return { payments: payments.sort((a, b) => b.createdAt.localeCompare(a.createdAt)) }
   }
@@ -360,28 +521,81 @@ export class PaymentsService {
     const customer = await db.orm.public.Customer.where({ accountId: userId }).first()
     if (!customer) throw new NotFoundError('No customer profile found for this account')
     const rows = await db.orm.public.Payment.all()
-    const payments: PaymentTransaction[] = []
+    if (rows.length === 0) return { payments: [] }
+
+    // Batched reads: one IN query per related table instead of 6-7 queries
+    // per payment row. Visibility keeps the old rule — the appointment must
+    // belong to this customer — applied to the batched appointment rows.
+    const appointmentIds = [...new Set(rows.map((row) => String(row.appointmentId)))]
+    const appointments = await this.batchWhereIn(db.orm.public.Appointment, 'id', appointmentIds)
+    const appointmentById = new Map(appointments.map((appointment) => [String(appointment.id), appointment]))
+
+    const kept: Array<{ row: Record<string, unknown>; appointment: Record<string, unknown> }> = []
     for (const row of rows) {
-      const appointment = await db.orm.public.Appointment.where({ id: row.appointmentId }).first()
+      const appointment = appointmentById.get(String(row.appointmentId))
       if (!appointment || String(appointment.customerId) !== String(customer.id)) continue
-      payments.push(await this.rowToTransaction(row, appointment))
+      kept.push({ row, appointment })
+    }
+    if (kept.length === 0) return { payments: [] }
+
+    const [account, serviceRows] = await Promise.all([
+      db.orm.public.Account.where({ id: String(customer.accountId) }).first(),
+      this.batchWhereIn(
+        db.orm.public.AppointmentService,
+        'appointmentId',
+        [...new Set(kept.map(({ appointment }) => String(appointment.id)))],
+      ),
+    ])
+    const serviceNamesByAppointment = new Map<string, string[]>()
+    for (const service of serviceRows) {
+      const key = String(service.appointmentId)
+      const names = serviceNamesByAppointment.get(key) ?? []
+      names.push(String(service.serviceName))
+      serviceNamesByAppointment.set(key, names)
+    }
+
+    // rows is every payment row, so summing it per appointment reproduces
+    // settledCentsFor exactly — zero extra reads.
+    const settledByAppointment = settledCentsByAppointment(rows)
+
+    const payments: PaymentTransaction[] = []
+    for (const { row, appointment } of kept) {
+      // Every kept appointment belongs to this customer (the filter above),
+      // so the per-row customer lookup collapses to the row already fetched.
+      payments.push(this.buildTransaction(row, appointment, {
+        customer,
+        account: account ?? null,
+        serviceNames: serviceNamesByAppointment.get(String(appointment.id)) ?? [],
+        settledCents: settledByAppointment.get(String(row.appointmentId)) ?? 0,
+      }))
     }
     return { payments: payments.sort((a, b) => b.createdAt.localeCompare(a.createdAt)) }
   }
 
   /** GET /payments/activity — recent payment audit entries. */
   static async activity(): Promise<{ activities: Array<{ id: string; message: string; createdAt: string }> }> {
-    const actions = new Set(['SUBMIT_ONLINE_PAYMENT', 'RECORD_IN_PERSON_PAYMENT', 'VERIFY_PAYMENT', 'REJECT_PAYMENT', 'UPDATE_PAYMENT_SETTINGS'])
-    const rows = await db.orm.public.AuditLog.all()
-    const activities = rows
-      .filter((row) => actions.has(String(row.action)))
-      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
-      .slice(0, 50)
-      .map((row) => ({
-        id: String(row.id),
-        message: `${String(row.action).replace(/_/g, ' ').toLowerCase()} · ${String(row.entityType)} ${String(row.entityId).slice(0, 8)}`,
-        createdAt: new Date(String(row.createdAt)).toISOString(),
-      }))
+    const actions = ['SUBMIT_ONLINE_PAYMENT', 'RECORD_IN_PERSON_PAYMENT', 'VERIFY_PAYMENT', 'REJECT_PAYMENT', 'UPDATE_PAYMENT_SETTINGS']
+    // Filtered, ordered and capped in the database: only the 50 rows the
+    // response shows cross the network instead of the whole audit table
+    // (295+ rows and growing). Same entries and order as the old in-memory
+    // filter → sort → slice(50).
+    type AuditQuery = {
+      where: (filter: (m: Record<string, unknown>) => unknown) => {
+        orderBy: (order: (r: Record<string, unknown>) => unknown) => {
+          limit: (count: number) => { all: () => Promise<Array<Record<string, unknown>>> }
+        }
+      }
+    }
+    const rows = await (db.orm.public.AuditLog as unknown as AuditQuery)
+      .where((m) => (m['action'] as unknown as { in: (values: readonly string[]) => unknown }).in(actions))
+      .orderBy((r) => (r['createdAt'] as unknown as { desc: () => unknown }).desc())
+      .limit(50)
+      .all()
+    const activities = rows.map((row) => ({
+      id: String(row.id),
+      message: `${String(row.action).replace(/_/g, ' ').toLowerCase()} · ${String(row.entityType)} ${String(row.entityId).slice(0, 8)}`,
+      createdAt: new Date(String(row.createdAt)).toISOString(),
+    }))
     return { activities }
   }
 
@@ -403,14 +617,39 @@ export class PaymentsService {
 
   // ---- internals ---------------------------------------------------------
 
-  private static async verifiedCentsFor(appointmentId: string): Promise<number> {
+  /**
+   * Batched lookup: one `IN` query for N ids instead of N single-row reads.
+   * The ORM exposes list membership only through the function-form filter
+   * (`m.field.in([...])`), so the narrow structural cast lives here; the
+   * form is runtime-verified against the real database.
+   */
+  private static async batchWhereIn(
+    table: unknown,
+    field: string,
+    ids: readonly string[],
+  ): Promise<Array<Record<string, unknown>>> {
+    if (ids.length === 0) return []
+    type Whereable = {
+      where: (filter: (m: Record<string, unknown>) => unknown) => { all: () => Promise<Array<Record<string, unknown>>> }
+    }
+    return (table as Whereable)
+      .where((m) => (m[field] as unknown as { in: (values: readonly string[]) => unknown }).in(ids))
+      .all()
+  }
+
+  /**
+   * Money counted as received: VERIFIED (human-confirmed in-person/manual
+   * rows) and PAID (Maya provider-confirmed rows). The balance rule is
+   * total − settled.
+   */
+  static async settledCentsFor(appointmentId: string): Promise<number> {
     const rows = await db.orm.public.Payment.where({ appointmentId }).all()
     return rows
-      .filter((row) => String(row.status) === 'VERIFIED')
+      .filter((row) => String(row.status) === 'VERIFIED' || String(row.status) === 'PAID')
       .reduce((sum, row) => sum + cents(row.amount), 0)
   }
 
-  private static async assertCanViewAppointment(
+  static async assertCanViewAppointment(
     appointment: { customerId: unknown; staffId?: unknown },
     actor: { userId: string; role: string },
   ): Promise<void> {
@@ -432,31 +671,76 @@ export class PaymentsService {
     throw new ForbiddenError('You do not have permission to view this appointment')
   }
 
-  private static async rowToTransaction(row: Record<string, unknown>, appointment: Record<string, unknown>): Promise<PaymentTransaction> {
-    const customer = await db.orm.public.Customer.where({ id: String(appointment.customerId) }).first()
+  private static async rowToTransaction(
+    row: Record<string, unknown>,
+    appointment: Record<string, unknown>,
+    settledCents?: number,
+  ): Promise<PaymentTransaction> {
+    // Independent reads run in parallel (the account lookup depends on the
+    // customer row). The settled total is computed ONCE — the old shape
+    // queried it twice per row, once for verifiedTotal and once for
+    // outstanding. A caller that already holds a current settled total
+    // (from rows it just fetched) passes it in and no re-read happens;
+    // callers whose own insert is counted (in-person VERIFIED rows) leave
+    // it undefined and get a live post-insert read, as before.
+    const [customer, services, settled] = await Promise.all([
+      db.orm.public.Customer.where({ id: String(appointment.customerId) }).first(),
+      db.orm.public.AppointmentService.where({ appointmentId: String(appointment.id) }).all(),
+      settledCents === undefined ? this.settledCentsFor(String(row.appointmentId)) : Promise.resolve(settledCents),
+    ])
     const account = customer ? await db.orm.public.Account.where({ id: String(customer.accountId) }).first() : null
-    const services = await db.orm.public.AppointmentService.where({ appointmentId: String(appointment.id) }).all()
+    return this.buildTransaction(row, appointment, {
+      customer,
+      account,
+      serviceNames: services.map((service) => String(service.serviceName)),
+      settledCents: settled,
+    })
+  }
+
+  /** Pure row -> view mapping shared by the single-row and list paths. */
+  private static buildTransaction(
+    row: Record<string, unknown>,
+    appointment: Record<string, unknown>,
+    ctx: {
+      customer: Record<string, unknown> | null
+      account: Record<string, unknown> | null
+      serviceNames: string[]
+      settledCents: number
+    },
+  ): PaymentTransaction {
+    const { customer, account, serviceNames, settledCents } = ctx
     return {
       id: String(row.id),
       appointmentId: String(row.appointmentId),
       appointmentCode: String(appointment.appointmentCode),
       customerName: customer ? `${String(customer.firstName)} ${String(customer.lastName)}`.trim() : 'Customer',
       customerEmail: account ? String(account.email) : '',
-      serviceName: services.map((service) => String(service.serviceName)).join(', ') || 'Salon appointment',
+      serviceName: serviceNames.join(', ') || 'Salon appointment',
       amount: fromCents(cents(row.amount)),
       paymentMethod: String(row.paymentMethod) as PaymentMethodValue,
       channel: String(row.channel) as PaymentChannelValue,
       status: String(row.status) as PaymentTransaction['status'],
       referenceNo: row.referenceNo ? String(row.referenceNo) : null,
+      provider: String(row.provider ?? 'MANUAL'),
+      providerCheckoutId: row.providerCheckoutId ? String(row.providerCheckoutId) : null,
+      providerPaymentId: row.providerPaymentId ? String(row.providerPaymentId) : null,
+      plan: String(row.provider ?? 'MANUAL') === 'MAYA'
+        ? (cents(row.amount) < cents(appointment.totalAmount) ? 'DOWN' : 'FULL')
+        : null,
       hasProof: Boolean(row.proofStoragePath ?? row.proofUrl),
       bookingStatus: String(appointment.status),
       recordedBy: row.recordedBy ? String(row.recordedBy) : null,
       verifiedBy: row.verifiedBy ? String(row.verifiedBy) : null,
       verifiedAt: row.verifiedAt ? new Date(String(row.verifiedAt)).toISOString() : null,
       createdAt: new Date(String(row.createdAt)).toISOString(),
+      holdSecondsRemaining: (() => {
+        const hold = appointment.holdExpiresAt ? new Date(String(appointment.holdExpiresAt)) : null
+        if (!hold || String(appointment.status) !== 'RESERVED') return null
+        return Math.max(0, Math.ceil((hold.getTime() - Date.now()) / 1000))
+      })(),
       appointmentTotal: fromCents(cents(appointment.totalAmount)),
-      verifiedTotal: fromCents(await this.verifiedCentsFor(String(row.appointmentId))),
-      outstanding: fromCents(Math.max(0, cents(appointment.totalAmount) - await this.verifiedCentsFor(String(row.appointmentId)))),
+      verifiedTotal: fromCents(settledCents),
+      outstanding: fromCents(Math.max(0, cents(appointment.totalAmount) - settledCents)),
     }
   }
 }

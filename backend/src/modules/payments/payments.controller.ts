@@ -125,7 +125,10 @@ export async function paymentProofController(req: Request, res: Response, next: 
 /** GET /payments/settings — public GCash display + policy. */
 export async function getPaymentSettingsController(_req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    res.json({ data: { settings: await PaymentsService.getSettings() } })
+    // Display-only endpoint (the QR panel and payment dialogs render these
+    // fields; submissions re-read settings live): served through the
+    // short-lived settings cache — see payments.service.ts cache rules.
+    res.json({ data: { settings: await PaymentsService.getSettingsCached() } })
   } catch (error) {
     next(error)
   }

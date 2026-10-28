@@ -26,17 +26,64 @@ const world: Record<string, Row[]> = {
 let seq = 1;
 
 function table(name: string) {
-  return {
-    where: (filter: Record<string, unknown>) => ({
-      first: async () => world[name].find((row) => Object.entries(filter).every(([k, v]) => row[k] === v)) ?? null,
-      all: async () => world[name].filter((row) => Object.entries(filter).every(([k, v]) => row[k] === v)),
-      update: async (patch: Record<string, unknown>) => {
-        const row = world[name].find((candidate) => Object.entries(filter).every(([k, v]) => candidate[k] === v));
+  // Function-form filters arrive as `(m) => m.field.in([...])` and ordering
+  // as `(r) => r.createdAt.desc()` — the same call shapes the real ORM gets.
+  // The accessor records the touched field and operation so the fake can
+  // evaluate membership and ordering against the fixture rows.
+  function evalFieldCall(fn: (m: Record<string, unknown>) => unknown): { field: string; op: 'in' | 'desc'; values?: unknown[] } {
+    const accessor = new Proxy({}, {
+      get(_target, prop: string) {
+        return {
+          in: (values: unknown[]) => ({ field: prop, op: 'in' as const, values }),
+          desc: () => ({ field: prop, op: 'desc' as const }),
+        };
+      },
+    });
+    return fn(accessor) as { field: string; op: 'in' | 'desc'; values?: unknown[] };
+  }
+  function select(filter: unknown): Row[] {
+    if (typeof filter === 'function') {
+      const cond = evalFieldCall(filter as (m: Record<string, unknown>) => unknown);
+      return world[name].filter((row) => (cond.values ?? []).some((v) => row[cond.field] === v));
+    }
+    const objectFilter = filter as Record<string, unknown>;
+    return world[name].filter((row) => Object.entries(objectFilter).every(([k, v]) => row[k] === v));
+  }
+  function build(filter: unknown) {
+    const chain: {
+      first: () => Promise<Row | null>;
+      all: () => Promise<Row[]>;
+      update?: (patch: Record<string, unknown>) => Promise<Row | null>;
+      orderBy?: (fn: (r: Record<string, unknown>) => unknown) => typeof chain;
+      limit?: (count: number) => typeof chain;
+    } = {
+      first: async () => select(filter)[0] ?? null,
+      all: async () => select(filter),
+    };
+    if (typeof filter !== 'function') {
+      chain.update = async (patch: Record<string, unknown>) => {
+        const objectFilter = filter as Record<string, unknown>;
+        const row = world[name].find((candidate) => Object.entries(objectFilter).every(([k, v]) => candidate[k] === v));
         if (!row) return null;
         Object.assign(row, patch);
         return row;
-      },
-    }),
+      };
+    }
+    chain.orderBy = (fn: (r: Record<string, unknown>) => unknown) => {
+      const cond = evalFieldCall(fn);
+      const base = chain.all;
+      chain.all = async () => [...(await base())].sort((a, b) => String(b[cond.field]).localeCompare(String(a[cond.field])));
+      return chain;
+    };
+    chain.limit = (count: number) => {
+      const base = chain.all;
+      chain.all = async () => (await base()).slice(0, count);
+      return chain;
+    };
+    return chain;
+  }
+  return {
+    where: (filter: unknown) => build(filter),
     create: async (data: Record<string, unknown>) => {
       const row = { createdAt: new Date().toISOString(), ...data, id: `row-${seq++}` } as Row;
       world[name].push(row);
@@ -285,4 +332,89 @@ await test('settings defaults to the approved PERCENT policy (DEPOSIT_PERCENT) w
   assert.equal(settings.downPaymentKind, 'PERCENT');
   assert.equal(settings.downPaymentValue, 40); // DEPOSIT_PERCENT
   assert.equal(settings.configured, false);
+});
+
+await test('listAll: money fields are server-computed per row from the batched reads', async () => {
+  seed({
+    total: 1000,
+    payments: [
+      { id: 'p1', appointmentId: APT, amount: 400, status: 'VERIFIED', channel: 'ONLINE', paymentMethod: 'GCASH' },
+      { id: 'p2', appointmentId: APT, amount: 300, status: 'UNVERIFIED', channel: 'ONLINE', paymentMethod: 'GCASH' },
+    ],
+  });
+  const { payments } = await PaymentsService.listAll({ userId: MANAGER_ACC, role: 'MANAGER' });
+  assert.equal(payments.length, 2);
+  for (const payment of payments) {
+    // settled total is summed from ALL rows of the appointment (400), never
+    // re-derived per row, and outstanding = total - settled.
+    assert.equal(payment.verifiedTotal, 400);
+    assert.equal(payment.outstanding, 600);
+    assert.equal(payment.appointmentTotal, 1000);
+    assert.equal(payment.customerName, 'Cat Tomer');
+    assert.equal(payment.customerEmail, 'c@x');
+    assert.equal(payment.serviceName, 'Haircut');
+    assert.equal(payment.appointmentCode, 'APT-TEST');
+  }
+});
+
+await test('listAll: staff see only their own appointments rows', async () => {
+  seed({
+    payments: [
+      { id: 'p1', appointmentId: APT, amount: 100, status: 'VERIFIED', channel: 'IN_PERSON', paymentMethod: 'CASH' },
+    ],
+  });
+  world.Account.push({ id: 'acc-c2', email: 'c2@x', role: 'CUSTOMER', status: 'ACTIVE', isSystem: false });
+  world.Customer.push({ id: 'cust-2', accountId: 'acc-c2', firstName: 'Sec', lastName: 'Ond' });
+  world.Staff.push({ id: 'st-2', accountId: 'acc-s2', firstName: 'Oth', lastName: 'Staff' });
+  world.Appointment.push({ id: 'apt-2', appointmentCode: 'APT-2', customerId: 'cust-2', staffId: 'st-2', status: 'RESERVED', totalAmount: 500 });
+  world.AppointmentService.push({ id: 'as-2', appointmentId: 'apt-2', serviceName: 'Color', price: 500, durationMinutes: 30 });
+  world.Payment.push({ id: 'p2', appointmentId: 'apt-2', amount: 200, status: 'VERIFIED', channel: 'IN_PERSON', paymentMethod: 'CASH', createdAt: new Date('2026-10-26T11:00:00Z').toISOString() });
+
+  const staff = await PaymentsService.listAll({ userId: STAFF_ACC, role: 'STAFF' });
+  assert.deepEqual(staff.payments.map((p) => p.id), ['p1']);
+
+  const manager = await PaymentsService.listAll({ userId: MANAGER_ACC, role: 'MANAGER' });
+  assert.deepEqual(manager.payments.map((p) => p.id).sort(), ['p1', 'p2']);
+});
+
+await test('listMine: customers see only their own transactions and settled totals', async () => {
+  seed({
+    total: 1000,
+    payments: [
+      { id: 'p1', appointmentId: APT, amount: 400, status: 'VERIFIED', channel: 'ONLINE', paymentMethod: 'GCASH' },
+      { id: 'p2', appointmentId: APT, amount: 100, status: 'UNVERIFIED', channel: 'ONLINE', paymentMethod: 'GCASH' },
+    ],
+  });
+  world.Account.push({ id: 'acc-c2', email: 'c2@x', role: 'CUSTOMER', status: 'ACTIVE', isSystem: false });
+  world.Customer.push({ id: 'cust-2', accountId: 'acc-c2', firstName: 'Sec', lastName: 'Ond' });
+  world.Appointment.push({ id: 'apt-2', appointmentCode: 'APT-2', customerId: 'cust-2', staffId: 'st-2', status: 'RESERVED', totalAmount: 500 });
+  world.Payment.push({ id: 'p3', appointmentId: 'apt-2', amount: 200, status: 'VERIFIED', channel: 'IN_PERSON', paymentMethod: 'CASH', createdAt: new Date('2026-10-26T11:00:00Z').toISOString() });
+
+  const mine = await PaymentsService.listMine(CUSTOMER_ACC);
+  assert.deepEqual(mine.payments.map((p) => p.id).sort(), ['p1', 'p2']);
+  for (const payment of mine.payments) {
+    assert.equal(payment.verifiedTotal, 400);
+    assert.equal(payment.outstanding, 600);
+  }
+
+  const other = await PaymentsService.listMine('acc-c2');
+  assert.deepEqual(other.payments.map((p) => p.id), ['p3']);
+  assert.equal(other.payments[0].verifiedTotal, 200);
+});
+
+await test('activity: only payment actions, newest first, capped at 50', async () => {
+  seed();
+  for (let i = 0; i < 55; i++) {
+    world.AuditLog.push({
+      id: `a${i}`, action: 'VERIFY_PAYMENT', entityType: 'Payment', entityId: `pay-${i}`,
+      createdAt: `2026-10-26T10:${String(Math.floor(i / 60)).padStart(2, '0')}:${String(i % 60).padStart(2, '0')}Z`,
+    });
+  }
+  world.AuditLog.push({ id: 'other', action: 'LOGIN', entityType: 'Account', entityId: 'acc-1', createdAt: '2026-10-26T12:00:00Z' });
+
+  const { activities } = await PaymentsService.activity();
+  assert.equal(activities.length, 50);
+  assert.equal(activities[0].id, 'a54'); // newest of the payment actions
+  assert.ok(activities.every((a) => a.message.startsWith('verify payment')));
+  assert.ok(activities.every((a) => !a.message.includes('login')));
 });
