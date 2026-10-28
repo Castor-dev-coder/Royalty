@@ -2523,13 +2523,13 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
           </div>
         )}
         {recordState === 'ready' && (
+        <>
         <div className="staff-edit-content">
-          <form className="staff-account-form" onSubmit={handleSubmit} noValidate>
+          <form id="staff-edit-form" className="staff-account-form" onSubmit={handleSubmit} noValidate>
             <h4>Staff Account Information</h4>
             <p className="form-hint">{values.email || 'No email on file'} · {accountRoleLabel(values.accountRole)}</p>
             <div className="form-section">
               <h5 className="form-section-title">Identity and contact</h5>
-              <ImageUploadField ref={photoRef} label="STAFF PHOTO" idPrefix="staff-photo" initialUrl={values.photoUrl} />
               <div className="form-grid">
                 <label className="field-label">FIRST NAME
                   {/* The first name is fixed at account creation. It is read
@@ -2599,6 +2599,16 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
               />
             </div>
 
+            {error && <p className="form-error" role="alert">{error}</p>}
+          </form>
+
+          {/* The side column stacks the compact sections and the Vacation
+              panel beside the account form, so the form fields keep a
+              comfortable width and the right column is not mostly empty. */}
+          <div className="staff-edit-side">
+            <div className="form-section">
+              <ImageUploadField ref={photoRef} label="STAFF PHOTO" idPrefix="staff-photo" initialUrl={values.photoUrl} />
+            </div>
             <div className="form-section">
               <h5 className="form-section-title">Work details</h5>
               <div className="form-grid">
@@ -2636,12 +2646,6 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
               <p className="readonly-text">{accountRoleLabel(values.accountRole)}</p>
               {!canChangeRole && <p className="form-hint">Only administrators can change roles.</p>}
             </div>
-            {error && <p className="form-error" role="alert">{error}</p>}
-            <div className="modal-actions">
-              <button type="button" className="secondary-action" onClick={onClose}>Cancel</button>
-              <button type="submit" className="primary-action" disabled={submitting}>{submitting ? 'Saving…' : 'Save Changes'}</button>
-            </div>
-          </form>
 
           <div className="panel time-off-panel">
             <div className="panel-header"><div><h4>Vacation &amp; Day Off</h4><p>Set date-based availability for this staff account.</p></div><button type="button" className="primary-button" disabled={timeOffUnavailable} onClick={() => { setEditingTimeOff(null); setShowTimeOff(true); }}>+ Add Vacation / Day Off</button></div>
@@ -2662,6 +2666,8 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
             {notice && <p className="table-message" role="status">{notice}</p>}
             {showTimeOff && <TimeOffModal entry={editingTimeOff} onClose={() => { setShowTimeOff(false); setEditingTimeOff(null); }} onSave={saveTimeOff} />}
           </div>
+          </div>
+
           <div className="panel scheduling-rules-panel">
             <div className="panel-header">
               <div>
@@ -2703,6 +2709,14 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
           </div>
 
         </div>
+
+        {/* The footer belongs to the whole dialog, so it pins across the
+            full modal width; the submit button targets the form by id. */}
+        <div className="modal-actions">
+          <button type="button" className="secondary-action" onClick={onClose}>Cancel</button>
+          <button type="submit" form="staff-edit-form" className="primary-action" disabled={submitting}>{submitting ? 'Saving…' : 'Save Changes'}</button>
+        </div>
+        </>
         )}
       </section>
     </div>

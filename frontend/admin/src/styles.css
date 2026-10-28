@@ -1026,7 +1026,7 @@ tbody tr:hover td { background: var(--surface-hover); }
 .staff-edit-modal { width: min(880px, 100%); }
 .staff-edit-content {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
   gap: var(--space-4);
   align-items: start;
   padding: var(--space-5) 0 0;
@@ -1035,15 +1035,18 @@ tbody tr:hover td { background: var(--surface-hover); }
 /* The action row sits inside a column of the two-column editor, not across
    the whole dialog. The modal's full-bleed margin would push it into the
    neighbouring panel, so it keeps the width of its own column here. */
-.staff-account-form .modal-actions { margin-left: 0; margin-right: 0; }
-.time-off-panel { grid-column: 2; grid-row: 1; }
+/* The staff-edit footer is a direct child of the dialog card, so it takes
+   the full-bleed action bar from the shared .modal-actions rule. */
+.staff-edit-side { grid-column: 2; grid-row: 1; display: grid; gap: var(--space-4); align-content: start; min-width: 0; }
+.staff-edit-side .form-section { min-width: 0; }
+.staff-edit-side .time-off-panel { grid-column: auto; grid-row: auto; }
 /* The weekly rules take a row of their own. Seven days side by side need
    the full width of the dialog, because a native time control is about
    100px wide before it can show the digits and the picker icon. */
 .scheduling-rules-panel { grid-column: 1 / -1; grid-row: 2; }
 @media (max-width: 760px) {
   .staff-edit-content { grid-template-columns: minmax(0, 1fr); }
-  .staff-account-form, .scheduling-rules-panel, .time-off-panel { grid-column: 1; grid-row: auto; }
+  .staff-account-form, .staff-edit-side, .scheduling-rules-panel, .time-off-panel { grid-column: 1; grid-row: auto; }
 }
 .modal-card.account-creation-modal { width: min(860px, 100%); }
 .modal-header {
@@ -1188,7 +1191,8 @@ textarea.modal-input { line-height: 1.55; }
 .staff-account-form, .time-off-panel { min-width: 0; }
 .staff-account-form { max-width: 760px; }
 .time-off-panel .panel-header { align-items: center; }
-.time-off-panel .panel-header .primary-button { padding: 0.62rem 0.8rem; font-size: var(--text-2xs); }
+.time-off-panel .panel-header .primary-button { padding: 0.62rem 0.8rem; font-size: var(--text-2xs); white-space: nowrap; }
+.staff-edit-side .time-off-panel .panel-header { flex-direction: column; align-items: flex-start; gap: 10px; }
 .time-off-list { display: grid; }
 .time-off-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--border-subtle); }
 .time-off-row > div strong, .time-off-row > div span { display: block; }
