@@ -291,7 +291,10 @@ function BookingFlow({ service, user, onClose }) {
     if (!form.time || !hours || !form.date) return
     if (!validSlots({ rows: hours, date: form.date, durationMinutes }).includes(form.time)) {
       // The slot (and with it the match) is gone, so any pick is unverified:
-      // reset it instead of silently keeping it.
+      // reset it instead of silently keeping it. The resets are deliberately
+      // synchronous in this effect: stale pick state must never survive one
+      // render after its slot disappeared.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setForm((current) => ({ ...current, time: '', staffId: '' }))
       setMatch(null)
       setMatchStatus('idle')

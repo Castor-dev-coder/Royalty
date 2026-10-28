@@ -261,6 +261,10 @@ function Appointments() {
   // appointments while the new fetch is in flight.
   const ownerKey = user?.email ?? null
   useEffect(() => {
+    // Deliberate synchronous reset: the moment the signed-in account
+    // changes, the previous account's rows must not survive even one
+    // render, so the clear runs in the same effect pass.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setItems([])
     setTotal(0)
     hasDataRef.current = false
