@@ -1,6 +1,8 @@
 import { BrowserRouter, Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiFetch, authHeader, clearAccessTokens, generateTemporaryPassword, getAccessToken, logoutRequest, storeAccessTokens, tryRefreshAccessToken } from './api';
+import ToastRegion from './components/ToastRegion';
+import { showToast } from './lib/toast';
 import { codesMatch } from './appointmentCode';
 import {
   accountEmailError,
@@ -310,6 +312,7 @@ function staffSpecialtyIds(staff: any): string[] {
 function App() {
   return (
     <ThemeProvider>
+      <ToastRegion />
       <BrowserRouter>
         <Routes>
           <Route element={<AdminArea />}>
@@ -1708,12 +1711,15 @@ function StaffManagementPage() {
       });
       const payload = await response.json();
       if (!response.ok) {
-        setAccessError(payload?.message ?? 'The request could not be reviewed.');
+        const message = payload?.message ?? 'The request could not be reviewed.';
+        showToast('error', message);
+        setAccessError(message);
         return;
       }
-      setAccessNotice(`Request from ${request.requesterName ?? 'the staff member'} was ${decision === 'approve' ? 'approved' : 'rejected'}.`);
+      showToast('success', `Request from ${request.requesterName ?? 'the staff member'} was ${decision === 'approve' ? 'approved' : 'rejected'}.`);
       await loadScheduleRequests();
     } catch {
+      showToast('error', 'The request could not be reviewed.');
       setAccessError('The request could not be reviewed.');
     } finally {
       setReviewingRequestId(null);
@@ -1746,12 +1752,14 @@ function StaffManagementPage() {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload?.error?.message ?? payload.message ?? 'The account status could not be changed.');
       setAccessChange(null);
-      setAccessNotice(next === 'ACTIVE'
+      showToast('success', next === 'ACTIVE'
         ? `${row.user} can sign in again.`
         : `${row.user} can no longer sign in. Their staff profile and schedule are unchanged.`);
       window.location.reload();
     } catch (cause) {
-      setAccessError(cause instanceof Error ? cause.message : 'The account status could not be changed.');
+      const message = cause instanceof Error ? cause.message : 'The account status could not be changed.';
+      showToast('error', message);
+      setAccessError(message);
     } finally {
       setSavingAccess(false);
     }
@@ -1939,15 +1947,6 @@ function StaffManagementPage() {
                       })}
                     >
                       {row.accountStatus === 'Active' ? 'Deactivate access' : 'Restore access'}
-                    </button>
-                    <button
-                      type="button"
-                      className="link-button"
-                      disabled={!row.accountId}
-                      onClick={() => row.accountId && setCredentialsFor(row)}
-                      title="Issue new sign-in details for this staff member."
-                    >
-                      Sign-in details
                     </button>
                   </td>
                 </tr>
@@ -2378,14 +2377,19 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
         try {
           await photoRef.current.upload(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/staff/${staff.id}/photo`);
         } catch (cause) {
-          setError(cause instanceof Error ? cause.message : 'The photo could not be uploaded.');
+          const message = cause instanceof Error ? cause.message : 'The photo could not be uploaded.';
+          showToast('error', message);
+          setError(message);
           setSubmitting(false);
           return;
         }
       }
+      showToast('success', 'Staff profile updated successfully.');
       onSaved();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Unable to save staff changes.');
+      const message = cause instanceof Error ? cause.message : 'Unable to save staff changes.';
+      showToast('error', message);
+      setError(message);
       setSubmitting(false);
     }
   }
@@ -2434,9 +2438,11 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
         }
       }
       await reloadScheduleRows();
-      setNotice(changed > 0 ? 'Schedule updated.' : 'No schedule changes to save.');
+      showToast(changed > 0 ? 'success' : 'info', changed > 0 ? 'Schedule updated successfully.' : 'No schedule changes to save.');
     } catch (cause) {
-      setScheduleError(cause instanceof Error ? cause.message : "We couldn't save this schedule. Please try again.");
+      const message = cause instanceof Error ? cause.message : "We couldn't save this schedule. Please try again.";
+      showToast('error', message);
+      setScheduleError(message);
     } finally {
       setSavingSchedule(false);
     }
@@ -2448,34 +2454,50 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
 
   async function saveTimeOff(values: Omit<TimeOffRecord, 'id' | 'staffId'>, existing: TimeOffRecord | null) {
     const token = getAccessToken();
-    if (!token) throw new Error('Sign in with an administrator account to manage time off.');
+    if (!token) {
+      showToast('error', 'Sign in with an administrator account to manage time off.');
+      throw new Error('Sign in with an administrator account to manage time off.');
+    }
     const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/staff/${staff.id}/time-off${existing ? `/${existing.id}` : ''}`, {
       method: existing ? 'PATCH' : 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeader(token) },
       body: JSON.stringify(values),
     });
     const payload = await response.json();
-    if (!response.ok) throw new Error(payload.message ?? 'Unable to save time off.');
+    if (!response.ok) {
+      const message = payload.message ?? 'Unable to save time off.';
+      showToast('error', message);
+      throw new Error(message);
+    }
     const saved = payload?.data?.timeOff as TimeOffRecord;
     setTimeOff((current) => (existing
       ? current.map((entry) => entry.id === existing.id ? saved : entry)
       : [...current, saved]).sort((left, right) => left.startDate.localeCompare(right.startDate)));
     setShowTimeOff(false);
     setEditingTimeOff(null);
-    setNotice(existing ? 'Time off updated.' : 'Time off added.');
+    showToast('success', existing ? 'Time off updated.' : 'Time off added.');
   }
 
   async function removeTimeOff(entry: TimeOffRecord) {
     const token = getAccessToken();
-    if (!token) { setError('Sign in with an administrator account to manage time off.'); return; }
+    if (!token) {
+      showToast('error', 'Sign in with an administrator account to manage time off.');
+      setError('Sign in with an administrator account to manage time off.');
+      return;
+    }
     const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/staff/${staff.id}/time-off/${entry.id}`, {
       method: 'DELETE',
       headers: { ...authHeader(token) },
     });
     const payload = await response.json();
-    if (!response.ok) { setError(payload.message ?? 'Unable to remove time off.'); return; }
+    if (!response.ok) {
+      const message = payload.message ?? 'Unable to remove time off.';
+      showToast('error', message);
+      setError(message);
+      return;
+    }
     setTimeOff((current) => current.filter((item) => item.id !== entry.id));
-    setNotice('Time off removed.');
+    showToast('success', 'Time off removed.');
   }
 
   return (
@@ -3686,12 +3708,15 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
         password,
       };
       setSubmitting(false);
+      showToast('success', 'Staff member created successfully.');
       if (caveats) {
         setResult({ success: true, title: 'Account created', message: `${credentials.name} can now sign in.${caveats}` });
       }
       setCreatedCredentials(credentials);
     } catch (cause) {
-      setResult({ success: false, title: 'Account not created', message: cause instanceof Error ? cause.message : 'The account could not be created.' });
+      const message = cause instanceof Error ? cause.message : 'The account could not be created.';
+      showToast('error', message);
+      setResult({ success: false, title: 'Account not created', message });
       setSubmitting(false);
     }
   }
