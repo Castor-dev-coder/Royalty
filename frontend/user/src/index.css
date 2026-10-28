@@ -28,6 +28,18 @@
   --review-panel: var(--color-review-panel);
   --review-card: var(--color-review-card);
   --review-border: var(--color-review-border);
+  /* Navigation surfaces: translucent so the sticky header keeps its
+     backdrop blur; redefined per theme below. */
+  --color-nav-bg: rgba(10, 10, 10, 0.84);
+  --color-nav-panel: rgba(10, 10, 10, 0.98);
+  --color-nav-line: rgba(212, 180, 92, 0.12);
+  --color-nav-popover: #15130f;
+  --color-nav-caption: #c7c1b4;
+  --nav-bg: var(--color-nav-bg);
+  --nav-panel: var(--color-nav-panel);
+  --nav-line: var(--color-nav-line);
+  --nav-popover: var(--color-nav-popover);
+  --nav-caption: var(--color-nav-caption);
   --toast-success: #9dbb8f;
   --toast-error: #e0917f;
   --toast-warning: #d9b45c;
@@ -387,6 +399,11 @@ html[data-theme='light'] {
   --color-review-panel: #eee8dc;
   --color-review-card: #fffdf8;
   --color-review-border: rgba(143, 108, 37, 0.42);
+  --color-nav-bg: rgba(255, 253, 248, 0.88);
+  --color-nav-panel: rgba(255, 253, 248, 0.98);
+  --color-nav-line: rgba(112, 87, 34, 0.22);
+  --color-nav-popover: #fffdf8;
+  --color-nav-caption: #554d43;
 }
 
 html[data-theme='light'] body {
