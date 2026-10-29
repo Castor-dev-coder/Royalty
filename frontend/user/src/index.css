@@ -1547,3 +1547,187 @@ html[data-theme='light'] .google-button-frame:focus-within {
 .google-button-host > div {
   max-width: 100%;
 }
+
+/* ==========================================================================
+   UI REFRESH — THE GOLD HAIRLINE RULE (signature detail)
+
+   One motif, used with discipline: a hairline gold rule that fades out to
+   the right. It underlines every eyebrow label, divides section from
+   section, warms the top edge of cards, and caps the footer. Everything
+   else in the refresh — the editorial type scale, the press feedback —
+   exists to let that one line carry the brand.
+   ========================================================================== */
+
+:root {
+  --rule-gold: rgba(212, 180, 92, 0.6);
+  --rule-gold-soft: rgba(212, 180, 92, 0.26);
+  --rule-fade: linear-gradient(90deg, var(--rule-gold) 0%, rgba(212, 180, 92, 0) 100%);
+  --rule-fade-soft: linear-gradient(90deg, var(--rule-gold-soft) 0%, rgba(212, 180, 92, 0) 100%);
+  --shadow-lift: 0 18px 38px rgba(0, 0, 0, 0.28);
+}
+
+html[data-theme='light'] {
+  --rule-gold: rgba(122, 90, 28, 0.55);
+  --rule-gold-soft: rgba(122, 90, 28, 0.24);
+  --rule-fade: linear-gradient(90deg, var(--rule-gold) 0%, rgba(122, 90, 28, 0) 100%);
+  --rule-fade-soft: linear-gradient(90deg, var(--rule-gold-soft) 0%, rgba(122, 90, 28, 0) 100%);
+  --shadow-lift: 0 18px 38px rgba(88, 66, 24, 0.16);
+}
+
+/* --- 1. The rule under every eyebrow label (pure CSS, no markup change) --- */
+.type-hero-eyebrow::after,
+.type-section-eyebrow::after {
+  content: '';
+  display: inline-block;
+  width: clamp(40px, 5vw, 64px);
+  height: 1px;
+  margin-left: clamp(12px, 1.4vw, 18px);
+  vertical-align: 0.32em;
+  background: var(--rule-fade);
+}
+
+/* --- 2. Editorial type scale (fonts already loaded) --- */
+.type-hero-title {
+  font-family: var(--font-display);
+  letter-spacing: 0.012em;
+  line-height: 0.98;
+}
+
+.type-hero-eyebrow {
+  letter-spacing: 2.4px;
+}
+
+.type-hero-script {
+  line-height: 0.92;
+}
+
+.type-section-eyebrow {
+  letter-spacing: 2.2px;
+}
+
+.type-section-heading {
+  line-height: 1.06;
+  letter-spacing: -0.012em;
+}
+
+/* --- 3. Section rhythm: the rule between sections --- */
+main > section + section::before {
+  content: '';
+  display: block;
+  width: min(100% - 48px, 1180px);
+  height: 1px;
+  margin: 0 auto 0;
+  background: linear-gradient(90deg, rgba(212, 180, 92, 0) 0%, var(--rule-gold-soft) 18%, var(--rule-gold-soft) 82%, rgba(212, 180, 92, 0) 100%);
+}
+
+/* --- 4. Card hairline: a warm wash at the top edge, hairline border --- */
+.service-card {
+  border-color: var(--rule-gold-soft);
+  background-image: linear-gradient(180deg, rgba(212, 180, 92, 0.09) 0%, rgba(212, 180, 92, 0) 110px);
+}
+
+html[data-theme='light'] .service-card {
+  background-image: linear-gradient(180deg, rgba(122, 90, 28, 0.07) 0%, rgba(122, 90, 28, 0) 110px);
+}
+
+.service-card:active {
+  transform: translateY(-2px) scale(0.995);
+}
+
+/* --- 5. Button press feedback (motion only when allowed) --- */
+@media (prefers-reduced-motion: no-preference) {
+  .btn-pill {
+    transition:
+      transform 160ms ease,
+      background-color 160ms ease,
+      border-color 160ms ease,
+      color 160ms ease,
+      box-shadow 160ms ease;
+  }
+
+  .btn-pill:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-lift);
+  }
+
+  .btn-pill:active {
+    transform: translateY(0) scale(0.985);
+  }
+}
+
+/* --- 6. The footer carries the same rule as the section dividers --- */
+footer.site-footer {
+  border-top: 1px solid var(--rule-gold-soft);
+  background-image: linear-gradient(180deg, rgba(212, 180, 92, 0.05) 0%, rgba(212, 180, 92, 0) 160px);
+}
+
+html[data-theme='light'] footer.site-footer {
+  background-image: linear-gradient(180deg, rgba(122, 90, 28, 0.05) 0%, rgba(122, 90, 28, 0) 160px);
+}
+
+/* --- 7. Light theme: gold TEXT must carry text contrast (WCAG AA) --- */
+html[data-theme='light'] .type-hero-eyebrow,
+html[data-theme='light'] .type-section-eyebrow,
+html[data-theme='light'] [class*='text-[var(--gold)]'],
+html[data-theme='light'] [class*='text-(--gold)'] {
+  color: #7a5a1c;
+}
+
+/* --- 8. Touch targets: nothing interactive under 44x44 --- */
+nav a,
+nav button,
+footer a,
+footer button,
+.service-card a,
+.service-card button {
+  display: inline-flex;
+  align-items: center;
+  min-width: 44px;
+  min-height: 44px;
+}
+
+/* Carousel arrows grow to the full target; the dots keep their 8px look and
+   carry a 44x44 invisible hit area instead (no layout change). */
+[aria-label='Previous review'],
+[aria-label='Next review'] {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+[aria-label^='Show review'] {
+  position: relative;
+}
+
+[aria-label^='Show review']::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
+
+/* --- 9. Reduced motion: nothing moves, nothing loops --- */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .service-card:hover,
+  .service-card:focus-within,
+  .service-card:active,
+  .btn-pill:hover,
+  .btn-pill:active {
+    transform: none;
+  }
+}
