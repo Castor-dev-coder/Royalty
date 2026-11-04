@@ -112,7 +112,7 @@ function ContactIcon({ type }) {
             Where Beauty Meets Royalty.
           </p>
           <p className="type-footer-description max-w-77.5 text-[#aaa69d]">
-            A premier luxury salon in Quezon City dedicated to making every
+            A premier luxury salon in Caloocan City dedicated to making every
             client feel like royalty.
           </p>
           <div className="mt-4.5 flex gap-2.5" aria-label="Social media">

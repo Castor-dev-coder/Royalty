@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import BrandMark from './BrandMark.jsx'
 
-import { useToast } from '../context/useToast.jsx'
 import { useTheme } from '../context/useTheme.jsx'
 
 function ThemeToggle() {
@@ -51,7 +50,6 @@ const linkClass =
 function Navbar({ onLoginClick, user, onLogout }) {
   const { pathname } = useLocation()
   const navigate = useNavigate()
-  const { showToast } = useToast()
   const [activeHash, setActiveHash] = useState(window.location.hash)
   // Open state is scoped to the route it was opened on, so navigating (or
   // pressing Back) closes both menus without extra effects.
@@ -189,7 +187,7 @@ function Navbar({ onLoginClick, user, onLogout }) {
               <button
                 aria-label="Notifications"
                 className="grid size-9 place-items-center rounded-full text-(--text) transition-colors hover:text-(--gold)"
-                onClick={() => showToast('info', 'Notifications are not connected yet.')}
+                onClick={() => { setMenuOpenAt(null); navigate('/notifications') }}
                 type="button"
               >
                 <svg aria-hidden="true" className="size-7 fill-none stroke-current [stroke-linecap:round] [stroke-linejoin:round] stroke-[1.7]" viewBox="0 0 24 24">
@@ -219,6 +217,8 @@ function Navbar({ onLoginClick, user, onLogout }) {
                 <p className="m-2 truncate text-[12px] text-(--muted)">{user.email}</p>
                 <button type="button" onClick={() => { setAccountOpenAt(null); navigate('/profile') }} className="w-full rounded px-2.5 py-2 text-left text-[13px] text-(--text) hover:bg-[rgba(212,180,92,.12)]">Profile</button>
                 <button type="button" onClick={() => { setAccountOpenAt(null); navigate('/my-reviews') }} className="w-full rounded px-2.5 py-2 text-left text-[13px] text-(--text) hover:bg-[rgba(212,180,92,.12)]">My reviews</button>
+                <button type="button" onClick={() => { setAccountOpenAt(null); navigate('/notifications') }} className="w-full rounded px-2.5 py-2 text-left text-[13px] text-(--text) hover:bg-[rgba(212,180,92,.12)]">Notifications</button>
+                <button type="button" onClick={() => { setAccountOpenAt(null); navigate('/settings') }} className="w-full rounded px-2.5 py-2 text-left text-[13px] text-(--text) hover:bg-[rgba(212,180,92,.12)]">Settings</button>
                 <button type="button" onClick={() => { setAccountOpenAt(null); onLogout() }} className="w-full rounded px-2.5 py-2 text-left text-[13px] text-(--gold) hover:bg-[rgba(212,180,92,.12)]">Sign out</button>
               </div>
               </div>

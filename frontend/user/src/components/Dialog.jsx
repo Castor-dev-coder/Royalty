@@ -90,7 +90,7 @@ function Dialog({
         aria-labelledby={labelledBy}
         aria-modal="true"
         aria-describedby={describedBy}
-        className={`relative ${panelClassName}`}
+        className={`relative dialog-reveal ${panelClassName}`}
         ref={panelRef}
         role="dialog"
         tabIndex={-1}

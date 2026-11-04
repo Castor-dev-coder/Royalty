@@ -4,14 +4,13 @@ import BrandMark from './BrandMark.jsx'
 import GoogleSignInButton from './GoogleSignInButton.jsx'
 import { useAuth } from '../context/useAuth.jsx'
 import { ApiError, AuthError, ValidationError } from '../lib/api.js'
+import { useFieldErrors, validateEmail, validateRequiredPassword } from '../lib/validation.js'
 
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-
-function Login({ onClose, onSwitch, onLogin = () => {} }) {
+function Login({ onClose, onSwitch, onLogin = () => {}, intent = null }) {
   const { signIn } = useAuth()
   const [showPassword, setShowPassword] = useState(false)
   const [message, setMessage] = useState('')
-  const [errors, setErrors] = useState({})
+  const { errors, setErrors, field, submitErrors } = useFieldErrors()
   const [submitting, setSubmitting] = useState(false)
   const submittingRef = useRef(false)
   const formRef = useRef(null)
@@ -25,15 +24,11 @@ function Login({ onClose, onSwitch, onLogin = () => {} }) {
     const email = String(form.elements.email.value).trim()
     const password = String(form.elements.password.value)
     const nextErrors = {}
-    if (!email) {
-      nextErrors.email = 'Enter your email address.'
-    } else if (!EMAIL_PATTERN.test(email)) {
-      nextErrors.email = 'Enter a valid email address, such as you@example.com.'
-    }
-    if (!password) {
-      nextErrors.password = 'Enter your password.'
-    }
-    setErrors(nextErrors)
+    const emailError = validateEmail(email)
+    if (emailError) nextErrors.email = emailError
+    const passwordError = validateRequiredPassword(password)
+    if (passwordError) nextErrors.password = passwordError
+    submitErrors(nextErrors)
     const firstError = Object.keys(nextErrors)[0]
     if (firstError) {
       form.elements[firstError]?.focus()
@@ -71,6 +66,11 @@ function Login({ onClose, onSwitch, onLogin = () => {} }) {
         <h2 className="my-[25px] mb-[27px] text-center text-[clamp(1.35rem,4vw,1.75rem)] font-normal text-[#f0efed]" id="login-title">
           Login to your account
         </h2>
+        {intent && (
+          <p className="-mt-4 mb-5 text-center text-[12px] font-semibold tracking-[0.14em] text-[var(--gold)] uppercase">
+            Sign in to {intent}
+          </p>
+        )}
         <form className="flex w-full flex-col gap-[14px]" noValidate onSubmit={handleSubmit} ref={formRef}>
           <div className="flex w-full flex-col gap-[7px]">
             <label className="text-[0.62rem] font-semibold tracking-[0.12em] text-[#918c82] uppercase" htmlFor="login-email">
@@ -89,6 +89,7 @@ function Login({ onClose, onSwitch, onLogin = () => {} }) {
                 id="login-email"
                 name="email"
                 placeholder="you@example.com"
+                {...field('email', validateEmail)}
                 required
                 type="email"
               />
@@ -116,6 +117,7 @@ function Login({ onClose, onSwitch, onLogin = () => {} }) {
                 id="login-password"
                 name="password"
                 placeholder="Enter your password"
+                {...field('password', validateRequiredPassword)}
                 required
                 type={showPassword ? 'text' : 'password'}
               />

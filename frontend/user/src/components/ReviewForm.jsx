@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ApiError, ConflictError, ValidationError, submitReviewRequest, uploadReviewPhoto } from '../lib/api.js'
 import { MAX_PHOTOS, makePreviewUrl, photoFailureMessage, validatePhotoFile } from '../lib/reviewPhotos.js'
+import { validateComment } from '../lib/validation.js'
 
 const CATEGORIES = [
   { key: 'service', label: 'Service', aria: 'Rate the service' },
@@ -256,7 +257,8 @@ function ReviewForm({ appointmentId, onSuccess, onDone }) {
     for (const category of CATEGORIES) {
       if (!ratings[category.key]) nextErrors[category.key] = `Please rate: ${category.label.toLowerCase()}.`
     }
-    if (comment.length > MAX_COMMENT) nextErrors.comment = `Keep the comment under ${MAX_COMMENT} characters.`
+    const commentError = validateComment(comment, MAX_COMMENT)
+    if (commentError) nextErrors.comment = commentError
     setErrors(nextErrors)
     if (Object.keys(nextErrors).length > 0) return
 
@@ -341,7 +343,16 @@ function ReviewForm({ appointmentId, onSuccess, onDone }) {
           className="min-h-[96px] w-full rounded-[10px] border border-[#3a3835] bg-[rgba(29,29,29,0.75)] px-[14px] py-[11px] text-[0.82rem] leading-[1.55] text-[#f3f0e8] outline-none placeholder:text-[#898783] focus:border-[var(--gold)]"
           id="review-comment"
           maxLength={MAX_COMMENT}
-          onChange={(event) => setComment(event.target.value)}
+          onChange={(event) => {
+            setComment(event.target.value)
+            const commentError = validateComment(event.target.value, MAX_COMMENT)
+            setErrors((current) => {
+              const next = { ...current }
+              if (commentError) next.comment = commentError
+              else delete next.comment
+              return next
+            })
+          }}
           placeholder="How was your visit?"
           value={comment}
         />

@@ -108,7 +108,12 @@ function PaymentReturnPage() {
 
   const badge = view ? paymentBadge(view) : null
   const paid = view?.status === 'PAID'
-  const cancelled = outcomeHint === 'cancel' && !paid && (view?.status === 'PENDING' || !view)
+  // A cancel-redirected attempt the server has since finalized reads
+  // FAILED — it was abandoned, not declined, so the copy says so.
+  const cancelled = outcomeHint === 'cancel' && !paid && (view?.status === 'PENDING' || view?.status === 'FAILED' || !view)
+  // One story per screen: an abandoned attempt is 'cancelled', never
+  // 'failed', in the headline AND the badge.
+  const badgeText = cancelled ? 'Payment cancelled' : badge?.text
 
   let headline = 'Confirming your payment…'
   let message = 'We are confirming your payment with Maya. This usually takes a few seconds.'
@@ -151,7 +156,7 @@ function PaymentReturnPage() {
       )}
       {badge && (
         <p className="mx-auto mt-3 inline-block rounded-full border border-[rgba(212,180,92,.4)] px-4 py-1 text-[11px] tracking-[1.2px] text-(--gold) uppercase">
-          {badge.text}
+          {badgeText}
         </p>
       )}
       {view?.appointmentCode && (

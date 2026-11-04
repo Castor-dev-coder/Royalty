@@ -14,7 +14,7 @@ import { useToast } from '../context/useToast.jsx'
 // booking action. Routes render their own content through <Outlet /> so the
 // chrome stays mounted (and keeps working) across navigations and lazy loads.
 function AppShell() {
-  const { user, authView, login, logout, openAuth, closeAuth, switchAuth } = useAuth()
+  const { user, authView, authIntent, login, logout, openAuth, closeAuth, switchAuth } = useAuth()
   const { showToast } = useToast()
   const location = useLocation()
   const navigate = useNavigate()
@@ -49,7 +49,8 @@ function AppShell() {
         user={user}
       />
       <OutageHost />
-      <div>
+      {/* Keyed wrapper replays the page entrance on every navigation. */}
+      <div className="page-enter" key={location.pathname}>
         {/* Per-route boundary: keyed by pathname so navigation resets it. */}
         <ErrorBoundary key={location.pathname}>
           <Outlet />
@@ -58,10 +59,10 @@ function AppShell() {
       <Footer onLoginClick={() => openAuth('login')} user={user} />
       <MobileBookCTA />
       {authView === 'login' && (
-        <Login onClose={closeAuth} onLogin={handleLogin} onSwitch={switchAuth} />
+        <Login intent={authIntent} onClose={closeAuth} onLogin={handleLogin} onSwitch={switchAuth} />
       )}
       {authView === 'signin' && (
-        <Signin onClose={closeAuth} onLogin={handleLogin} onSwitch={switchAuth} />
+        <Signin intent={authIntent} onClose={closeAuth} onLogin={handleLogin} onSwitch={switchAuth} />
       )}
     </div>
   )

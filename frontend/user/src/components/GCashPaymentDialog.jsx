@@ -334,7 +334,11 @@ function GCashPaymentDialog({ item, onClose, onSubmitted, preselectedOption = nu
                   className="min-h-[46px] w-full rounded-[10px] border border-[#3a3835] bg-[rgba(29,29,29,0.75)] px-[14px] text-[0.82rem] text-[#f3f0e8] outline-none placeholder:text-[#898783] focus:border-[var(--gold)]"
                   id="gcash-reference"
                   minLength={3}
-                  onChange={(event) => setReferenceNo(event.target.value)}
+                  onBlur={() => setReferenceError(validateReferenceNo(referenceNo))}
+                  onChange={(event) => {
+                    setReferenceNo(event.target.value)
+                    if (referenceError) setReferenceError(validateReferenceNo(event.target.value))
+                  }}
                   placeholder="e.g. 0123456789"
                   required
                   type="text"

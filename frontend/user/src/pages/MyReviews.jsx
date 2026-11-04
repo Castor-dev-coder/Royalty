@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Navigate, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import CustomerInitials from '../components/CustomerInitials.jsx'
 import EmptyState from '../components/EmptyState.jsx'
 import ReviewPhotos from '../components/ReviewPhotos.jsx'
+import SignInPanel from '../components/SignInPanel.jsx'
 import { useAuth } from '../context/useAuth.jsx'
 import { useRecoveryTick } from '../lib/useOutage.js'
 import { useAutoRefresh } from '../lib/useAutoRefresh.js'
@@ -108,7 +109,7 @@ function MyReviews() {
     )
   }
 
-  if (!user) return <Navigate to="/services" replace />
+  if (!user) return <SignInPanel standalone action="view your reviews" />
 
   const customerName = user.name || user.email || 'Guest'
 

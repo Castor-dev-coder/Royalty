@@ -215,6 +215,11 @@ function isPastNonterminal(appointment: { appointmentDate: string; status: strin
   return appointment.appointmentDate < todayKey && (appointment.status === 'CONFIRMED' || appointment.status === 'RESERVED');
 }
 
+/** Service completion only after the appointment's end time (server rule). */
+function canCompleteService(appointment: AppointmentRow): boolean {
+  return `${appointment.appointmentDate}T${appointment.endTime}` <= new Date().toISOString().slice(0, 16);
+}
+
 function normalizeWeeklySchedule(days: any[] = []): Array<{ dayOfWeek: number; enabled: boolean; startTime: string; endTime: string }> {
   const normalized = Array.from({ length: 7 }, (_, index) => ({
     dayOfWeek: index + 1,
@@ -3070,10 +3075,27 @@ function AppointmentPage() {
             </dl>
             {!token && <p className="form-hint">Sign in with an administrator account to update appointments.</p>}
             <div className="modal-actions appointment-detail-actions">
+              {/* Cancelling applies to reserved and confirmed bookings alike —
+                  the server lets a manager cancel either; the remaining actions
+                  are confirmed-only. */}
+              {(selectedAppointment.status === 'CONFIRMED' || selectedAppointment.status === 'RESERVED') && (
+                <button type="button" className="reject-action" disabled={!token || !selectedAppointment.id} onClick={() => setConfirmation({ appointment: selectedAppointment, status: 'CANCELLED' })}>Cancel</button>
+              )}
               {selectedAppointment.status === 'CONFIRMED' && (
                 <>
-                  <button type="button" className="reject-action" disabled={!token || !selectedAppointment.id} onClick={() => setConfirmation({ appointment: selectedAppointment, status: 'CANCELLED' })}>Cancel</button>
-                  <button type="button" className="primary-action" disabled={!token || !selectedAppointment.id} onClick={() => handleComplete(selectedAppointment)}>Complete</button>
+                  {/* Service completion — the transition the review gate needs.
+                      The server refuses it before the appointment's end time,
+                      so the button mirrors that rule and explains itself. */}
+                  <button
+                    type="button"
+                    className="secondary-action"
+                    disabled={!token || !selectedAppointment.id || !canCompleteService(selectedAppointment)}
+                    title={canCompleteService(selectedAppointment) ? 'Mark the delivered service as completed' : 'Available after the appointment ends'}
+                    onClick={() => setConfirmation({ appointment: selectedAppointment, status: 'COMPLETED' })}
+                  >
+                    Mark completed
+                  </button>
+                  <button type="button" className="primary-action" disabled={!token || !selectedAppointment.id} onClick={() => handleComplete(selectedAppointment)}>Record payment</button>
                 </>
               )}
               <button type="button" className="secondary-action" onClick={() => setSelectedAppointment(null)}>Close</button>

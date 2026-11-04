@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import Reveal from '../components/Reveal.jsx'
 import SafeImage from '../components/SafeImage.jsx'
 import WaveDivider from '../components/WaveDivider.jsx'
 import { fetchTeam } from '../lib/api.js'
@@ -71,6 +72,7 @@ function About() {
             <span className="mb-0.75 inline-block font-salon text-base leading-tight font-semibold tracking-[1.3px] text-(--gold) uppercase">
               OUR STORY
             </span>
+            <Reveal>
             <h1
               className="m-0 mb-8 font-serif text-[clamp(42px,3.89vw,56px)] leading-[1.2] font-semibold italic text-[#f6f2ea]"
               id="about-heading"
@@ -78,8 +80,9 @@ function About() {
               Crafting Beauty
               <span className="mt-1 block text-(--gold)">Since 2018</span>
             </h1>
+            </Reveal>
             <p className="mb-6 font-salon text-[clamp(15.2px,1.32vw,19px)] leading-[1.8] text-[#b9b4aa]">
-              Founded in the heart of Quezon City, Royalty Hair and Nails Studio
+              Founded in the heart of Caloocan City, Royalty Hair and Nails Studio
               was born from a simple vision: every person deserves to feel
               extraordinary. For over eight years, we’ve been transforming
               the way our clients see themselves.

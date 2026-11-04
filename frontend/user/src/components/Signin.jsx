@@ -3,18 +3,29 @@ import AuthModal from './AuthModal.jsx'
 import BrandMark from './BrandMark.jsx'
 import { useAuth } from '../context/useAuth.jsx'
 import { ApiError, ValidationError } from '../lib/api.js'
+import {
+  useFieldErrors,
+  validateEmail,
+  validateFullName,
+  validateNewPassword,
+  validatePasswordConfirm,
+  validatePhone,
+} from '../lib/validation.js'
 
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-// Mirrors the backend's philippineMobileSchema (validation.ts): 7-20 chars of
-// digits/spaces/dashes/parens with an optional leading +.
-const PHONE_PATTERN = /^\+?[0-9\s\-()]{7,20}$/
-
-function Signin({ onClose, onSwitch, onLogin = () => {} }) {
+function Signin({ onClose, onSwitch, onLogin = () => {}, intent = null }) {
   const { signUp } = useAuth()
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [message, setMessage] = useState('')
-  const [errors, setErrors] = useState({})
+  const { errors, setErrors, setFieldError, field, submitErrors } = useFieldErrors()
+  const nameLive = field('name', validateFullName)
+  const emailLive = field('email', (value) => validateEmail(value, { gmail: true }))
+  const phoneLive = field('phone', validatePhone)
+  const passwordLive = field('password', validateNewPassword)
+  // Cross-field: read the password sibling from the form at validation time.
+  const confirmLive = field('confirmPassword', (value, event) =>
+    validatePasswordConfirm(value, event.currentTarget.form.elements.password.value),
+  )
   const [submitting, setSubmitting] = useState(false)
   const submittingRef = useRef(false)
 
@@ -28,26 +39,20 @@ function Signin({ onClose, onSwitch, onLogin = () => {} }) {
     const email = String(form.elements.email.value).trim()
     const phone = String(form.elements.phone.value).trim()
     const nextErrors = {}
-    if (!name) nextErrors.name = 'Enter your name.'
-    if (!email) {
-      nextErrors.email = 'Enter your email address.'
-    } else if (!EMAIL_PATTERN.test(email)) {
-      nextErrors.email = 'Enter a valid email address, such as you@example.com.'
-    }
-    if (!phone) {
-      nextErrors.phone = 'Enter your mobile number.'
-    } else if (!PHONE_PATTERN.test(phone)) {
-      nextErrors.phone = 'Enter a valid mobile number, such as 09XX XXX XXXX.'
-    }
-    if (!form.elements.password.value) {
-      nextErrors.password = 'Create a password.'
-    }
-    if (!form.elements.confirmPassword.value) {
-      nextErrors.confirmPassword = 'Re-enter your password to confirm it.'
-    } else if (form.elements.password.value !== form.elements.confirmPassword.value) {
-      nextErrors.confirmPassword = 'Passwords do not match.'
-    }
-    setErrors(nextErrors)
+    const nameError = validateFullName(name)
+    if (nameError) nextErrors.name = nameError
+    const emailError = validateEmail(email, { gmail: true })
+    if (emailError) nextErrors.email = emailError
+    const phoneError = validatePhone(phone)
+    if (phoneError) nextErrors.phone = phoneError
+    const passwordError = validateNewPassword(form.elements.password.value)
+    if (passwordError) nextErrors.password = passwordError
+    const confirmError = validatePasswordConfirm(
+      form.elements.confirmPassword.value,
+      form.elements.password.value,
+    )
+    if (confirmError) nextErrors.confirmPassword = confirmError
+    submitErrors(nextErrors)
     const firstError = Object.keys(nextErrors)[0]
     if (firstError) {
       form.elements[firstError]?.focus()
@@ -89,6 +94,11 @@ function Signin({ onClose, onSwitch, onLogin = () => {} }) {
         <h2 className="my-[25px] mb-[27px] text-center text-[clamp(1.35rem,4vw,1.75rem)] font-normal text-[#f0efed]" id="signin-title">
           Create your account
         </h2>
+        {intent && (
+          <p className="-mt-4 mb-5 text-center text-[12px] font-semibold tracking-[0.14em] text-[var(--gold)] uppercase">
+            Sign in to {intent}
+          </p>
+        )}
         <form className="flex w-full flex-col gap-[14px]" noValidate onSubmit={handleSubmit}>
           <div className="flex w-full flex-col gap-[7px]">
             <label className="text-[0.62rem] font-semibold tracking-[0.12em] text-[#918c82] uppercase" htmlFor="signin-name">
@@ -107,6 +117,7 @@ function Signin({ onClose, onSwitch, onLogin = () => {} }) {
                 id="signin-name"
                 name="name"
                 placeholder="Your full name"
+                {...nameLive}
                 required
                 type="text"
               />
@@ -133,7 +144,8 @@ function Signin({ onClose, onSwitch, onLogin = () => {} }) {
                 className="min-w-0 w-full border-0 bg-transparent text-[0.88rem] text-[#f3f0e8] outline-none placeholder:text-[#898783] focus-visible:outline-0 max-[680px]:text-[0.78rem]"
                 id="signin-email"
                 name="email"
-                placeholder="you@example.com"
+                placeholder="you@gmail.com"
+                {...emailLive}
                 required
                 type="email"
               />
@@ -161,6 +173,7 @@ function Signin({ onClose, onSwitch, onLogin = () => {} }) {
                 id="signin-phone"
                 name="phone"
                 placeholder="09XX XXX XXXX"
+                {...phoneLive}
                 required
                 type="tel"
               />
@@ -188,6 +201,16 @@ function Signin({ onClose, onSwitch, onLogin = () => {} }) {
                 id="signin-password"
                 name="password"
                 placeholder="Create your password"
+                {...passwordLive}
+                onChange={(event) => {
+                  passwordLive.onChange(event)
+                  // Keep the confirm message honest when the password
+                  // changes under it — only once confirm has content.
+                  const confirmValue = event.currentTarget.form.elements.confirmPassword.value
+                  if (confirmValue) {
+                    setFieldError('confirmPassword', validatePasswordConfirm(confirmValue, event.target.value))
+                  }
+                }}
                 required
                 type={showPassword ? 'text' : 'password'}
               />
@@ -226,6 +249,7 @@ function Signin({ onClose, onSwitch, onLogin = () => {} }) {
                 id="signin-confirm"
                 name="confirmPassword"
                 placeholder="Re-enter your password"
+                {...confirmLive}
                 required
                 type={showConfirmPassword ? 'text' : 'password'}
               />

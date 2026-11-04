@@ -68,7 +68,7 @@ function Reviews() {
     if (user) {
       navigate('/appointments')
     } else {
-      openAuth('login')
+      openAuth('login', 'write a review')
     }
   }, [navigate, openAuth, user])
 

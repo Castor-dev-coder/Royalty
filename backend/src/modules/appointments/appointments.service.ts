@@ -374,7 +374,37 @@ export class AppointmentsService {
     const appointmentsRaw = await query.offset(skip).limit(limit).all();
     const appointments = await collect(appointmentsRaw as Iterable<AppointmentRecord> | AsyncIterable<AppointmentRecord>);
     return {
-      appointments: await mapWithConcurrency(appointments, 3, (appointment) => this.mapAppointment(toApplicationAppointment(appointment))),
+      // The admin calendar reads the customer and the assigned stylist by
+      // name (appointmentsQuery.toAppointmentRow), so every row is enriched
+      // exactly like the customer-facing lists: the stylist chosen in the
+      // booking modal must be visible on the admin side.
+      appointments: await mapWithConcurrency(appointments, 3, async (appointment) => {
+        const [mapped, customer, staffRecord] = await Promise.all([
+          this.mapAppointment(toApplicationAppointment(appointment)),
+          db.orm.public.Customer.where({ id: appointment.customerId }).first(),
+          appointment.staffId
+            ? db.orm.public.Staff.where({ id: appointment.staffId }).first()
+            : Promise.resolve(null),
+        ]);
+        return {
+          ...mapped,
+          customer: customer
+            ? {
+                id: customer.id,
+                firstName: customer.firstName,
+                lastName: customer.lastName,
+                phone: customer.phone,
+              }
+            : null,
+          staff: staffRecord
+            ? {
+                id: staffRecord.id,
+                firstName: staffRecord.firstName,
+                lastName: staffRecord.lastName,
+              }
+            : null,
+        };
+      }),
       total,
     };
   }
@@ -524,12 +554,18 @@ export class AppointmentsService {
       .orderBy((appointment) => appointment.appointmentDate.desc());
     const appointmentsRaw = await query.offset(skip).limit(limit).all();
     const appointments = await collect(appointmentsRaw as Iterable<AppointmentRecord> | AsyncIterable<AppointmentRecord>);
+    // Resolve each distinct customer once instead of per appointment row.
+    type CustomerBrief = { id: string; firstName: string; lastName: string; phone: string | null };
+    const customerIds = [...new Set(appointments.map((appointment) => String(appointment.customerId)))];
+    const fetchedCustomers = await Promise.all(customerIds.map((id) => db.orm.public.Customer.where({ id }).first()));
+    const customerById = new Map<string, CustomerBrief>();
+    for (const customer of fetchedCustomers) {
+      if (customer) customerById.set(String(customer.id), customer as unknown as CustomerBrief);
+    }
     return {
       appointments: await mapWithConcurrency(appointments, 2, async (appointment) => {
-        const [mapped, customer] = await Promise.all([
-          this.mapAppointment(toApplicationAppointment(appointment)),
-          db.orm.public.Customer.where({ id: appointment.customerId }).first(),
-        ]);
+        const mapped = await this.mapAppointment(toApplicationAppointment(appointment));
+        const customer = customerById.get(String(appointment.customerId));
         return {
           ...mapped,
           customer: customer

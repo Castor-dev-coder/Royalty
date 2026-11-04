@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Navigate, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import CustomerInitials from '../components/CustomerInitials.jsx'
+import SignInPanel from '../components/SignInPanel.jsx'
 import { useAuth } from '../context/useAuth.jsx'
+import {
+  useFieldErrors,
+  validatePersonName,
+  validatePhone,
+} from '../lib/validation.js'
 import { useRecoveryTick } from '../lib/useOutage.js'
 import { useAutoRefresh } from '../lib/useAutoRefresh.js'
 import { useToast } from '../context/useToast.jsx'
@@ -42,6 +48,12 @@ function Profile() {
   // entirely while the form is dirty.
   useAutoRefresh(load, { enabled: Boolean(user) && user.role === 'CUSTOMER', paused: dirty })
 
+  const { errors, field, submitErrors } = useFieldErrors()
+  const lastNameLive = field('lastName', (value) =>
+    validatePersonName(value, { emptyMessage: 'Enter your last name.' }),
+  )
+  const phoneLive = field('phone', validatePhone)
+
   const updateProfile = useCallback((event) => {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
@@ -51,6 +63,13 @@ function Profile() {
       phone: String(form.get('phone') ?? '').trim(),
     }
     if (!customer?.id) return
+    const nextErrors = {}
+    const lastNameError = validatePersonName(payload.lastName, { emptyMessage: 'Enter your last name.' })
+    if (lastNameError) nextErrors.lastName = lastNameError
+    const phoneError = validatePhone(payload.phone)
+    if (phoneError) nextErrors.phone = phoneError
+    submitErrors(nextErrors)
+    if (Object.keys(nextErrors).length > 0) return
     updateCustomer(customer.id, payload).then(
       () => {
         setSaved(true)
@@ -63,7 +82,7 @@ function Profile() {
         showToast('error', error?.message || 'Your profile could not be updated.')
       },
     )
-  }, [customer, login, showToast, user])
+  }, [customer, login, showToast, submitErrors, user])
 
   // Keep the skeleton up while the session restores — a redirect here would
   // bounce the visitor away from the profile they asked for.
@@ -77,7 +96,7 @@ function Profile() {
     )
   }
 
-  if (!user) return <Navigate to="/services" replace />
+  if (!user) return <SignInPanel standalone action="view your account" />
 
   return (
     <>
@@ -108,7 +127,12 @@ function Profile() {
                 </div>
                 <div className="flex flex-col gap-2">
                   <label htmlFor="lastName" className="text-xs font-medium uppercase tracking-wider text-[#918c82]">Last Name</label>
-                  <input id="lastName" name="lastName" defaultValue={customer.lastName} className="w-full rounded-md border border-[rgba(212,180,92,0.3)] bg-[#0d0d0c] px-4 py-3 text-sm text-[#f4f1eb] placeholder-[#5a5550] outline-none transition-colors focus:border-(--gold)" />
+                  <input id="lastName" name="lastName" defaultValue={customer.lastName} aria-describedby={errors.lastName ? 'lastName-error' : undefined} aria-invalid={errors.lastName ? 'true' : undefined} {...lastNameLive} className="w-full rounded-md border border-[rgba(212,180,92,0.3)] bg-[#0d0d0c] px-4 py-3 text-sm text-[#f4f1eb] placeholder-[#5a5550] outline-none transition-colors focus:border-(--gold)" />
+                  {errors.lastName && (
+                    <p className="m-0 text-[0.68rem] leading-[1.5] text-[#e9a68c]" id="lastName-error" role="alert">
+                      {errors.lastName}
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="flex flex-col gap-2">
@@ -118,7 +142,12 @@ function Profile() {
               </div>
               <div className="flex flex-col gap-2">
                 <label htmlFor="phone" className="text-xs font-medium uppercase tracking-wider text-[#918c82]">Phone Number</label>
-                <input id="phone" name="phone" type="tel" defaultValue={customer.phone ?? ''} placeholder="09XX XXX XXXX" required className="w-full rounded-md border border-[rgba(212,180,92,0.3)] bg-[#0d0d0c] px-4 py-3 text-sm text-[#f4f1eb] placeholder-[#5a5550] outline-none transition-colors focus:border-(--gold)" />
+                <input id="phone" name="phone" type="tel" defaultValue={customer.phone ?? ''} placeholder="09XX XXX XXXX" required aria-describedby={errors.phone ? 'phone-error' : undefined} aria-invalid={errors.phone ? 'true' : undefined} {...phoneLive} className="w-full rounded-md border border-[rgba(212,180,92,0.3)] bg-[#0d0d0c] px-4 py-3 text-sm text-[#f4f1eb] placeholder-[#5a5550] outline-none transition-colors focus:border-(--gold)" />
+                {errors.phone && (
+                  <p className="m-0 text-[0.68rem] leading-[1.5] text-[#e9a68c]" id="phone-error" role="alert">
+                    {errors.phone}
+                  </p>
+                )}
               </div>
               <div className="flex flex-col gap-2 pt-2">
                 <label className="text-xs font-medium uppercase tracking-wider text-[#918c82]">Security</label>

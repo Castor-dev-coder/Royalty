@@ -1,25 +1,53 @@
 import { useCallback, useState } from 'react'
-import { Navigate, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
+import SignInPanel from '../components/SignInPanel.jsx'
 import { useAuth } from '../context/useAuth.jsx'
+import {
+  useFieldErrors,
+  validateNewPassword,
+  validatePasswordConfirm,
+  validateRequiredPassword,
+} from '../lib/validation.js'
 
 function ChangePassword() {
   const navigate = useNavigate()
   const { user } = useAuth()
   const [visible, setVisible] = useState({ current: false, next: false, confirm: false })
   const [message, setMessage] = useState('')
+  const { errors, setFieldError, field, submitErrors } = useFieldErrors()
+  const live = {
+    current: field('current', (value) =>
+      validateRequiredPassword(value, { emptyMessage: 'Enter your current password.' }),
+    ),
+    next: field('next', (value) =>
+      validateNewPassword(value, { emptyMessage: 'Create a new password.' }),
+    ),
+    // Cross-field: read the new-password sibling from the form at validation time.
+    confirm: field('confirm', (value, event) =>
+      validatePasswordConfirm(value, event.currentTarget.form.elements.next.value),
+    ),
+  }
 
   const updatePassword = useCallback((event) => {
     event.preventDefault()
     const values = Object.fromEntries(new FormData(event.currentTarget))
-    if (values.next !== values.confirm) {
-      setMessage('New passwords do not match.')
+    const nextErrors = {}
+    const currentError = validateRequiredPassword(values.current, { emptyMessage: 'Enter your current password.' })
+    if (currentError) nextErrors.current = currentError
+    const nextError = validateNewPassword(values.next, { emptyMessage: 'Create a new password.' })
+    if (nextError) nextErrors.next = nextError
+    const confirmError = validatePasswordConfirm(values.confirm, values.next)
+    if (confirmError) nextErrors.confirm = confirmError
+    submitErrors(nextErrors)
+    if (Object.keys(nextErrors).length > 0) {
+      setMessage('')
       return
     }
     setMessage('Password updated successfully.')
     event.currentTarget.reset()
-  }, [])
+  }, [submitErrors])
 
-  if (!user) return <Navigate to="/services" replace />
+  if (!user) return <SignInPanel standalone action="change your password" />
 
   const fields = [
     ['current', 'Current Password'],
@@ -46,7 +74,7 @@ function ChangePassword() {
                 <div className="flex flex-col gap-2" key={name}>
                   <label htmlFor={name} className="text-xs font-medium uppercase tracking-wider text-[#918c82]">{label}</label>
                   <div className="relative">
-                    <input id={name} className="w-full rounded-md border border-[rgba(212,180,92,0.3)] bg-[#0d0d0c] px-4 py-3 pr-12 text-sm text-[#f4f1eb] placeholder-[#5a5550] outline-none transition-colors focus:border-(--gold)" name={name} placeholder={label} required type={visible[name] ? 'text' : 'password'} />
+                    <input id={name} aria-describedby={errors[name] ? `${name}-error` : undefined} aria-invalid={errors[name] ? 'true' : undefined} className="w-full rounded-md border border-[rgba(212,180,92,0.3)] bg-[#0d0d0c] px-4 py-3 pr-12 text-sm text-[#f4f1eb] placeholder-[#5a5550] outline-none transition-colors focus:border-(--gold)" name={name} placeholder={label} required type={visible[name] ? 'text' : 'password'} {...live[name]} onChange={(event) => { live[name].onChange(event); if (name === 'next') { const confirmValue = event.currentTarget.form.elements.confirm.value; if (confirmValue) setFieldError('confirm', validatePasswordConfirm(confirmValue, event.target.value)) } }} />
                     <button type="button" aria-label={`Show ${label}`} onClick={() => setVisible((state) => ({ ...state, [name]: !state[name] }))} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#918c82] transition-colors hover:text-(--gold)">
                       {visible[name] ? (
                         <svg className="size-5" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" /></svg>
@@ -55,6 +83,11 @@ function ChangePassword() {
                       )}
                     </button>
                   </div>
+                  {errors[name] && (
+                    <p className="m-0 text-[0.68rem] leading-[1.5] text-[#e9a68c]" id={`${name}-error`} role="alert">
+                      {errors[name]}
+                    </p>
+                  )}
                 </div>
               ))}
             </div>

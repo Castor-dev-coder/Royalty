@@ -18,6 +18,7 @@ import { toTemporalInstant } from '../../utils/date-time.js';
 import { AppointmentsService } from '../appointments/appointments.service.js';
 import { DEPOSIT_PERCENT, PaymentsService, cents, fromCents, withAppointmentLock } from './payments.service.js';
 import {
+  MAYA_CANCELLED_STATUSES,
   MAYA_EXPIRED_STATUSES,
   MAYA_FAILURE_STATUSES,
   MAYA_SUCCESS_STATUSES,
@@ -272,8 +273,16 @@ export class MayaPaymentsService {
     }
 
     // Maya reports two lifecycle fields (status + paymentStatus); a success
-    // or terminal state on either one is authoritative.
+    // or terminal state on either one is authoritative. A cancelled payment
+    // is checked FIRST: a checkout the customer walked away from reports
+    // session-COMPLETED alongside PAYMENT_CANCELLED, and a contradictory
+    // pair must never credit money.
     const providerStates = [checkout.status, checkout.paymentStatus];
+    if (providerStates.some((state) => MAYA_CANCELLED_STATUSES.has(state))) {
+      return this.finalizeTerminal(row, 'FAILED', actorId, 'MAYA_PAYMENT_CANCELLED', {
+        providerStatus: providerStates.join('/'),
+      });
+    }
     if (providerStates.some((state) => MAYA_SUCCESS_STATUSES.has(state))) {
       return this.settleSuccess(row, checkout, actorId);
     }
@@ -325,10 +334,18 @@ export class MayaPaymentsService {
       }, 'MISMATCH');
     }
 
-    // Settlement cross-check against the payments API when the checkout
-    // reports a payment id.
-    let providerPaymentId = checkout.paymentId;
-    if (providerPaymentId) {
+    // Settlement cross-check against the payments API is the final gate —
+    // and it is MANDATORY. A checkout that claims success without any
+    // payment id has no settlement behind it (the session can be over while
+    // the money never moved): never credit it.
+    const providerPaymentId = checkout.paymentId;
+    if (!providerPaymentId) {
+      return this.finalizeTerminal(row, 'FAILED', actorId, 'MAYA_PAYMENT_NOT_SETTLED', {
+        checkoutStatus: checkout.status,
+        paymentStatus: checkout.paymentStatus,
+      }, 'MISMATCH');
+    }
+    {
       try {
         const settlement = await getMayaPayment(providerPaymentId);
         if (!MAYA_SUCCESS_STATUSES.has(settlement.status)) {

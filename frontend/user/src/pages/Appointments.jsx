@@ -1,6 +1,7 @@
 ﻿import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import CustomerInitials from '../components/CustomerInitials.jsx'
+import SignInPanel from '../components/SignInPanel.jsx'
 import { useAuth } from '../context/useAuth.jsx'
 import { useRecoveryTick } from '../lib/useOutage.js'
 import { useAutoRefresh } from '../lib/useAutoRefresh.js'
@@ -106,6 +107,9 @@ function AppointmentCard({ item, customerName, outstanding, paymentRow, onCancel
   const titleService = item.services[0]?.serviceName ?? 'Appointment'
   const moreCount = item.services.length - 1
   const showReviewButton = item.status === 'COMPLETED' && !item.alreadyReviewed && !reviewOpen
+  // A confirmed (paid or down-paid) booking whose service has not been
+  // delivered yet: say so in the review slot, so it never looks missing.
+  const showAwaitingCompletion = item.status === 'CONFIRMED' && !item.alreadyReviewed && !reviewOpen
   // Paid bookings can only be cancelled by the salon (server-enforced): the
   // customer's Cancel action disappears once money is settled.
   const paidBooking = Number(paymentRow?.verifiedTotal ?? 0) > 0
@@ -114,7 +118,7 @@ function AppointmentCard({ item, customerName, outstanding, paymentRow, onCancel
   // paid; hidden for cancelled, no-show and fully paid. The server quote gates
   // what can actually be paid.
   const showPay = shouldShowPay(item.status, outstanding, paymentRow?.verifiedTotal)
-  const hasActions = Boolean(showPay || showReviewButton || reviewed || showCancel)
+  const hasActions = Boolean(showPay || showReviewButton || showAwaitingCompletion || reviewed || showCancel)
   return (
     <article className="rounded-lg border border-[#27241f] bg-[#151515] px-6 py-6 max-[640px]:px-4 max-[640px]:py-4">
       {/* Customer identity is initials only — never a photo; the name is
@@ -212,6 +216,11 @@ function AppointmentCard({ item, customerName, outstanding, paymentRow, onCancel
                   Write a review
                 </button>
               )}
+              {showAwaitingCompletion && (
+                <span className="inline-flex min-h-[40px] items-center rounded-full border border-[#3a352c] px-5 text-[12px] font-semibold tracking-[0.12em] text-[#b3ada2] uppercase max-[640px]:min-h-[44px] max-[640px]:w-full max-[640px]:justify-center">
+                  Awaiting completion
+                </span>
+              )}
               {reviewed && (
                 <span className="text-[12px] font-semibold tracking-[0.12em] text-[#b3ada2] uppercase">
                   REVIEWED · {Number(item.review.overallRating).toFixed(1)}
@@ -252,7 +261,7 @@ function AppointmentCard({ item, customerName, outstanding, paymentRow, onCancel
 
 function Appointments() {
   const navigate = useNavigate()
-  const { user, restoring, openAuth, resolveAuthFailure } = useAuth()
+  const { user, restoring, resolveAuthFailure } = useAuth()
   // Refetches the page's data whenever an outage recovers.
   const recoveryTick = useRecoveryTick()
   const { showToast } = useToast()
@@ -516,16 +525,7 @@ function Appointments() {
         )}
 
         {!user && !restoring && (
-          <div className="flex flex-col items-start gap-4 rounded-lg border border-[rgba(212,180,92,.35)] bg-[#151515] px-6 py-5">
-            <p className="m-0 text-[15px] text-[#d8d4cb]">Sign in to see your appointments.</p>
-            <button
-              className="btn-pill cursor-pointer rounded-full border border-[var(--gold)] bg-[var(--gold)] px-7 py-3 text-[13px] font-bold text-black hover:bg-[var(--gold-bright)]"
-              onClick={() => openAuth('login')}
-              type="button"
-            >
-              SIGN IN
-            </button>
-          </div>
+          <SignInPanel action="see your appointments" />
         )}
 
         {user && noAccess && (

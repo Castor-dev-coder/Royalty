@@ -52,6 +52,37 @@ export function StaffOverviewPanel() {
     return () => { active = false; };
   }, []);
 
+  // Quiet background refresh: new bookings and status changes made on other
+  // surfaces appear here within a minute (or as soon as the tab regains focus)
+  // without a manual reload. A failed refresh keeps the last good snapshot.
+  useEffect(() => {
+    let active = true;
+    const refresh = () => {
+      Promise.all([
+        staffApi.getProfile(),
+        staffApi.listAppointments(),
+        staffApi.listServices(),
+      ])
+        .then(([loadedProfile, loadedAppointments, loadedServices]) => {
+          if (!active) return;
+          setProfile(loadedProfile);
+          setAppointments(loadedAppointments);
+          setServices(loadedServices);
+        })
+        .catch(() => {});
+    };
+    const timer = window.setInterval(refresh, 60000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, []);
+
   const summary = useMemo(() => {
     const today = localDateKey(new Date());
     const nowStamp = new Date().toISOString().slice(0, 16);

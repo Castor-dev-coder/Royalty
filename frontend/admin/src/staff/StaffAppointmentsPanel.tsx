@@ -57,20 +57,39 @@ export function StaffAppointmentsPanel() {
   const closeDetail = () => setSelected(null);
   const detailRef = useDialogBehavior<HTMLElement>(closeDetail, selected !== null);
 
-  async function load() {
-    setLoading(true);
-    setLoadError('');
+  async function load(silent = false) {
+    if (!silent) {
+      setLoading(true);
+      setLoadError('');
+    }
     try {
       setAppointments(await staffApi.listAppointments());
     } catch (cause) {
-      setLoadError(cause instanceof Error ? cause.message : 'Your appointments could not be loaded.');
+      if (!silent) {
+        setLoadError(cause instanceof Error ? cause.message : 'Your appointments could not be loaded.');
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }
 
   useEffect(() => {
     void load();
+  }, []);
+
+  // Quiet background refresh so bookings assigned elsewhere (the booking modal,
+  // the admin calendar) appear without a manual reload.
+  useEffect(() => {
+    const refresh = () => { void load(true); };
+    const timer = window.setInterval(refresh, 60000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, []);
 
   const today = localDateKey(new Date());

@@ -267,6 +267,44 @@ test('revalidation runs before the payment: a taken slot is refused', async () =
 
 // ---- verification: authoritative, idempotent, mismatch-safe --------------
 
+test('cancel path: a COMPLETED checkout session with PAYMENT_CANCELLED never credits', async () => {
+  seed();
+  const view = await startAttempt('attempt-cancel-1');
+  // What the real sandbox reports after "Back to Merchant": the SESSION is
+  // COMPLETED (redirects finished) but the payment was cancelled, paymentId
+  // is null, and no money moved.
+  fakeCheckout = {
+    status: 'COMPLETED',
+    paymentStatus: 'PAYMENT_CANCELLED',
+    paymentId: null,
+    totalAmount: { amount: fromCentavos(155000), currency: 'PHP' },
+    requestReferenceNumber: view.paymentId,
+  };
+  const outcome = await MayaPaymentsService.verifyPayment(view.paymentId, null);
+  assert.equal(outcome.state, 'FAILED', 'an abandoned checkout is terminal');
+  assert.equal(outcome.view.status, 'FAILED');
+  assert.equal(outcome.view.paidTotal, 0, 'nothing is ever credited');
+  assert.equal(String(world.Appointment[0].status), 'CANCELLED', 'the unpaid hold is released');
+  assert.ok(auditActions().includes('MAYA_PAYMENT_CANCELLED'));
+});
+
+test('a success claim without a payment id is never credited (no settlement behind it)', async () => {
+  seed();
+  const view = await startAttempt('attempt-nosettle-1');
+  fakeCheckout = {
+    status: 'PAYMENT_SUCCESS',
+    paymentStatus: 'PAYMENT_SUCCESS',
+    paymentId: null,
+    totalAmount: { amount: fromCentavos(155000), currency: 'PHP' },
+    requestReferenceNumber: view.paymentId,
+  };
+  const outcome = await MayaPaymentsService.verifyPayment(view.paymentId, null);
+  assert.equal(outcome.state, 'MISMATCH');
+  assert.equal(outcome.view.status, 'FAILED');
+  assert.equal(outcome.view.paidTotal, 0, 'no settlement cross-check means no credit');
+  assert.ok(auditActions().includes('MAYA_PAYMENT_NOT_SETTLED'));
+});
+
 async function startAttempt(token: string) {
   const view = await MayaPaymentsService.createCheckoutAttempt(CUSTOMER, {
     appointmentId: 'apt-1', plan: 'FULL', attemptToken: token,

@@ -25,6 +25,10 @@ function sessionUserFor(result) {
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [authView, setAuthView] = useState(null)
+  // The action a signed-out visitor was attempting ("book your
+  // appointment", "write a review", ...): threaded into the auth dialogs
+  // as their intent line so every gate reads "Sign in to [action]".
+  const [authIntent, setAuthIntent] = useState(null)
   const [restoring, setRestoring] = useState(() => hasAuthHint())
 
   // Silent restore: exchange the httpOnly refresh cookie for an access token.
@@ -96,8 +100,14 @@ export function AuthProvider({ children }) {
     }
   }, [])
 
-  const openAuth = useCallback((view) => setAuthView(view), [])
-  const closeAuth = useCallback(() => setAuthView(null), [])
+  const openAuth = useCallback((view, intent = null) => {
+    setAuthIntent(intent)
+    setAuthView(view)
+  }, [])
+  const closeAuth = useCallback(() => {
+    setAuthIntent(null)
+    setAuthView(null)
+  }, [])
   const switchAuth = useCallback(() => {
     setAuthView((view) => (view === 'login' ? 'signin' : 'login'))
   }, [])
@@ -107,6 +117,7 @@ export function AuthProvider({ children }) {
       user,
       restoring,
       authView,
+      authIntent,
       signIn,
       signInWithGoogle,
       signUp,
@@ -117,7 +128,7 @@ export function AuthProvider({ children }) {
       closeAuth,
       switchAuth,
     }),
-    [user, restoring, authView, signIn, signInWithGoogle, signUp, login, logout, resolveAuthFailure, openAuth, closeAuth, switchAuth],
+    [user, restoring, authView, authIntent, signIn, signInWithGoogle, signUp, login, logout, resolveAuthFailure, openAuth, closeAuth, switchAuth],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

@@ -235,7 +235,15 @@ export async function getPayment(paymentId: string): Promise<MayaPayment> {
   };
 }
 
-/** Checkout statuses meaning "the money is in" (Maya Checkout lifecycle). */
-export const MAYA_SUCCESS_STATUSES = new Set(['PAYMENT_SUCCESS', 'SUCCESS', 'COMPLETED']);
+/**
+ * Statuses meaning "the money is in". NOTE: the checkout SESSION
+ * lifecycle reports COMPLETED for "the redirect flow finished" — an
+ * abandoned checkout also reports COMPLETED (paired with
+ * PAYMENT_CANCELLED), so COMPLETED is not a payment state and must never
+ * credit money.
+ */
+export const MAYA_SUCCESS_STATUSES = new Set(['PAYMENT_SUCCESS', 'SUCCESS']);
 export const MAYA_FAILURE_STATUSES = new Set(['PAYMENT_FAILED', 'FAILED']);
 export const MAYA_EXPIRED_STATUSES = new Set(['PAYMENT_EXPIRED', 'EXPIRED']);
+/** The customer left the payment page without paying: terminal, never credited. */
+export const MAYA_CANCELLED_STATUSES = new Set(['PAYMENT_CANCELLED', 'CANCELLED']);
