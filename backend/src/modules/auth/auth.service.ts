@@ -15,6 +15,8 @@ export interface AuthResult {
 export interface TokenResult {
   accessToken: string;
   refreshToken: string;
+  /** Whether the session is persistent (rememberMe) — drives cookie policy. */
+  rememberMe: boolean;
 }
 
 interface CustomerRegistrationProfile {
@@ -72,7 +74,7 @@ export class AuthService {
     };
   }
 
-  static async login(email: string, password: string): Promise<AuthResult> {
+  static async login(email: string, password: string, options?: { rememberMe?: boolean }): Promise<AuthResult> {
     // Find account
     const account = await db.orm.public.Account.where({ email: pgVarchar<255>(email) }).first();
     if (!account) {
@@ -84,7 +86,10 @@ export class AuthService {
       throw new UnauthorizedError('Account is deactivated');
     }
 
-    // Verify password
+    // Verify password (Google-only accounts have no password hash at all).
+    if (!account.passwordHash) {
+      throw new UnauthorizedError('Invalid email or password');
+    }
     const validPassword = await bcrypt.compare(password, account.passwordHash);
     if (!validPassword) {
       throw new UnauthorizedError('Invalid email or password');
@@ -93,7 +98,7 @@ export class AuthService {
     // Generate tokens
     const payload = { sub: account.id, email: account.email, role: account.role };
     const accessToken = createAccessToken(payload);
-    const refreshToken = createRefreshToken(payload);
+    const refreshToken = createRefreshToken(payload, options);
 
     return {
       id: account.id,
@@ -114,14 +119,16 @@ export class AuthService {
       throw new UnauthorizedError('Account not found or deactivated');
     }
 
-    // Generate new tokens
+    // Generate new tokens (rotation keeps the original rememberMe policy)
+    const rememberMe = payload.rm === true;
     const newPayload = { sub: account.id, email: account.email, role: account.role };
     const accessToken = createAccessToken(newPayload);
-    const newRefreshToken = createRefreshToken(newPayload);
+    const newRefreshToken = createRefreshToken(newPayload, { rememberMe });
 
     return {
       accessToken,
       refreshToken: newRefreshToken,
+      rememberMe,
     };
   }
 

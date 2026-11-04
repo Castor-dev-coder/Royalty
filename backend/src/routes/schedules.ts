@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import { validateRequest } from '../middleware/validator.js';
+import { publicCacheMiddleware } from '../utils/http.js';
 import {
   getBusinessHoursController,
   replaceBusinessHoursController,
@@ -27,13 +28,16 @@ import {
 export const schedulesRouter = Router();
 
 // All routes require authentication
+// Public: the customer-facing slot picker reads the shop hours (display data).
+// Public opening hours: safe to cache and revalidate.
+schedulesRouter.get('/business-hours', publicCacheMiddleware, getBusinessHoursController);
+
 schedulesRouter.use(authenticate);
 
 // ============================================================
 // Business Hours
 // ============================================================
 
-schedulesRouter.get('/business-hours', requireRole('ADMIN', 'MANAGER'), getBusinessHoursController);
 schedulesRouter.patch('/business-hours', requireRole('ADMIN', 'MANAGER'), validateRequest(businessHoursWeekSchema), replaceBusinessHoursController);
 
 // ============================================================

@@ -28,12 +28,15 @@ export const loginSchema = z.object({
   // address just to be able to sign in.
   email: emailSchema(),
   password: z.string().min(1),
+  rememberMe: z.boolean().optional(),
 });
 
 export type LoginRequest = z.infer<typeof loginSchema>;
 
 export const refreshTokenSchema = z.object({
-  refreshToken: z.string().min(1),
+  // Optional: cookie-mode refresh sends no body at all (the token rides in an
+  // httpOnly cookie); bearer-mode callers still pass it explicitly.
+  refreshToken: z.string().min(1).optional(),
 });
 
 export type RefreshTokenRequest = z.infer<typeof refreshTokenSchema>;
@@ -46,7 +49,9 @@ export const createAccountSchema = z.object({
   // A new account is given a Gmail address.
   email: gmailSchema(),
   password: z.string().min(8).max(100),
-  role: z.enum(['ADMIN', 'MANAGER', 'STAFF', 'CUSTOMER']).default('CUSTOMER'),
+  // ADMIN is deliberately absent: no creation path may mint an administrator
+  // (hidden-admin prevention).
+  role: z.enum(['MANAGER', 'STAFF', 'CUSTOMER']).default('CUSTOMER'),
 });
 
 export type CreateAccountRequest = z.infer<typeof createAccountSchema>;

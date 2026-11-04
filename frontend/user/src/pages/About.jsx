@@ -1,10 +1,58 @@
-import EmployeeCard from '../components/EmployeeCard.jsx'
+import { useEffect, useState } from 'react'
+import Reveal from '../components/Reveal.jsx'
 import SafeImage from '../components/SafeImage.jsx'
 import WaveDivider from '../components/WaveDivider.jsx'
-import aboutStats from '../data/about.js'
-import employees from '../data/employees.js'
+import { fetchTeam } from '../lib/api.js'
+import './about-team.css'
+
+// Initials placeholder for team members without a photo.
+function initialsFor(member) {
+  const initials = `${member.firstName?.trim()?.[0] ?? ''}${member.lastName?.trim()?.[0] ?? ''}`.toUpperCase()
+  return initials || '?'
+}
+
+function fullNameFor(member) {
+  return [member.firstName, member.lastName].filter(Boolean).join(' ').trim() || 'Our team'
+}
+
+// QA demo profiles carry a fixed disclaimer sentence inside their bio. Split
+// it out so it renders as its own visible note instead of trailing body
+// text; the wording itself is preserved verbatim.
+const QA_DISCLAIMER_MARKER = 'QA demo profile'
+
+function splitBio(bio) {
+  const index = bio.indexOf(QA_DISCLAIMER_MARKER)
+  if (index === -1) return { body: bio, disclaimer: '' }
+  return {
+    body: bio.slice(0, index).trim(),
+    disclaimer: bio.slice(index).trim(),
+  }
+}
 
 function About() {
+  const [team, setTeam] = useState([])
+  const [teamStatus, setTeamStatus] = useState('loading') // loading | ready | empty
+
+  // Public team roster (GET /staff/team, no auth). The card renders only the
+  // team-visible fields — never email or phone.
+  useEffect(() => {
+    let stale = false
+    fetchTeam().then(
+      (data) => {
+        if (stale) return
+        const rows = data?.staff ?? []
+        setTeam(rows)
+        setTeamStatus(rows.length > 0 ? 'ready' : 'empty')
+      },
+      () => {
+        if (!stale) setTeamStatus('empty')
+      },
+    )
+    return () => {
+      stale = true
+    }
+  }, [])
+
   return (
     <main className="min-h-[calc(100vh-76px)] bg-black" id="home">
         <section
@@ -24,6 +72,7 @@ function About() {
             <span className="mb-0.75 inline-block font-salon text-base leading-tight font-semibold tracking-[1.3px] text-(--gold) uppercase">
               OUR STORY
             </span>
+            <Reveal>
             <h1
               className="m-0 mb-8 font-serif text-[clamp(42px,3.89vw,56px)] leading-[1.2] font-semibold italic text-[#f6f2ea]"
               id="about-heading"
@@ -31,8 +80,9 @@ function About() {
               Crafting Beauty
               <span className="mt-1 block text-(--gold)">Since 2018</span>
             </h1>
+            </Reveal>
             <p className="mb-6 font-salon text-[clamp(15.2px,1.32vw,19px)] leading-[1.8] text-[#b9b4aa]">
-              Founded in the heart of Quezon City, Royalty Hair and Nails Studio
+              Founded in the heart of Caloocan City, Royalty Hair and Nails Studio
               was born from a simple vision: every person deserves to feel
               extraordinary. For over eight years, we’ve been transforming
               the way our clients see themselves.
@@ -51,18 +101,11 @@ function About() {
                 — Founder, Royalty Hair and Nails Studio
               </cite>
             </blockquote>
-            <div className="grid grid-cols-3 gap-4.5 max-[380px]:gap-2.5">
-              {aboutStats.map(({ value, label }) => (
-                <div className="flex flex-col gap-1.75" key={label}>
-                  <strong className="font-serif text-[clamp(25px,2.36vw,34px)] leading-[1.1] font-semibold text-(--gold)">
-                    {value}
-                  </strong>
-                  <span className="font-sans text-[clamp(10px,0.83vw,12px)] leading-[1.2] font-medium tracking-[0.8px] text-[#a7a198] uppercase">
-                    {label}
-                  </span>
-                </div>
-              ))}
-            </div>
+            {/* No studio-stats endpoint exists yet (FE gap) — the fabricated
+                numbers were removed rather than replaced with invented ones. */}
+            <p className="m-0 text-[clamp(13px,1.1vw,15px)] leading-[1.7] text-[#a7a198]" role="status">
+              Studio statistics are not available yet.
+            </p>
           </div>
         </section>
 
@@ -72,6 +115,7 @@ function About() {
           className="salon-atmosphere pb-16.5 max-[680px]:pb-12"
         >
           <div aria-hidden="true" className="salon-lines" />
+          <div aria-hidden="true" className="team-arcs" />
           <header className="text-center">
             <span className="mb-0.75 inline-block font-salon text-[17.5px] leading-tight font-semibold tracking-[1.3px] text-(--gold) uppercase">
               OUR TEAM
@@ -87,11 +131,84 @@ function About() {
             </p>
           </header>
 
-          <div className="mx-auto mt-19 grid w-[calc(100%-128px)] max-w-328 grid-cols-1 gap-9.5 max-[680px]:mt-9.5 max-[680px]:mx-auto max-[680px]:w-[calc(100%-36px)] xl:grid-cols-2 min-[1400px]:!ml-16! min-[1400px]:!mr-0 min-[1400px]:!w-328!">
-            {employees.map((employee) => (
-              <EmployeeCard key={employee.id} {...employee} />
-            ))}
-          </div>
+          {teamStatus === 'loading' && (
+            <p className="mx-auto mt-19 max-w-[calc(100%-128px)] text-center text-[clamp(15px,1.3vw,18px)] leading-[1.7] text-[#a7a198] max-[680px]:mt-9.5 max-[680px]:max-w-[calc(100%-36px)]" role="status">
+              Loading our team…
+            </p>
+          )}
+          {teamStatus === 'ready' && (
+            <ul className="team-grid mx-auto mt-19 w-[calc(100%-128px)] max-w-341 max-[680px]:mt-9.5 max-[680px]:w-[calc(100%-36px)]">
+              {team.map((member) => {
+                const name = fullNameFor(member)
+                const specialties = (member.specialties ?? []).map((specialty) => specialty.name).filter(Boolean)
+                const coveredRoles = member.coveredRoles ?? []
+                const { body: bioBody, disclaimer: bioDisclaimer } = splitBio(member.bio ?? '')
+                return (
+                  <li key={member.id}>
+                    <article className="team-card">
+                      <div className="team-card__photo">
+                        {member.photoUrl ? (
+                          <SafeImage
+                            alt={name}
+                            className="team-card__img"
+                            src={member.photoUrl}
+                          />
+                        ) : (
+                          <div
+                            aria-hidden="true"
+                            className="team-card__initials"
+                          >
+                            {initialsFor(member)}
+                          </div>
+                        )}
+                      </div>
+                      <div className="team-card__body">
+                        <h3 className="team-card__name">{name}</h3>
+                        {member.position && (
+                          <p className="team-card__role">{member.position}</p>
+                        )}
+                        <span aria-hidden="true" className="team-card__rule" />
+                        {member.bio && (
+                          <>
+                            {bioBody && <p className="team-card__bio">{bioBody}</p>}
+                            {bioDisclaimer && (
+                              <p className="team-card__disclaimer">{bioDisclaimer}</p>
+                            )}
+                          </>
+                        )}
+                        {(specialties.length > 0 || coveredRoles.length > 0) && (
+                          <div className="team-card__meta">
+                            {coveredRoles.length > 0 && (
+                              <p className="team-card__covers">Covers {coveredRoles.join(' · ')}</p>
+                            )}
+                            {specialties.length > 0 && (
+                              <p className="team-card__tags">
+                                {specialties.map((specialty, index) => (
+                                  <span key={specialty}>
+                                    {index > 0 && (
+                                      <span className="team-card__tag-sep">
+                                        {' / '}
+                                      </span>
+                                    )}
+                                    {specialty}
+                                  </span>
+                                ))}
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </article>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+          {teamStatus === 'empty' && (
+            <p className="mx-auto mt-19 max-w-[calc(100%-128px)] text-center text-[clamp(15px,1.3vw,18px)] leading-[1.7] text-[#a7a198] max-[680px]:mt-9.5 max-[680px]:max-w-[calc(100%-36px)]" role="status">
+              Our team profiles are not available yet.
+            </p>
+          )}
         </section>
     </main>
   )

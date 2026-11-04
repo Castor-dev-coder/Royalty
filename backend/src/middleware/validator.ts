@@ -6,7 +6,9 @@ import { BadRequestError } from '../errors/index.js';
 export function validateRequest<T>(schema: ZodSchema<T>) {
   return (req: Request, _res: Response, next: NextFunction): void => {
     try {
-      const result = schema.safeParse(req.body);
+      // A body-less POST (cookie-mode refresh/logout) is an empty object here;
+      // schemas still enforce their required fields.
+      const result = schema.safeParse(req.body ?? {});
       if (!result.success) {
         const errors = result.error.issues.map((issue) => ({
           path: issue.path.join('.'),

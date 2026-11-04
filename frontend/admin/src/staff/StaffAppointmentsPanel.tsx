@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useDialogBehavior } from '../components/useDialogBehavior';
+import { CustomerAvatar } from '../components/CustomerAvatar';
+import { AppointmentCodeInput } from '../components/AppointmentCodeInput';
+import { RecordPaymentModal, type RecordPaymentOption } from '../components/RecordPaymentModal';
+import { canRecordPayment } from '../payments';
+import { codeMatchesSearch } from '../appointmentCode';
+import { getAccessToken } from '../api';
+import { currentSession } from '../session';
 import {
   EmptyState,
   ErrorState,
@@ -42,26 +49,47 @@ export function StaffAppointmentsPanel() {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<StaffAppointment | null>(null);
   const [pending, setPending] = useState<{ appointment: StaffAppointment; status: string } | null>(null);
+  const [recordTarget, setRecordTarget] = useState<StaffAppointment | null>(null);
   const [message, setMessage] = useState('');
   const [actionError, setActionError] = useState('');
+  const canRecord = canRecordPayment(currentSession(getAccessToken())?.role ?? null);
 
   const closeDetail = () => setSelected(null);
   const detailRef = useDialogBehavior<HTMLElement>(closeDetail, selected !== null);
 
-  async function load() {
-    setLoading(true);
-    setLoadError('');
+  async function load(silent = false) {
+    if (!silent) {
+      setLoading(true);
+      setLoadError('');
+    }
     try {
       setAppointments(await staffApi.listAppointments());
     } catch (cause) {
-      setLoadError(cause instanceof Error ? cause.message : 'Your appointments could not be loaded.');
+      if (!silent) {
+        setLoadError(cause instanceof Error ? cause.message : 'Your appointments could not be loaded.');
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }
 
   useEffect(() => {
     void load();
+  }, []);
+
+  // Quiet background refresh so bookings assigned elsewhere (the booking modal,
+  // the admin calendar) appear without a manual reload.
+  useEffect(() => {
+    const refresh = () => { void load(true); };
+    const timer = window.setInterval(refresh, 60000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, []);
 
   const today = localDateKey(new Date());
@@ -71,10 +99,17 @@ export function StaffAppointmentsPanel() {
     return appointments
       .filter((appointment) => statusFilter === 'all' || appointment.status === statusFilter)
       .filter((appointment) => {
-        if (!search.trim()) return true;
+        // Appointment-code input (APT- + typed); the typed tail still matches
+        // the customer and service lines for quick scanning.
+        const needle = search.trim().toLowerCase();
+        if (!needle) return true;
+        const tail = needle.startsWith('apt-') ? needle.slice(4) : needle;
         const client = appointment.customer ? `${appointment.customer.firstName} ${appointment.customer.lastName}` : '';
         const services = appointment.services.map((service) => service.serviceName).join(' ');
-        return `${appointment.appointmentCode} ${client} ${services}`.toLowerCase().includes(search.trim().toLowerCase());
+        return (
+          codeMatchesSearch(appointment.appointmentCode, search) ||
+          `${client} ${services}`.toLowerCase().includes(tail)
+        );
       })
       .sort((left, right) => {
         const compare = `${left.appointmentDate}T${left.startTime}`.localeCompare(`${right.appointmentDate}T${right.startTime}`);
@@ -83,6 +118,22 @@ export function StaffAppointmentsPanel() {
   }, [appointments, statusFilter, search]);
 
   const upcomingCount = visible.filter((appointment) => `${appointment.appointmentDate}T${appointment.endTime}` >= new Date().toISOString().slice(0, 16)).length;
+
+  /**
+   * The appointments money may be recorded against.
+   *
+   * The staff list has no outstanding figure — the server reports one only
+   * on a payment record — so the picker shows the appointment total and the
+   * API re-checks the amount against the real balance.
+   */
+  const recordOptions = useMemo<RecordPaymentOption[]>(() => (appointments ?? []).map((appointment) => ({
+    appointmentId: appointment.id,
+    appointmentCode: appointment.appointmentCode,
+    label: `${appointment.customer ? `${appointment.customer.firstName} ${appointment.customer.lastName}` : 'Customer'} · ${appointment.services.map((service) => service.serviceName).join(', ') || 'Salon appointment'}`,
+    detail: `${formatDate(appointment.appointmentDate)} · ${formatTime(appointment.startTime)}`,
+    outstanding: null,
+    total: appointment.totalAmount,
+  })), [appointments]);
 
   async function applyStatus(appointment: StaffAppointment, status: string) {
     setActionError('');
@@ -117,14 +168,15 @@ export function StaffAppointmentsPanel() {
         className="table-panel large-table"
         actions={(
           <>
-            <input
-              aria-label="Search my appointments"
-              type="search"
-              className="search-input"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search by code, client or service…"
-            />
+            <div style={{ minWidth: 230 }}>
+              <AppointmentCodeInput
+                label="APPOINTMENT CODE"
+                value={search}
+                onChange={setSearch}
+                inputClassName="search-input"
+                placeholder="12345"
+              />
+            </div>
             <label className="sr-only" htmlFor="staff-appointment-status">Filter by status</label>
             <select
               id="staff-appointment-status"
@@ -163,14 +215,20 @@ export function StaffAppointmentsPanel() {
                     <td role="cell" data-label="Date" data-primary>{formatDate(appointment.appointmentDate)}</td>
                     <td role="cell" data-label="Time">{formatTime(appointment.startTime)}</td>
                     <td role="cell" data-label="Client">
-                      {appointment.customer
-                        ? `${appointment.customer.firstName} ${appointment.customer.lastName}`
-                        : 'Client not recorded'}
+                      <span className="person-inline">
+                        <CustomerAvatar name={appointment.customer ? `${appointment.customer.firstName} ${appointment.customer.lastName}` : 'Customer'} />
+                        <span>
+                          {appointment.customer
+                            ? `${appointment.customer.firstName} ${appointment.customer.lastName}`
+                            : 'Client not recorded'}
+                        </span>
+                      </span>
                     </td>
                     <td role="cell" data-label="Service">{appointment.services.map((service) => service.serviceName).join(', ') || 'Salon appointment'}</td>
                     <td role="cell" data-label="Status"><StatusBadge status={appointment.status} /></td>
                     <td className="cell-actions" role="cell" data-label="Actions">
                       <button type="button" className="link-button" onClick={() => setSelected(appointment)}>Details</button>
+                      {canRecord && <button type="button" className="link-button" onClick={() => setRecordTarget(appointment)}>Record payment</button>}
                     </td>
                   </tr>
                 ))}
@@ -190,7 +248,7 @@ export function StaffAppointmentsPanel() {
             <div className="modal-subtitle">{formatDate(selected.appointmentDate)}</div>
             <dl className="appointment-detail-list">
               <div><dt>Time</dt><dd>{formatTime(selected.startTime)} – {formatTime(selected.endTime)}</dd></div>
-              <div><dt>Client</dt><dd>{selected.customer ? `${selected.customer.firstName} ${selected.customer.lastName}` : 'Not recorded'}</dd></div>
+              <div><dt>Client</dt><dd><span className="person-inline"><CustomerAvatar name={selected.customer ? `${selected.customer.firstName} ${selected.customer.lastName}` : 'Customer'} /><span>{selected.customer ? `${selected.customer.firstName} ${selected.customer.lastName}` : 'Not recorded'}</span></span></dd></div>
               {selected.customer?.phone && <div><dt>Phone</dt><dd>{selected.customer.phone}</dd></div>}
               <div><dt>Service</dt><dd>{selected.services.map((service) => service.serviceName).join(', ') || 'Salon appointment'}</dd></div>
               <div><dt>Total</dt><dd>{formatMoney(selected.totalAmount)}</dd></div>
@@ -212,6 +270,9 @@ export function StaffAppointmentsPanel() {
                   </button>
                 );
               })}
+              {canRecord && (
+                <button type="button" className="secondary-action" onClick={() => { setRecordTarget(selected); closeDetail(); }}>Record payment</button>
+              )}
               <button type="button" className="secondary-action" onClick={closeDetail}>Close</button>
             </div>
           </section>
@@ -241,6 +302,17 @@ export function StaffAppointmentsPanel() {
             </div>
           </section>
         </div>
+      )}
+      {recordTarget && (
+        <RecordPaymentModal
+          options={recordOptions}
+          presetAppointmentId={recordTarget.id}
+          onClose={() => setRecordTarget(null)}
+          onRecorded={(payment) => {
+            setRecordTarget(null);
+            setMessage(`Payment recorded for ${payment.appointmentCode}.`);
+          }}
+        />
       )}
     </>
   );

@@ -10,6 +10,7 @@ import {
 import { AuthProvider } from './context/AuthContext.jsx'
 import { ThemeProvider } from './context/ThemeContext.jsx'
 import { ToastProvider } from './components/ToastProvider.jsx'
+import GoogleOneTap from './components/GoogleOneTap.jsx'
 import Homepage from './pages/Homepage.jsx'
 
 // Inner routes load as separate chunks; while a chunk arrives, a page-shaped
@@ -20,7 +21,11 @@ const Profile = lazy(() => import('./pages/Profile.jsx'))
 const ChangePassword = lazy(() => import('./pages/ChangePassword.jsx'))
 const MyReviews = lazy(() => import('./pages/MyReviews.jsx'))
 const Reviews = lazy(() => import('./pages/Reviews.jsx'))
+const NotFound = lazy(() => import('./pages/NotFound.jsx'))
 const About = lazy(() => import('./pages/About.jsx'))
+const Settings = lazy(() => import('./pages/Settings.jsx'))
+const Notifications = lazy(() => import('./pages/Notifications.jsx'))
+const PaymentReturnPage = lazy(() => import('./pages/PaymentReturnPage.jsx'))
 
 function lazily(element, fallback) {
   return <Suspense fallback={fallback}>{element}</Suspense>
@@ -32,6 +37,7 @@ function App() {
       <ToastProvider>
         <AuthProvider>
           <ScrollToTop />
+          <GoogleOneTap />
           <Routes>
             <Route element={<AppShell />}>
               <Route path="/" element={<Homepage />} />
@@ -62,6 +68,22 @@ function App() {
               <Route
                 element={lazily(<About />, <ContentPageSkeleton />)}
                 path="/about"
+              />
+              <Route
+                element={lazily(<Settings />, <ContentPageSkeleton />)}
+                path="/settings"
+              />
+              <Route
+                element={lazily(<Notifications />, <ContentPageSkeleton />)}
+                path="/notifications"
+              />
+              <Route
+                element={lazily(<PaymentReturnPage />, <ContentPageSkeleton />)}
+                path="/payment/return"
+              />
+              <Route
+                element={lazily(<NotFound />, <ContentPageSkeleton />)}
+                path="*"
               />
             </Route>
           </Routes>

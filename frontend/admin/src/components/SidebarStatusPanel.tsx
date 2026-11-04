@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { apiFetch, getAccessToken, mockApiEnabled } from '../api';
+import { apiFetch, getAccessToken } from '../api';
+import { CustomerAvatar } from './CustomerAvatar';
 import { formatTime, localDateKey } from '../shared/ui';
 
 /**
@@ -33,7 +34,8 @@ interface TodayBooking {
 
 const SCHEDULE_LIMIT = 4;
 /** A page large enough that the usual case is the whole record set. */
-const PAGE_SIZE = 200;
+// The API caps `limit` at 100; larger values are rejected with 400.
+const PAGE_SIZE = 100;
 
 export function SidebarStatusPanel() {
   const [status, setStatus] = useState<SidebarStatus | null>(null);
@@ -42,7 +44,7 @@ export function SidebarStatusPanel() {
 
   useEffect(() => {
     const token = getAccessToken();
-    if (!token && !mockApiEnabled) return;
+    if (!token) return;
     const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
     const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
     const controller = new AbortController();
@@ -111,7 +113,10 @@ export function SidebarStatusPanel() {
               <li key={booking.id}>
                 <span className="sidebar-schedule-time">{booking.time}</span>
                 <span className="sidebar-schedule-detail">
-                  <strong>{booking.customerName}</strong>
+                  <span className="person-inline">
+                    <CustomerAvatar name={booking.customerName} />
+                    <strong>{booking.customerName}</strong>
+                  </span>
                   <small>{booking.serviceName}</small>
                 </span>
               </li>
@@ -149,9 +154,6 @@ export function SidebarStatusPanel() {
         </>
       )}
 
-      {mockApiEnabled && (
-        <p className="sidebar-status-note">Figures come from the development demo data in this browser.</p>
-      )}
     </div>
   );
 }

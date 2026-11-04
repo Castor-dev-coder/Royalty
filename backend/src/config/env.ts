@@ -7,6 +7,20 @@ const envSchema = z.object({
   DIRECT_URL: z.string().url().optional(),
   JWT_SECRET: z.string().min(32),
   JWT_REFRESH_SECRET: z.string().min(32),
+  CORS_ORIGINS: z.string().optional(),
+  // Google Identity Services (One Tap / Sign-In). Optional: when absent the
+  // Google routes answer 401 'not configured' instead of breaking the server.
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  // Maya (PayMaya) checkout — sandbox only. Presence and the sandbox-host
+  // rule are enforced by the payment module itself when the feature is used
+  // (see modules/payments/maya.ts): unconfigured Maya must not prevent the
+  // rest of the app (or unrelated test suites) from starting.
+  MAYA_PUBLIC_KEY: z.string().default(''),
+  MAYA_SECRET_KEY: z.string().default(''),
+  MAYA_BASE_URL: z.string().default(''),
+  USER_APP_ORIGIN: z.string().default(''),
+  SUPABASE_URL: z.string().url().optional(),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1).optional(),
   STUDIO_TIME_ZONE: z.string().default('Asia/Manila').refine((timeZone) => {
     try {
       new Intl.DateTimeFormat('en-US', { timeZone });

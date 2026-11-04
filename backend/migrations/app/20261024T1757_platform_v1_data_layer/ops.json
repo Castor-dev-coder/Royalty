@@ -1,0 +1,776 @@
+[
+  {
+    "id": "table.staff_attendance",
+    "label": "Create table \"staff_attendance\"",
+    "summary": "Creates table \"staff_attendance\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "staff_attendance"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"staff_attendance\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"staff_attendance\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"staff_attendance\"",
+        "sql": "CREATE TABLE \"public\".\"staff_attendance\" (\n  \"created_at\" timestamptz DEFAULT (now()) NOT NULL,\n  \"id\" uuid DEFAULT (gen_random_uuid()) NOT NULL,\n  \"staff_id\" uuid NOT NULL,\n  \"time_in\" timestamptz DEFAULT (now()) NOT NULL,\n  \"time_out\" timestamptz,\n  CONSTRAINT \"staff_attendance_pkey\" PRIMARY KEY (\"id\"),\n  CONSTRAINT \"valid_attendance_time\" CHECK ((time_out IS NULL OR time_out > time_in))\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"staff_attendance\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"staff_attendance\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "table.staff_categories",
+    "label": "Create table \"staff_categories\"",
+    "summary": "Creates table \"staff_categories\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "staff_categories"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"staff_categories\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"staff_categories\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"staff_categories\"",
+        "sql": "CREATE TABLE \"public\".\"staff_categories\" (\n  \"category_id\" uuid NOT NULL,\n  \"created_at\" timestamptz DEFAULT (now()) NOT NULL,\n  \"staff_id\" uuid NOT NULL,\n  CONSTRAINT \"staff_categories_pkey\" PRIMARY KEY (\"staff_id\", \"category_id\")\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"staff_categories\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"staff_categories\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "column.public.accounts.is_system",
+    "label": "Add column \"is_system\" to \"accounts\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "is_system",
+        "table": "accounts"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"is_system\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "accounts",
+          "is_system"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"is_system\"",
+        "sql": "ALTER TABLE \"public\".\"accounts\" ADD COLUMN \"is_system\" bool DEFAULT false NOT NULL"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"is_system\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "accounts",
+          "is_system"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "column.public.services.image_url",
+    "label": "Add column \"image_url\" to \"services\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "image_url",
+        "table": "services"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"image_url\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "services",
+          "image_url"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"image_url\"",
+        "sql": "ALTER TABLE \"public\".\"services\" ADD COLUMN \"image_url\" text"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"image_url\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "services",
+          "image_url"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "column.public.staff.bio",
+    "label": "Add column \"bio\" to \"staff\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "bio",
+        "table": "staff"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"bio\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "staff",
+          "bio"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"bio\"",
+        "sql": "ALTER TABLE \"public\".\"staff\" ADD COLUMN \"bio\" text"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"bio\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "staff",
+          "bio"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "column.public.staff.covered_roles",
+    "label": "Add column \"covered_roles\" to \"staff\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "covered_roles",
+        "table": "staff"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"covered_roles\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "staff",
+          "covered_roles"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"covered_roles\"",
+        "sql": "ALTER TABLE \"public\".\"staff\" ADD COLUMN \"covered_roles\" text[]"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"covered_roles\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "staff",
+          "covered_roles"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "column.public.staff.photo_url",
+    "label": "Add column \"photo_url\" to \"staff\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "photo_url",
+        "table": "staff"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"photo_url\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "staff",
+          "photo_url"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"photo_url\"",
+        "sql": "ALTER TABLE \"public\".\"staff\" ADD COLUMN \"photo_url\" character varying(500)"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"photo_url\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "staff",
+          "photo_url"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "column.public.staff.position",
+    "label": "Add column \"position\" to \"staff\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "position",
+        "table": "staff"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"position\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "staff",
+          "position"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"position\"",
+        "sql": "ALTER TABLE \"public\".\"staff\" ADD COLUMN \"position\" character varying(100)"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"position\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "staff",
+          "position"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "column.public.staff.show_on_team",
+    "label": "Add column \"show_on_team\" to \"staff\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "show_on_team",
+        "table": "staff"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"show_on_team\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "staff",
+          "show_on_team"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"show_on_team\"",
+        "sql": "ALTER TABLE \"public\".\"staff\" ADD COLUMN \"show_on_team\" bool DEFAULT false NOT NULL"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"show_on_team\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "staff",
+          "show_on_team"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "checkConstraint.staff.staff_covered_roles_elem_not_null_c7c50f7d",
+    "label": "Add check constraint \"staff_covered_roles_elem_not_null_c7c50f7d\" on \"staff\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "checkConstraint",
+        "name": "staff_covered_roles_elem_not_null_c7c50f7d",
+        "table": "staff"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure constraint \"staff_covered_roles_elem_not_null_c7c50f7d\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "staff_covered_roles_elem_not_null_c7c50f7d",
+          "public",
+          "\"public\".\"staff\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add check constraint \"staff_covered_roles_elem_not_null_c7c50f7d\"",
+        "sql": "ALTER TABLE \"public\".\"staff\" ADD CONSTRAINT \"staff_covered_roles_elem_not_null_c7c50f7d\" CHECK (array_position(\"covered_roles\", NULL) IS NULL)"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify constraint \"staff_covered_roles_elem_not_null_c7c50f7d\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "staff_covered_roles_elem_not_null_c7c50f7d",
+          "public",
+          "\"public\".\"staff\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.accounts.accounts_single_system_key",
+    "label": "Create index \"accounts_single_system_key\" on \"accounts\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "accounts_single_system_key",
+        "table": "accounts"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"accounts_single_system_key\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"accounts_single_system_key\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"accounts_single_system_key\"",
+        "sql": "CREATE UNIQUE INDEX \"accounts_single_system_key\" ON \"public\".\"accounts\" (\"is_system\") WHERE (is_system)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"accounts_single_system_key\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"accounts_single_system_key\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.staff_attendance.idx_staff_attendance_staff_id_time",
+    "label": "Create index \"idx_staff_attendance_staff_id_time\" on \"staff_attendance\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "idx_staff_attendance_staff_id_time",
+        "table": "staff_attendance"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"idx_staff_attendance_staff_id_time\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_staff_attendance_staff_id_time\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"idx_staff_attendance_staff_id_time\"",
+        "sql": "CREATE INDEX \"idx_staff_attendance_staff_id_time\" ON \"public\".\"staff_attendance\" (\"staff_id\", \"time_in\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"idx_staff_attendance_staff_id_time\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_staff_attendance_staff_id_time\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.staff_attendance.staff_attendance_open_shift_key",
+    "label": "Create index \"staff_attendance_open_shift_key\" on \"staff_attendance\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "staff_attendance_open_shift_key",
+        "table": "staff_attendance"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"staff_attendance_open_shift_key\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"staff_attendance_open_shift_key\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"staff_attendance_open_shift_key\"",
+        "sql": "CREATE UNIQUE INDEX \"staff_attendance_open_shift_key\" ON \"public\".\"staff_attendance\" (\"staff_id\") WHERE (time_out IS NULL)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"staff_attendance_open_shift_key\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"staff_attendance_open_shift_key\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.staff_categories.idx_staff_categories_category_id",
+    "label": "Create index \"idx_staff_categories_category_id\" on \"staff_categories\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "idx_staff_categories_category_id",
+        "table": "staff_categories"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"idx_staff_categories_category_id\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_staff_categories_category_id\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"idx_staff_categories_category_id\"",
+        "sql": "CREATE INDEX \"idx_staff_categories_category_id\" ON \"public\".\"staff_categories\" (\"category_id\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"idx_staff_categories_category_id\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_staff_categories_category_id\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "foreignKey.staff_attendance.fk_staff_attendance_staff",
+    "label": "Add foreign key \"fk_staff_attendance_staff\" on \"staff_attendance\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "foreignKey",
+        "name": "fk_staff_attendance_staff",
+        "table": "staff_attendance"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure FK \"fk_staff_attendance_staff\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_staff_attendance_staff",
+          "public",
+          "\"public\".\"staff_attendance\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add FK \"fk_staff_attendance_staff\"",
+        "sql": "ALTER TABLE \"public\".\"staff_attendance\"\nADD CONSTRAINT \"fk_staff_attendance_staff\"\nFOREIGN KEY (\"staff_id\")\nREFERENCES \"public\".\"staff\" (\"id\")\nON DELETE RESTRICT"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify FK \"fk_staff_attendance_staff\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_staff_attendance_staff",
+          "public",
+          "\"public\".\"staff_attendance\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "foreignKey.staff_categories.fk_staff_categories_staff",
+    "label": "Add foreign key \"fk_staff_categories_staff\" on \"staff_categories\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "foreignKey",
+        "name": "fk_staff_categories_staff",
+        "table": "staff_categories"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure FK \"fk_staff_categories_staff\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_staff_categories_staff",
+          "public",
+          "\"public\".\"staff_categories\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add FK \"fk_staff_categories_staff\"",
+        "sql": "ALTER TABLE \"public\".\"staff_categories\"\nADD CONSTRAINT \"fk_staff_categories_staff\"\nFOREIGN KEY (\"staff_id\")\nREFERENCES \"public\".\"staff\" (\"id\")\nON DELETE CASCADE"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify FK \"fk_staff_categories_staff\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_staff_categories_staff",
+          "public",
+          "\"public\".\"staff_categories\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "foreignKey.staff_categories.fk_staff_categories_category",
+    "label": "Add foreign key \"fk_staff_categories_category\" on \"staff_categories\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "foreignKey",
+        "name": "fk_staff_categories_category",
+        "table": "staff_categories"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure FK \"fk_staff_categories_category\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_staff_categories_category",
+          "public",
+          "\"public\".\"staff_categories\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add FK \"fk_staff_categories_category\"",
+        "sql": "ALTER TABLE \"public\".\"staff_categories\"\nADD CONSTRAINT \"fk_staff_categories_category\"\nFOREIGN KEY (\"category_id\")\nREFERENCES \"public\".\"service_categories\" (\"id\")\nON DELETE RESTRICT"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify FK \"fk_staff_categories_category\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_staff_categories_category",
+          "public",
+          "\"public\".\"staff_categories\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "rowLevelSecurity.public.staff_attendance",
+    "label": "Enable row-level security on \"staff_attendance\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "rowLevelSecurity",
+        "name": "staff_attendance"
+      }
+    },
+    "precheck": [
+      {
+        "description": "check RLS is not already enabled on \"staff_attendance\"",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_class\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"relnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"c\".\"relname\" = $2 AND NOT (\"c\".\"relrowsecurity\"))) AS \"result\"",
+        "params": [
+          "public",
+          "staff_attendance"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "enable row-level security on \"staff_attendance\"",
+        "sql": "ALTER TABLE \"public\".\"staff_attendance\" ENABLE ROW LEVEL SECURITY"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify row-level security is enabled on \"staff_attendance\"",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_class\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"relnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"c\".\"relname\" = $2 AND \"c\".\"relrowsecurity\")) AS \"result\"",
+        "params": [
+          "public",
+          "staff_attendance"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "rowLevelSecurity.public.staff_categories",
+    "label": "Enable row-level security on \"staff_categories\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "rowLevelSecurity",
+        "name": "staff_categories"
+      }
+    },
+    "precheck": [
+      {
+        "description": "check RLS is not already enabled on \"staff_categories\"",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_class\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"relnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"c\".\"relname\" = $2 AND NOT (\"c\".\"relrowsecurity\"))) AS \"result\"",
+        "params": [
+          "public",
+          "staff_categories"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "enable row-level security on \"staff_categories\"",
+        "sql": "ALTER TABLE \"public\".\"staff_categories\" ENABLE ROW LEVEL SECURITY"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify row-level security is enabled on \"staff_categories\"",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_class\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"relnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"c\".\"relname\" = $2 AND \"c\".\"relrowsecurity\")) AS \"result\"",
+        "params": [
+          "public",
+          "staff_categories"
+        ]
+      }
+    ]
+  }
+]

@@ -1,6 +1,9 @@
 import { BrowserRouter, Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { apiFetch, clearAccessTokens, DEMO_STAFF_ACCOUNT, generateTemporaryPassword, getAccessToken, mockApiEnabled, resetMockData, storeAccessTokens } from './api';
+import { apiFetch, authHeader, clearAccessTokens, generateTemporaryPassword, getAccessToken, logoutRequest, storeAccessTokens, tryRefreshAccessToken } from './api';
+import ToastRegion from './components/ToastRegion';
+import { showToast } from './lib/toast';
+import { codesMatch } from './appointmentCode';
 import {
   accountEmailError,
   DURATION_MESSAGE,
@@ -24,13 +27,41 @@ import { ThemeProvider } from './theme';
 import { ThemeSwitch } from './components/ThemeSwitch';
 import { SignOutControl } from './components/SignOutControl';
 import { BrandShowcase } from './components/BrandShowcase';
-import { DemoCredentials } from './components/DemoCredentials';
 import { SidebarStatusPanel } from './components/SidebarStatusPanel';
 import { CalendarSkeleton, ChartSkeleton, FieldError, invalidField, ListSkeleton, Skeleton, SkeletonRegion, StatCardSkeleton, TableSkeleton } from './shared/ui';
-import { CategoryBars, DataOriginNote, LineChart, type LineAxisPoint, type LineSeries } from './components/charts';
-import { AccountsIcon, CalendarIcon, DashboardIcon, PaymentsIcon, StaffIcon } from './components/icons';
+import { DataOriginNote, LineChart, type LineAxisPoint, type LineSeries } from './components/charts';
+import { AccountsIcon, AttendanceIcon, CalendarIcon, DashboardIcon, PaymentsIcon, StaffIcon } from './components/icons';
 import { useDialogBehavior } from './components/useDialogBehavior';
-import { clearAccountSession, currentSession, readLoginSession, storeAccountSession, type AccountRole } from './session';
+import { clearAccountSession, currentSession, readAccountSession, readLoginSession, storeAccountSession, type AccountRole } from './session';
+import { ImageUploadField, type ImageUploadHandle } from './shared/imageUpload';
+import { CheckboxMultiSelect, TagMultiSelect, ToggleSwitch } from './shared/profileFields';
+import { CustomerAvatar } from './components/CustomerAvatar';
+import { ReviewPhotos } from './components/ReviewPhotos';
+import { PaymentDetailModal } from './components/PaymentDetailModal';
+import { AppointmentCodeInput } from './components/AppointmentCodeInput';
+import { RecordPaymentModal, type RecordPaymentOption } from './components/RecordPaymentModal';
+import { PaymentSettingsPanel } from './components/PaymentSettingsPanel';
+import {
+  canEditPaymentSettings,
+  canRecordPayment,
+  channelBadge,
+  channelLabel,
+  methodLabel,
+  paymentStatusBadge,
+  paymentStatusLabel,
+  toPaymentRow,
+  type PaymentRow,
+} from './payments';
+import {
+  canManageReviewPhotos,
+  insertPhoto,
+  removePhoto,
+  sortPhotos,
+  type ReviewPhoto,
+} from './reviewPhotos';
+import { useAppointmentsQuery, toAppointmentRow, type AppointmentRow } from './appointmentsQuery';
+import { currentManilaDateKey, currentManilaMonthKey, manilaDateKey, selectMonthBookings } from './dashboard-month';
+import { AttendancePanel } from './attendance/AttendancePanel';
 import { StaffShell } from './staff/StaffShell';
 import { StaffOverviewPanel } from './staff/StaffOverviewPanel';
 import { StaffAppointmentsPanel } from './staff/StaffAppointmentsPanel';
@@ -42,9 +73,14 @@ import { StaffCredentialsPanel, issueStaffPassword, type StaffCredentials } from
 type Review = {
   id: string;
   customer: string;
+  /** The reviewer's name as the API gave it, empty when it is not available.
+   *  Photo alt text derives initials from it, with a fallback when empty. */
+  reviewerName: string;
   rating: number;
   date: string;
   text: string;
+  /** The review's visible photos, ordered; hidden ones never arrive in reads. */
+  photos: ReviewPhoto[];
 };
 
 type TableRow = {
@@ -69,6 +105,18 @@ type StaffRow = {
   role: string;
   employment: string;
   schedule: string;
+  /** Job title shown on the profile and the team page. */
+  position?: string;
+  /** A short biography shown on the team page. */
+  bio?: string;
+  /** Roles this staff member may cover. */
+  coveredRoles?: string[];
+  /** Whether the profile is listed on the team page. */
+  showOnTeam?: boolean;
+  /** Service categories this staff member performs (category ids). */
+  specialties?: string[];
+  /** The uploaded staff photo, when one has been stored. */
+  photoUrl?: string | null;
   /**
    * Account access: whether the account may sign in.
    * Availability below is a separate concern and never implies access.
@@ -76,21 +124,6 @@ type StaffRow = {
   accountStatus: 'Active' | 'Deactivated';
   /** Availability: whether the staff member is working, off, or unavailable. */
   status: 'Active' | 'On Vacation' | 'Day Off';
-};
-
-type AppointmentRow = {
-  id?: string;
-  code: string;
-  appointmentDate: string;
-  startTime: string;
-  endTime: string;
-  status: string;
-  serviceNames: string;
-  customerName?: string;
-  customerEmail?: string;
-  customerPhone?: string;
-  staffName?: string;
-  totalAmount?: number;
 };
 
 const navSections = [
@@ -106,10 +139,19 @@ const navSections = [
     items: [
       { label: 'Account Management', to: '/accounts', Icon: AccountsIcon },
       { label: 'Staff Management', to: '/staff', Icon: StaffIcon },
+      { label: 'Attendance', to: '/attendance', Icon: AttendanceIcon },
       { label: 'Payments & Verification', to: '/payments', Icon: PaymentsIcon },
     ],
   },
 ];
+
+/**
+ * The roles vocabulary the interface already offers for salon staff: the role
+ * labels used across the staff directory and the account roles offered when an
+ * account is created. Covered roles are picked from this list, and a role that
+ * is not listed can still be added as a custom tag.
+ */
+const COVERED_ROLE_VOCABULARY = ['Stylist', 'Senior Stylist', 'Nail Tech', 'Manager', 'Staff'];
 
 const weekDayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -173,8 +215,9 @@ function isPastNonterminal(appointment: { appointmentDate: string; status: strin
   return appointment.appointmentDate < todayKey && (appointment.status === 'CONFIRMED' || appointment.status === 'RESERVED');
 }
 
-function localDateKey(date: Date): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+/** Service completion only after the appointment's end time (server rule). */
+function canCompleteService(appointment: AppointmentRow): boolean {
+  return `${appointment.appointmentDate}T${appointment.endTime}` <= new Date().toISOString().slice(0, 16);
 }
 
 function normalizeWeeklySchedule(days: any[] = []): Array<{ dayOfWeek: number; enabled: boolean; startTime: string; endTime: string }> {
@@ -206,9 +249,75 @@ function summarizeSchedule(days: Array<{ dayOfWeek: number; enabled: boolean; st
   return active.map((day) => `${weekDayLabels[day.dayOfWeek - 1]} ${day.startTime}-${day.endTime}`).join(' · ');
 }
 
+// --- staff-schedule saving (per-row API contract) --------------------------
+
+type ScheduleRowLite = { id: string; isActive: boolean; startTime: string; endTime: string };
+
+/**
+ * The next occurrence of a weekday (1=Mon..7=Sun) as the effectiveFrom the
+ * create API requires: an ISO datetime strictly in the future, computed on the
+ * studio's Asia/Manila calendar.
+ */
+function nextWeekdayIso(dayOfWeek: number): string {
+  const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' });
+  for (let add = 1; add <= 7; add++) {
+    const iso = fmt.format(new Date(Date.now() + add * 86_400_000));
+    const [y, m, d] = iso.split('-').map(Number);
+    const jsDay = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+    if ((jsDay === 0 ? 7 : jsDay) === dayOfWeek) return `${iso}T00:00:00.000Z`;
+  }
+  return `${fmt.format(new Date(Date.now() + 86_400_000))}T00:00:00.000Z`;
+}
+
+/** Manager-readable failure text for a schedule save (never raw internals). */
+function friendlyScheduleFailure(status: number, serverMessage?: string): string {
+  const detail = (serverMessage ?? '').trim();
+  if (status === 401) return 'Your session has expired. Please sign in again.';
+  if (status === 403) return "You don't have permission to make this change.";
+  if (status === 404) return 'That schedule entry no longer exists. Reload the page and try again.';
+  if (detail && detail.toLowerCase() !== 'validation failed') return detail;
+  return "We couldn't save this schedule. Please check the selected staff member and times, then try again.";
+}
+
+/** One per-row schedule call against the real API contract (row id + flat body). */
+async function callScheduleApi(method: 'POST' | 'PATCH' | 'DELETE', url: string, body: unknown, token: string): Promise<void> {
+  let response: Response;
+  try {
+    response = await apiFetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new Error("We couldn't save this schedule. Please check your connection, then try again.");
+  }
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(friendlyScheduleFailure(response.status, payload?.error?.message));
+  }
+}
+
+/**
+ * The category ids of a staff member's specialties.
+ *
+ * The API returns them either as plain ids or as staff-category rows; both
+ * shapes name the service category the staff member performs.
+ */
+function staffSpecialtyIds(staff: any): string[] {
+  const rows = Array.isArray(staff?.specialties)
+    ? staff.specialties
+    : Array.isArray(staff?.staffCategories)
+      ? staff.staffCategories
+      : [];
+  return rows
+    .map((entry: any) => String(entry?.categoryId ?? entry?.category?.id ?? entry?.id ?? (typeof entry === 'string' ? entry : '')))
+    .filter((id: string) => id.length > 0);
+}
+
 function App() {
   return (
     <ThemeProvider>
+      <ToastRegion />
       <BrowserRouter>
         <Routes>
           <Route element={<AdminArea />}>
@@ -216,6 +325,7 @@ function App() {
             <Route path="services" element={<ServiceManagementPage />} />
             <Route path="accounts" element={<AccountManagementPage />} />
             <Route path="staff" element={<StaffManagementPage />} />
+            <Route path="attendance" element={<AttendancePanel />} />
             <Route path="appointments" element={<AppointmentPage />} />
             <Route path="payments" element={<PaymentPage />} />
           </Route>
@@ -224,6 +334,7 @@ function App() {
             <Route path="appointments" element={<StaffAppointmentsPanel />} />
             <Route path="schedule" element={<StaffSchedulePanel />} />
             <Route path="services" element={<StaffServicesPanel />} />
+            <Route path="attendance" element={<AttendancePanel />} />
             <Route path="profile" element={<StaffProfilePanel />} />
           </Route>
         </Routes>
@@ -266,7 +377,7 @@ function useReviewData() {
 
     apiFetch(`${baseUrl}/reviews?page=1&limit=3`, {
       signal: controller.signal,
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      headers: authHeader(token),
     })
       .then((res) => {
         if (!res.ok) throw new Error('Unavailable');
@@ -278,9 +389,23 @@ function useReviewData() {
           const mapped = records.map((item: any) => ({
             id: String(item.id ?? item.appointment?.id ?? ''),
             customer: item.customer ?? item.customerName ?? 'Verified Customer',
+            // The display name above falls back to a label; alt text must fall
+            // back differently, so the raw name (when any) is kept alongside.
+            reviewerName: String(item.customer ?? item.customerName ?? ''),
             rating: Number(item.rating ?? 5),
             date: item.createdAt ? new Date(item.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Recent',
             text: item.comment || 'Customer review',
+            // Reads only ever carry visible photos, in review order.
+            photos: sortPhotos(
+              (Array.isArray(item.photos) ? item.photos : [])
+                .filter((photo: any) => photo && photo.url && !photo.hidden)
+                .map((photo: any, index: number) => ({
+                  id: String(photo.id ?? `${item.id}-${index}`),
+                  position: Number(photo.position ?? index),
+                  url: String(photo.url),
+                  hidden: false,
+                })),
+            ),
           }));
           setData(mapped);
         }
@@ -290,7 +415,49 @@ function useReviewData() {
     return () => controller.abort();
   }, []);
 
-  return data;
+  /**
+   * Hide or unhide one review photo through the audited moderation endpoint.
+   *
+   * The response confirms the photo's new state; that state drives the list.
+   * A hidden photo is removed locally (the API filters it out of reads), and
+   * unhiding puts it back at its position.
+   */
+  const togglePhotoHidden = useCallback(
+    async (reviewId: string, photo: ReviewPhoto, hidden: boolean): Promise<boolean> => {
+      const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+      const token = getAccessToken();
+      try {
+        const res = await apiFetch(`${baseUrl}/reviews/${reviewId}/photos/${photo.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+          body: JSON.stringify({ hidden }),
+        });
+        if (!res.ok) return false;
+        const payload = await res.json().catch(() => null);
+        const confirmed = payload?.data?.photo;
+        const confirmedHidden =
+          confirmed && typeof confirmed.hidden === 'boolean' ? confirmed.hidden : hidden;
+        setData((previous) =>
+          previous.map((review) =>
+            review.id !== reviewId
+              ? review
+              : {
+                  ...review,
+                  photos: confirmedHidden
+                    ? removePhoto(review.photos, photo.id)
+                    : insertPhoto(review.photos, { ...photo, hidden: false }),
+                },
+          ),
+        );
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [],
+  );
+
+  return { reviews: data, togglePhotoHidden };
 }
 
 type LoadState = 'loading' | 'ready' | 'error';
@@ -301,7 +468,7 @@ function useAccountData() {
 
   useEffect(() => {
     const token = getAccessToken();
-    if (!token && !mockApiEnabled) {
+    if (!token) {
       setStatus('error');
       return;
     }
@@ -354,7 +521,7 @@ function useStaffData() {
 
   useEffect(() => {
     const token = getAccessToken();
-    if (!token && !mockApiEnabled) {
+    if (!token) {
       setStatus('error');
       return;
     }
@@ -393,6 +560,12 @@ function useStaffData() {
           email: emails.get(staff.accountId) ?? 'Email not available',
           role: staff.primaryRole,
           employment: staff.employmentType === 'PART_TIME' ? 'Part Time' : 'Full Time',
+          position: String(staff.position ?? ''),
+          bio: String(staff.bio ?? ''),
+          coveredRoles: Array.isArray(staff.coveredRoles) ? staff.coveredRoles.map((role: unknown) => String(role)) : [],
+          showOnTeam: Boolean(staff.showOnTeam),
+          specialties: staffSpecialtyIds(staff),
+          photoUrl: (staff.photoUrl ?? staff.photo ?? null) as string | null,
           schedule: (schedules.get(staff.id) ?? []).filter((schedule) => schedule.isActive).sort((left, right) => left.dayOfWeek - right.dayOfWeek).map((schedule) => {
             const day = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][schedule.dayOfWeek - 1] ?? '';
             const formatTime = (time: string) => {
@@ -421,55 +594,38 @@ function useStaffData() {
   return [data, setData, status] as const;
 }
 
-function useAppointmentData() {
-  const [data, setData] = useState<AppointmentRow[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const token = getAccessToken();
-    if (!token && !mockApiEnabled) { setLoading(false); return; }
-    const controller = new AbortController();
-    const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
-    apiFetch(`${baseUrl}/appointments?page=1&limit=100`, {
-      signal: controller.signal,
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then(async (response) => {
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload.message ?? 'Unable to load appointments.');
-        setData((payload?.data?.appointments ?? []).map((appointment: any) => ({
-          id: String(appointment.id),
-          code: appointment.appointmentCode ?? String(appointment.id).slice(0, 8),
-          appointmentDate: appointment.appointmentDate,
-          startTime: appointment.startTime,
-          endTime: appointment.endTime,
-          status: appointment.status,
-          serviceNames: appointment.services?.map((service: any) => service.serviceName).join(', ') || 'Salon appointment',
-          customerName: `${appointment.customer?.firstName ?? ''} ${appointment.customer?.lastName ?? ''}`.trim() || 'Customer',
-          customerEmail: appointment.customer?.account?.email ?? '',
-          customerPhone: appointment.customer?.phone ?? '',
-          staffName: `${appointment.staff?.firstName ?? ''} ${appointment.staff?.lastName ?? ''}`.trim() || 'Staff not assigned',
-          totalAmount: Number(appointment.totalAmount ?? 0),
-        })));
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setData([]);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-
-    return () => controller.abort();
-  }, []);
-
-  return [data, setData, loading] as const;
-}
-
 function Shell() {
   const location = useLocation();
   const [isAuthenticated, setIsAuthenticated] = useState(Boolean(getAccessToken()));
+  // A stored session (non-secret metadata) is the hint to silently restore the
+  // httpOnly-cookie session before showing the sign-in page — a valid session
+  // must never flash the login screen on reload.
+  const [restoring, setRestoring] = useState(() => Boolean(readAccountSession()));
+  const [sessionExpired, setSessionExpired] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const mobileNavToggleRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (!restoring) return;
+    let cancelled = false;
+    void (async () => {
+      const restored = await tryRefreshAccessToken();
+      if (cancelled) return;
+      if (restored) {
+        setIsAuthenticated(true);
+      } else {
+        // Invalid/expired cookie: drop the stored session and say so on the
+        // sign-in page instead of failing silently.
+        clearAccessTokens();
+        clearAccountSession();
+        setSessionExpired(true);
+      }
+      setRestoring(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [restoring]);
 
   useEffect(() => {
     setMobileNavOpen(false);
@@ -491,14 +647,27 @@ function Shell() {
     if (location.pathname === '/accounts') return 'Authentication & Account Management';
     if (location.pathname === '/staff') return 'Staff Directory & Performance';
     if (/^\/staff\/[^/]+\/edit$/.test(location.pathname)) return 'Edit Staff Account';
+    if (location.pathname === '/attendance') return 'Staff Attendance';
     if (location.pathname === '/appointments') return 'Appointment Management';
     if (location.pathname === '/payments') return 'Payments & Verification';
     if (location.pathname === '/services') return 'Service Management';
     return 'Business Dashboard';
   }, [location.pathname]);
 
+  if (restoring) {
+    return (
+      <div className="login-page" role="status" aria-live="polite">
+        <main className="login-form-panel">
+          <div className="login-pane">
+            <p className="login-lede">Restoring your session…</p>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   if (!isAuthenticated) {
-    return <LoginPage onLogin={(role) => {
+    return <LoginPage sessionExpired={sessionExpired} onLogin={(role) => {
       setIsAuthenticated(true);
       // A staff member opens the staff dashboard; an administrator opens the
       // business dashboard. The reload re-reads the stored session.
@@ -535,28 +704,37 @@ function Shell() {
               <p>ADMIN PANEL</p>
             </div>
           </div>
-          <nav className="nav" id="primary-navigation" aria-label="Main navigation">
-            {navSections.map((section) => (
-              <div key={section.label}>
-                <p className="nav-section">{section.label}</p>
-                {section.items.map(({ label, to, Icon }) => (
-                  <NavLink key={label} to={to} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`} onClick={() => setMobileNavOpen(false)}>
-                    <span className="nav-icon" aria-hidden="true"><Icon /></span>
-                    {label}
-                  </NavLink>
-                ))}
-              </div>
-            ))}
-          </nav>
-          <SidebarStatusPanel />
+          {/* Brand, navigation and status share the column; only this middle
+              region scrolls when it outgrows the viewport, so the sign-out
+              control below is always on screen and never overlapped. */}
+          <div className="sidebar-scroll">
+            <nav className="nav" id="primary-navigation" aria-label="Main navigation">
+              {navSections.map((section) => (
+                <div key={section.label}>
+                  <p className="nav-section">{section.label}</p>
+                  {section.items.map(({ label, to, Icon }) => (
+                    <NavLink key={label} to={to} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`} onClick={() => setMobileNavOpen(false)}>
+                      <span className="nav-icon" aria-hidden="true"><Icon /></span>
+                      {label}
+                    </NavLink>
+                  ))}
+                </div>
+              ))}
+            </nav>
+            <SidebarStatusPanel />
+          </div>
           <SignOutControl
-            label={mockApiEnabled ? 'Demo Administrator' : 'Signed in'}
+            label="Signed in"
             initials="SA"
             onSignOut={() => {
-              clearAccessTokens();
-              clearAccountSession();
-              setIsAuthenticated(false);
-              window.location.reload();
+              // Server-side revocation first (clears the httpOnly refresh
+              // cookie), then the local session state.
+              void logoutRequest().finally(() => {
+                clearAccessTokens();
+                clearAccountSession();
+                setIsAuthenticated(false);
+                window.location.reload();
+              });
             }}
           />
         </aside>
@@ -571,7 +749,9 @@ function Shell() {
                   ? 'Manage role-based access, create staff accounts, and view audit activity.'
                   : location.pathname === '/staff'
                     ? 'View all professional staff, metrics, and current schedules.'
-                    : location.pathname === '/appointments'
+                    : location.pathname === '/attendance'
+                      ? 'Record time in and time out, and correct attendance records.'
+                      : location.pathname === '/appointments'
                       ? 'Track appointments, slot availability, and customer confirmations.'
                       : location.pathname === '/payments'
                         ? 'Review transaction activity, verify payments, and manage submissions.'
@@ -585,12 +765,6 @@ function Shell() {
             </div>
           </section>
 
-          {mockApiEnabled && (
-            <div className="demo-data-banner">
-              <span><strong>Development demo</strong> · Fictional records saved in this browser</span>
-              <button type="button" onClick={resetMockData}>Reset demo data</button>
-            </div>
-          )}
 
           {(location.pathname === '/' || location.pathname === '/services') && (
             <nav className="dashboard-tabs" aria-label="Dashboard sections">
@@ -610,63 +784,71 @@ function Shell() {
 }
 
 function BusinessDashboardPage() {
-  const reviewData = useReviewData();
-  const [appointments, setAppointments] = useState<any[]>([]);
-  const [payments, setPayments] = useState<any[]>([]);
-  const [appointmentsAvailable, setAppointmentsAvailable] = useState(false);
-  const [paymentsAvailable, setPaymentsAvailable] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const monthLabel = new Date().toLocaleDateString('en-US', { month: 'long' }).toUpperCase();
+  const { reviews: reviewData, togglePhotoHidden } = useReviewData();
+  // Photo moderation is offered to the roles the API allows it for; the
+  // endpoint re-checks whatever the interface chose to show.
+  const canManagePhotos = canManageReviewPhotos(currentSession(getAccessToken())?.role ?? null);
+  const [photoNotice, setPhotoNotice] = useState<
+    { message: string; reviewId?: string; photo?: ReviewPhoto } | null
+  >(null);
 
-  useEffect(() => {
-    const token = getAccessToken();
-    if (!token && !mockApiEnabled) return;
-    const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
-    const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
-    const controller = new AbortController();
-    Promise.all([
-      apiFetch(`${baseUrl}/appointments?page=1&limit=100`, { signal: controller.signal, headers }),
-      apiFetch(`${baseUrl}/payments?page=1&limit=100`, { signal: controller.signal, headers }),
-    ])
-      .then(async ([appointmentResponse, paymentResponse]) => {
-        const [appointmentPayload, paymentPayload] = await Promise.all([appointmentResponse.json(), paymentResponse.json()]);
-        if (appointmentResponse.ok) {
-          setAppointments(appointmentPayload?.data?.appointments ?? []);
-          setAppointmentsAvailable(true);
-        }
-        if (paymentResponse.ok) {
-          setPayments(paymentPayload?.data?.payments ?? []);
-          setPaymentsAvailable(true);
-        }
-      })
-      .catch(() => undefined)
-      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
-    return () => controller.abort();
-  }, []);
-
-  const today = new Date();
-  const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-  const startOfMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
-  const monthAppointments = appointments.filter((item) => item.appointmentDate >= startOfMonth && item.appointmentDate.slice(0, 7) === todayKey.slice(0, 7));
-  const verifiedPayments = payments.filter((payment) => payment.status === 'VERIFIED');
+  /**
+   * Hide or unhide one review photo and report the API-confirmed outcome.
+   * A hidden photo leaves the review's list, so the notice offers the way
+   * back (unhide) until the next load.
+   */
+  async function handleTogglePhotoHidden(reviewId: string, photo: ReviewPhoto, hidden: boolean) {
+    const confirmed = await togglePhotoHidden(reviewId, photo, hidden);
+    if (confirmed) {
+      setPhotoNotice(
+        hidden
+          ? { message: 'Photo hidden — it no longer appears in this review.', reviewId, photo }
+          : { message: 'Photo visible again.' },
+      );
+    } else {
+      setPhotoNotice({ message: 'The photo could not be updated. Please try again.' });
+    }
+    return confirmed;
+  }
+  // One live query feeds the whole page: the summary cards and the month
+  // panel below both render from the same selector over these bookings.
+  const { appointments, loading } = useAppointmentsQuery();
+  const monthKey = currentManilaMonthKey();
+  const todayKey = currentManilaDateKey();
+  const monthLabel = new Date(`${monthKey}-01T12:00:00`).toLocaleDateString('en-US', { month: 'long' }).toUpperCase();
+  // The one selector both views read from: the month's bookings, their
+  // count, and the sum of their prices. The summary cards and the month
+  // panel can never disagree because they read the same output.
+  const monthSelection = selectMonthBookings(appointments, monthKey);
+  const monthAppointments = monthSelection.bookings;
+  const monthCount = monthSelection.count;
+  const monthRevenue = monthSelection.totalAmount;
+  const completedRevenue = monthAppointments
+    .filter((item) => item.status === 'COMPLETED')
+    .reduce((sum, item) => sum + Number(item.totalAmount ?? 0), 0);
+  const outstandingRevenue = monthAppointments
+    .filter((item) => item.status === 'RESERVED' || item.status === 'CONFIRMED')
+    .reduce((sum, item) => sum + Number(item.totalAmount ?? 0), 0);
   const averageRating = reviewData.length ? (reviewData.reduce((total, review) => total + review.rating, 0) / reviewData.length).toFixed(1) : '—';
   const dashboardMetrics = [
     // A cancelled appointment is not a booking, so it is left out of the
     // count. This keeps the figure in step with today's schedule in the
     // sidebar, which lists the bookings that are still going ahead.
-    { label: "TODAY'S BOOKINGS", value: appointmentsAvailable ? appointments.filter((item) => item.appointmentDate === todayKey && item.status !== 'CANCELLED').length : '—', suffix: 'EXCL. CANCELLED' },
-    { label: 'TOTAL APPOINTMENTS', value: appointmentsAvailable ? monthAppointments.length : '—', suffix: monthLabel },
-    { label: 'COMPLETED', value: appointmentsAvailable ? monthAppointments.filter((item) => item.status === 'COMPLETED').length : '—', suffix: monthLabel },
-    { label: 'CANCELLED', value: appointmentsAvailable ? monthAppointments.filter((item) => item.status === 'CANCELLED').length : '—', suffix: monthLabel },
-    { label: 'REVENUE', value: paymentsAvailable ? `₱${verifiedPayments.reduce((sum, payment) => sum + Number(payment.amount ?? 0), 0).toLocaleString()}` : '—', suffix: paymentsAvailable ? 'VERIFIED' : 'NOT CONNECTED' },
+    { label: "TODAY'S BOOKINGS", value: appointments.filter((item) => item.appointmentDate === todayKey && item.status !== 'CANCELLED').length, suffix: 'EXCL. CANCELLED' },
+    { label: 'TOTAL APPOINTMENTS', value: monthCount, suffix: monthLabel },
+    { label: 'COMPLETED', value: monthAppointments.filter((item) => item.status === 'COMPLETED').length, suffix: monthLabel },
+    { label: 'CANCELLED', value: monthAppointments.filter((item) => item.status === 'CANCELLED').length, suffix: monthLabel },
+    // Revenue is the booked value of the month: the price of every booking
+    // in it, summed by the same selector that counts the bookings.
+    { label: 'REVENUE', value: `₱${monthRevenue.toLocaleString()}`, suffix: monthLabel },
     { label: 'AVG RATINGS', value: averageRating, suffix: 'RECENT REVIEWS' },
   ];
   // One point per day, read from the appointment records. The axis carries
-  // the calendar date so the tooltip can name the day it belongs to.
+  // the calendar date so the tooltip can name the day it belongs to. The
+  // days are taken in Asia/Manila, the studio's operating timezone.
   const bookingAxis: LineAxisPoint[] = Array.from({ length: 7 }, (_, index) => {
-    const date = new Date();
-    date.setDate(date.getDate() - (6 - index));
-    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    const key = manilaDateKey(new Date(Date.now() - (6 - index) * 86400000)) ?? '';
+    const date = new Date(`${key}T12:00:00`);
     return {
       key,
       label: date.toLocaleDateString('en-US', { weekday: 'short' }),
@@ -693,37 +875,6 @@ function BusinessDashboardPage() {
     .sort((left, right) => right.count - left.count)
     .slice(0, 5);
   const maxServiceCount = Math.max(1, ...serviceScores.map((service) => service.count));
-  const pendingPayments = payments.filter((payment) => payment.status === 'UNVERIFIED');
-  // How the recorded payment value splits by state. Each bar is the solid
-  // version of the hue its badge uses, so a bar and its badge mean the same
-  // thing. The bar is sized by the amount, and the amount is written out
-  // beside it.
-  const paymentStates = [
-    { key: 'VERIFIED', label: 'Verified', badge: 'success', color: '--chart-verified' },
-    { key: 'UNVERIFIED', label: 'Unverified', badge: 'warning', color: '--chart-unverified' },
-    { key: 'REJECTED', label: 'Rejected', badge: 'danger', color: '--chart-rejected' },
-  ] as const;
-  const paymentTotals = paymentStates.map((state) => {
-    const records = payments.filter((payment) => payment.status === state.key);
-    const amount = records.reduce((sum, payment) => sum + Number(payment.amount ?? 0), 0);
-    return { ...state, records, amount };
-  });
-  const paymentTotalAmount = paymentTotals.reduce((sum, state) => sum + state.amount, 0);
-  const paymentBars = paymentTotals
-    .filter((state) => state.records.length > 0)
-    .map((state) => ({
-      key: state.key,
-      label: state.label,
-      badge: state.badge,
-      color: state.color,
-      value: `₱${state.amount.toLocaleString()}`,
-      share: paymentTotalAmount > 0 ? `${Math.round((state.amount / paymentTotalAmount) * 100)}%` : undefined,
-      percent: paymentTotalAmount > 0 ? (state.amount / paymentTotalAmount) * 100 : 0,
-      detail: `${state.records.length} payment${state.records.length === 1 ? '' : 's'} · ₱${state.amount.toLocaleString()} of ₱${paymentTotalAmount.toLocaleString()} (${Math.round((state.amount / paymentTotalAmount) * 100)}%)`,
-    }));
-  const monthRevenue = verifiedPayments
-    .filter((payment) => String(payment.createdAt).slice(0, 7) === todayKey.slice(0, 7))
-    .reduce((sum, payment) => sum + Number(payment.amount ?? 0), 0);
 
   return (
     <>
@@ -779,20 +930,15 @@ function BusinessDashboardPage() {
             </SkeletonRegion>
           )}
           {!loading && <ul className="summary-list">
-            <li><span>Total Verified</span><strong>{paymentsAvailable ? `₱${verifiedPayments.reduce((sum, payment) => sum + Number(payment.amount ?? 0), 0).toLocaleString()}` : '—'}</strong></li>
-            <li><span>This Month</span><strong>{paymentsAvailable ? `₱${monthRevenue.toLocaleString()}` : '—'}</strong></li>
-            <li><span>Pending Payments</span><strong>{paymentsAvailable ? pendingPayments.length : '—'}</strong></li>
-            <li><span>Needs verification</span><strong>{paymentsAvailable ? `₱${pendingPayments.reduce((sum, payment) => sum + Number(payment.amount ?? 0), 0).toLocaleString()}` : '—'}</strong></li>
+            {/* Every figure here is one row of the same month selection the
+                summary cards render from — one selector, no second query. */}
+            <li><span>Bookings</span><strong>{monthCount}</strong></li>
+            <li><span>This Month</span><strong>₱{monthRevenue.toLocaleString()}</strong></li>
+            <li><span>Completed value</span><strong>₱{completedRevenue.toLocaleString()}</strong></li>
+            <li><span>Outstanding value</span><strong>₱{outstandingRevenue.toLocaleString()}</strong></li>
           </ul>}
-          {paymentsAvailable && paymentBars.length > 0 && (
-            <div className="payment-status-breakdown">
-              <h4 className="breakdown-title">
-                Recorded payment value, all statuses
-                <span className="breakdown-total">₱{paymentTotalAmount.toLocaleString()} recorded</span>
-              </h4>
-              <CategoryBars items={paymentBars} emptyMessage="" />
-              <DataOriginNote>Read from the payment records on this page.</DataOriginNote>
-            </div>
+          {!loading && (
+            <DataOriginNote>Booking prices read from the appointment records on this page.</DataOriginNote>
           )}
         </section>
       </div>
@@ -828,16 +974,43 @@ function BusinessDashboardPage() {
             {reviewData.map((review) => (
               <div key={review.id} className="review-item">
                 <div className="review-head">
-                  <strong>{review.customer}</strong>
+                  <span className="person-inline"><CustomerAvatar name={review.customer} /><strong>{review.customer}</strong></span>
                   <span>{review.date}</span>
                 </div>
                 <div className="stars" aria-label={`Rated ${review.rating} stars`}>
                   {'★★★★★'.slice(0, review.rating)}
                 </div>
                 <p>{review.text}</p>
+                <ReviewPhotos
+                  reviewId={review.id}
+                  reviewerName={review.reviewerName}
+                  photos={review.photos}
+                  canManage={canManagePhotos}
+                  onTogglePhotoHidden={handleTogglePhotoHidden}
+                />
               </div>
             ))}
+            {reviewData.length === 0 && <p className="empty-list">No reviews to show yet.</p>}
+            {reviewData.length > 0 && reviewData.every((review) => review.photos.length === 0) && (
+              <p className="empty-list">No review photos yet.</p>
+            )}
           </div>
+          {photoNotice && (
+            <p className="review-photo-notice" role="status">
+              {photoNotice.message}{' '}
+              {photoNotice.reviewId && photoNotice.photo && (
+                <button
+                  type="button"
+                  className="link-button"
+                  onClick={() =>
+                    handleTogglePhotoHidden(photoNotice.reviewId!, photoNotice.photo!, false)
+                  }
+                >
+                  Unhide
+                </button>
+              )}
+            </p>
+          )}
         </section>
       </div>
 
@@ -866,6 +1039,7 @@ function ServiceManagementPage() {
   const [loadError, setLoadError] = useState('');
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'deactivated'>('all');
   const [editing, setEditing] = useState<ServiceRecord | null | 'new'>(null);
   const [action, setAction] = useState<{ type: 'delete' | 'suspend'; service: ServiceRecord } | null>(null);
   const [manageCategories, setManageCategories] = useState(false);
@@ -887,7 +1061,7 @@ function ServiceManagementPage() {
   }
 
   useEffect(() => {
-    if (!token && !mockApiEnabled) {
+    if (!token) {
       setLoading(false);
       setLoadError('Sign in to view the service catalog.');
       return;
@@ -901,22 +1075,30 @@ function ServiceManagementPage() {
 
   const visibleServices = services.filter((service) =>
     (categoryFilter === 'all' || service.categoryId === categoryFilter)
+    && (statusFilter === 'all' || (statusFilter === 'active' ? service.isActive : !service.isActive))
     && `${service.name} ${service.categoryName} ${service.description ?? ''}`.toLowerCase().includes(search.toLowerCase()),
   );
 
-  async function saveService(values: { categoryId: string; name: string; description: string; price: number; durationMinutes: number }, service: ServiceRecord | null) {
+  async function saveService(values: { categoryId: string; name: string; description: string; price: number; durationMinutes: number }, service: ServiceRecord | null): Promise<string | null> {
     if (!token) throw new Error('Sign in with an administrator account to manage services.');
     const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
     const response = await apiFetch(service ? `${baseUrl}/services/${service.id}` : `${baseUrl}/services`, {
       method: service ? 'PATCH' : 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
       body: JSON.stringify(values),
     });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.message ?? 'Unable to save the service.');
     await loadCatalog();
+    // The image is uploaded against the saved service, so the caller needs
+    // its id before the editor closes.
+    return String(payload?.data?.service?.id ?? payload?.data?.id ?? service?.id ?? '') || null;
+  }
+
+  /** Close the editor and report the outcome once the image upload has settled. */
+  function handleServiceSaved(summary: { name: string; isEdit: boolean }) {
     setEditing(null);
-    setOutcome({ success: true, title: service ? 'Service updated' : 'Service added', message: `${values.name} has been saved to the service catalog.` });
+    setOutcome({ success: true, title: summary.isEdit ? 'Service updated' : 'Service added', message: `${summary.name} has been saved to the service catalog.` });
   }
 
   async function updateServiceStatus(service: ServiceRecord, active: boolean, deleting = false) {
@@ -944,10 +1126,15 @@ function ServiceManagementPage() {
         </div>
       </div>
       <div className="service-filters">
-        <input aria-label="Search services" type="search" className="search-input" placeholder="Search services..." value={search} onChange={(event) => setSearch(event.target.value)} />
+        <input aria-label="Search services" type="search" className="search-input" placeholder="Search by service name or category" value={search} onChange={(event) => setSearch(event.target.value)} />
         <select aria-label="Filter by category" className="modal-input" value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
           <option value="all">All categories</option>
           {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+        </select>
+        <select aria-label="Filter by status" className="modal-input" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as 'all' | 'active' | 'deactivated')}>
+          <option value="all">All statuses</option>
+          <option value="active">Active</option>
+          <option value="deactivated">Deactivated</option>
         </select>
       </div>
       {loading && (
@@ -967,7 +1154,7 @@ function ServiceManagementPage() {
                   <td role="cell" data-label="Category">{service.categoryName}</td>
                   <td role="cell" data-label="Duration">{service.durationMinutes} min</td>
                   <td role="cell" data-label="Price">₱{Number(service.price).toLocaleString()}</td>
-                  <td role="cell" data-label="Status"><span className={`status-badge ${service.isActive ? 'success' : 'neutral'}`}>{service.isActive ? 'Active' : 'Inactive'}</span></td>
+                  <td role="cell" data-label="Status"><span className={`status-badge ${service.isActive ? 'success' : 'warning'}`}>{service.isActive ? 'Active' : 'Deactivated'}</span></td>
                   <td className="cell-actions" role="cell" data-label="Actions"><div className="service-actions">
                     <button type="button" className="link-button" onClick={() => setEditing(service)}>Edit</button>
                     <button type="button" className={`link-button${service.isActive ? ' danger-link' : ' approve-link'}`} onClick={() => setAction({ type: 'suspend', service })}>{service.isActive ? 'Suspend' : 'Activate'}</button>
@@ -980,7 +1167,7 @@ function ServiceManagementPage() {
           </table>
         </div>
       )}
-      {editing !== null && <ServiceEditorModal service={editing === 'new' ? null : editing} categories={categories.filter((category) => category.isActive)} onClose={() => setEditing(null)} onSave={saveService} />}
+      {editing !== null && <ServiceEditorModal service={editing === 'new' ? null : editing} categories={categories.filter((category) => category.isActive)} onClose={() => setEditing(null)} onSave={saveService} onSaved={handleServiceSaved} />}
       {manageCategories && <CategoryManagerModal categories={categories} onClose={() => setManageCategories(false)} onChanged={async () => { await loadCatalog(); }} onOutcome={setOutcome} />}
       {action && (
         <ConfirmModal
@@ -1000,19 +1187,17 @@ function ServiceManagementPage() {
   );
 }
 
-function ServiceEditorModal({ service, categories, onClose, onSave }: {
+function ServiceEditorModal({ service, categories, onClose, onSave, onSaved }: {
   service: ServiceRecord | null;
   categories: CategoryRecord[];
   onClose: () => void;
-  onSave: (values: { categoryId: string; name: string; description: string; price: number; durationMinutes: number; imageUrl?: string | null }, service: ServiceRecord | null) => Promise<void>;
+  onSave: (values: { categoryId: string; name: string; description: string; price: number; durationMinutes: number }, service: ServiceRecord | null) => Promise<string | null>;
+  onSaved: (summary: { name: string; isEdit: boolean }) => void;
 }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [imagePreview, setImagePreview] = useState(service?.imageUrl ?? '');
-  const [fileHint, setFileHint] = useState('');
-  const [dragActive, setDragActive] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const imageRef = useRef<ImageUploadHandle | null>(null);
   const dialogRef = useDialogBehavior<HTMLFormElement>(onClose);
 
   /**
@@ -1068,64 +1253,29 @@ function ServiceEditorModal({ service, categories, onClose, onSave }: {
     }
     setBusy(true);
     setError('');
+    const name = String(form.get('name')).trim();
     try {
-      await onSave({
+      const savedId = await onSave({
         categoryId: String(form.get('categoryId')),
-        name: String(form.get('name')).trim(),
+        name,
         description: String(form.get('description')).trim(),
         price: Number(form.get('price')),
         durationMinutes: Number(form.get('durationMinutes')),
-        imageUrl: imagePreview || null,
       }, service);
+
+      // The image is stored against the saved service, so it is uploaded
+      // after the service exists.
+      if (imageRef.current?.hasPendingFile()) {
+        if (!savedId) {
+          throw new Error('The service was saved, but its image could not be uploaded because the service id was not returned.');
+        }
+        await imageRef.current.upload(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/services/${savedId}/image`);
+      }
+      onSaved({ name, isEdit: Boolean(service) });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unable to save the service.');
       setBusy(false);
     }
-  }
-
-  const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png'];
-  const ALLOWED_IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png'];
-
-  function isValidImageFile(file: File): boolean {
-    if (ALLOWED_IMAGE_TYPES.includes(file.type)) return true;
-    const name = file.name.toLowerCase();
-    return ALLOWED_IMAGE_EXTENSIONS.some((ext) => name.endsWith(ext));
-  }
-
-  function setImageFromFile(file: File | null) {
-    if (!file) return;
-    if (!isValidImageFile(file)) {
-      setFileHint('Unsupported file type. Please upload a JPEG or PNG image (.jpg, .jpeg, .png).');
-      return;
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      setFileHint('Image is too large. Please use a file under 5MB.');
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const imageUrl = String(reader.result ?? '');
-      setImagePreview(imageUrl);
-      setFileHint('');
-    };
-    reader.readAsDataURL(file);
-  }
-
-  function handleImageFile(event: React.ChangeEvent<HTMLInputElement>) {
-    setImageFromFile(event.target.files?.[0] ?? null);
-  }
-
-  function handleDrop(event: React.DragEvent<HTMLDivElement>) {
-    event.preventDefault();
-    setDragActive(false);
-    const file = event.dataTransfer.files?.[0] ?? null;
-    setImageFromFile(file);
-  }
-
-  function removeImage() {
-    setImagePreview('');
-    setFileHint('');
-    if (imageInputRef.current) imageInputRef.current.value = '';
   }
 
   return (
@@ -1133,37 +1283,7 @@ function ServiceEditorModal({ service, categories, onClose, onSave }: {
       <form ref={dialogRef} className="modal-card service-modal" onSubmit={submit} onClick={(event) => event.stopPropagation()} noValidate>
         <div className="modal-header"><h3 id="service-editor-title">{service ? 'Edit Service' : 'Add Service'}</h3><button type="button" className="close-button" aria-label="Close" onClick={onClose}>×</button></div>
 
-        <div className="service-upload-field">
-          <span className="field-label">SERVICE PHOTO</span>
-          <div
-            className={`service-upload-dropzone${imagePreview ? ' filled' : ''}${dragActive ? ' drag-active' : ''}`}
-            onClick={() => imageInputRef.current?.click()}
-            onDragOver={(event) => { event.preventDefault(); setDragActive(true); }}
-            onDragLeave={(event) => { event.preventDefault(); setDragActive(false); }}
-            onDrop={handleDrop}
-            role="button"
-            tabIndex={0}
-            aria-label="Upload service photo"
-            onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); imageInputRef.current?.click(); } }}
-          >
-            <input ref={imageInputRef} className="service-upload-input" type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" onChange={handleImageFile} />
-            {imagePreview ? (
-              <img src={imagePreview} alt="Service preview" className="service-image-preview" />
-            ) : (
-              <div className="service-upload-placeholder">
-                <span className="upload-icon" aria-hidden="true">⇪</span>
-                <span>Drag and drop a service photo here or click to browse</span>
-              </div>
-            )}
-            {fileHint && <p className="file-hint-warning" role="alert">{fileHint}</p>}
-          </div>
-          {imagePreview && (
-            <div className="service-upload-actions">
-              <button type="button" className="secondary-action" onClick={() => imageInputRef.current?.click()}>Replace Photo</button>
-              <button type="button" className="link-button danger-link" onClick={removeImage}>Remove Photo</button>
-            </div>
-          )}
-        </div>
+        <ImageUploadField ref={imageRef} label="SERVICE PHOTO" idPrefix="service-image" initialUrl={service?.imageUrl ?? null} />
 
         <label className="field-label">SERVICE NAME
           <input className="modal-input" name="name" defaultValue={service?.name ?? ''} required maxLength={200}
@@ -1435,7 +1555,9 @@ function AccountManagementPage() {
                   <tr role="row" key={row.email}>
                     <td role="cell" data-label="User / Email" data-primary>
                       <div className="user-cell">
-                        <span className="user-avatar">{row.id}</span>
+                        {/* Person marks are initials — gold on dark, hidden
+                            from assistive technology with the name beside. */}
+                        <CustomerAvatar name={row.user} />
                         <div>
                           <strong>{row.user}</strong>
                           <small>{row.email}</small>
@@ -1535,7 +1657,7 @@ function StaffManagementPage() {
 
   useEffect(() => {
     const token = getAccessToken();
-    if (!token && !mockApiEnabled) return;
+    if (!token) return;
     const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
     const controller = new AbortController();
     apiFetch(`${baseUrl}/schedules/requests`, { signal: controller.signal, headers: { Authorization: `Bearer ${token}` } })
@@ -1560,7 +1682,7 @@ function StaffManagementPage() {
    */
   async function loadScheduleRequests() {
     const token = getAccessToken();
-    if (!token && !mockApiEnabled) return;
+    if (!token) return;
     const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
     try {
       const response = await apiFetch(`${baseUrl}/schedules/requests`, {
@@ -1594,12 +1716,15 @@ function StaffManagementPage() {
       });
       const payload = await response.json();
       if (!response.ok) {
-        setAccessError(payload?.message ?? 'The request could not be reviewed.');
+        const message = payload?.message ?? 'The request could not be reviewed.';
+        showToast('error', message);
+        setAccessError(message);
         return;
       }
-      setAccessNotice(`Request from ${request.requesterName ?? 'the staff member'} was ${decision === 'approve' ? 'approved' : 'rejected'}.`);
+      showToast('success', `Request from ${request.requesterName ?? 'the staff member'} was ${decision === 'approve' ? 'approved' : 'rejected'}.`);
       await loadScheduleRequests();
     } catch {
+      showToast('error', 'The request could not be reviewed.');
       setAccessError('The request could not be reviewed.');
     } finally {
       setReviewingRequestId(null);
@@ -1632,12 +1757,14 @@ function StaffManagementPage() {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload?.error?.message ?? payload.message ?? 'The account status could not be changed.');
       setAccessChange(null);
-      setAccessNotice(next === 'ACTIVE'
+      showToast('success', next === 'ACTIVE'
         ? `${row.user} can sign in again.`
         : `${row.user} can no longer sign in. Their staff profile and schedule are unchanged.`);
       window.location.reload();
     } catch (cause) {
-      setAccessError(cause instanceof Error ? cause.message : 'The account status could not be changed.');
+      const message = cause instanceof Error ? cause.message : 'The account status could not be changed.';
+      showToast('error', message);
+      setAccessError(message);
     } finally {
       setSavingAccess(false);
     }
@@ -1709,7 +1836,7 @@ function StaffManagementPage() {
                 </div>
                 <div className="schedule-request-what">
                   <span className="schedule-request-type">{request.requestType}</span>
-                  <small>
+                  <small className="schedule-request-when">
                     {formatRequestDate(request.requestedDate)}
                     {request.requestedStartTime && request.requestedEndTime
                       ? ` · ${request.requestedStartTime}–${request.requestedEndTime}`
@@ -1721,12 +1848,16 @@ function StaffManagementPage() {
                 <span className={`status-badge ${request.status === 'APPROVED' ? 'success' : request.status === 'REJECTED' ? 'danger' : 'warning'}`}>
                   {request.status === 'APPROVED' ? 'Approved' : request.status === 'REJECTED' ? 'Rejected' : 'Pending'}
                 </span>
-                {request.status === 'PENDING' && (
-                  <span className="schedule-request-actions">
-                    <button type="button" className="link-button approve-link" disabled={reviewingRequestId === request.id} onClick={() => setPendingReview({ request, decision: 'approve' })}>Approve</button>
-                    <button type="button" className="link-button danger-link" disabled={reviewingRequestId === request.id} onClick={() => setPendingReview({ request, decision: 'reject' })}>Reject</button>
-                  </span>
-                )}
+                {/* Always rendered so the action track keeps its width whether
+                    it holds buttons or only the settled status. */}
+                <span className="schedule-request-actions">
+                  {request.status === 'PENDING' && (
+                    <>
+                      <button type="button" className="link-button approve-link" disabled={reviewingRequestId === request.id} onClick={() => setPendingReview({ request, decision: 'approve' })}>Approve</button>
+                      <button type="button" className="link-button danger-link" disabled={reviewingRequestId === request.id} onClick={() => setPendingReview({ request, decision: 'reject' })}>Reject</button>
+                    </>
+                  )}
+                </span>
               </li>
             ))}
           </ul>
@@ -1742,7 +1873,7 @@ function StaffManagementPage() {
         <div className="panel-header compact staff-directory-header">
           <h3>Royal Salon Professional Staff Directory</h3>
           <div className="table-tools">
-            <input aria-label="Search staff" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by name, email or role..." className="search-input" />
+            <input aria-label="Search staff" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by name, email, role or schedule..." className="search-input" />
             <label className="sr-only" htmlFor="staff-filter-employment">Filter by employment type</label>
             <select id="staff-filter-employment" className="search-input" value={employmentFilter} onChange={(event) => setEmploymentFilter(event.target.value)}>
               <option value="all">All employment</option>
@@ -1789,7 +1920,7 @@ function StaffManagementPage() {
                 <tr role="row" key={row.email}>
                   <td role="cell" data-label="User / Email" data-primary>
                     <div className="user-cell">
-                      <span className="user-avatar">{row.user.slice(0, 2).toUpperCase()}</span>
+                      <CustomerAvatar name={row.user} />
                       <div>
                         <strong>{row.user}</strong>
                         <small className="user-cell-email">{row.email}</small>
@@ -1822,17 +1953,6 @@ function StaffManagementPage() {
                     >
                       {row.accountStatus === 'Active' ? 'Deactivate access' : 'Restore access'}
                     </button>
-                    <button
-                      type="button"
-                      className="link-button"
-                      disabled={!row.accountId || row.email === DEMO_STAFF_ACCOUNT.email}
-                      onClick={() => row.accountId && setCredentialsFor(row)}
-                      title={row.email === DEMO_STAFF_ACCOUNT.email
-                        ? 'Published demo account — its sign-in details are shown on the sign-in page.'
-                        : 'Issue new sign-in details for this staff member.'}
-                    >
-                      Sign-in details
-                    </button>
                   </td>
                 </tr>
               ))}
@@ -1845,6 +1965,7 @@ function StaffManagementPage() {
 
       {editingStaff && (
         <StaffEditModal
+          key={editingStaff.id ?? editingStaff.email}
           staff={editingStaff}
           onClose={() => setEditingStaff(null)}
           onSaved={() => { setEditingStaff(null); window.location.reload(); }}
@@ -1914,6 +2035,109 @@ type TimeOffRecord = {
   endTime: string | null;
 };
 
+/**
+ * The values the staff editor works with, merged from three sources: the
+ * directory row, the staff-profile record, and the sign-in account record.
+ */
+type StaffEditValues = {
+  firstName: string;
+  lastName: string;
+  phone: string;
+  email: string;
+  primaryRole: string;
+  position: string;
+  bio: string;
+  coveredRoles: string[];
+  specialties: string[];
+  showOnTeam: boolean;
+  employmentType: 'FULL_TIME' | 'PART_TIME';
+  workStatus: 'ON_DUTY' | 'DAY_OFF' | 'UNAVAILABLE';
+  /** The permission role on the sign-in account. Shown, never edited here. */
+  accountRole: string;
+  photoUrl: string | null;
+};
+
+/**
+ * Merge the directory row with the account and staff-profile records.
+ *
+ * A field counts as "known" only when a record actually carried it, so a
+ * value that never loaded can never later be written back as an empty
+ * string over a stored one: unknown fields are left out of the save.
+ */
+function mergeStaffEditValues(
+  row: StaffRow,
+  profile: Record<string, unknown> | null,
+  account: Record<string, unknown> | null,
+): { values: StaffEditValues; known: Set<string> } {
+  const known = new Set<string>();
+  // A present string wins over a fallback. An empty string is never treated
+  // as loaded data, because a missing field and a cleared one arrive in the
+  // same shape and clearing is the more dangerous guess.
+  const text = (key: string, ...candidates: Array<unknown>): string => {
+    for (const candidate of candidates) {
+      if (typeof candidate === 'string' && candidate.length > 0) {
+        known.add(key);
+        return candidate;
+      }
+    }
+    return '';
+  };
+  const list = (key: string, ...candidates: Array<unknown>): string[] => {
+    for (const candidate of candidates) {
+      if (Array.isArray(candidate) && candidate.length > 0) {
+        known.add(key);
+        return candidate.map((entry) => String(entry));
+      }
+    }
+    return [];
+  };
+  const flag = (key: string, ...candidates: Array<unknown>): boolean => {
+    for (const candidate of candidates) {
+      if (typeof candidate === 'boolean') {
+        known.add(key);
+        return candidate;
+      }
+    }
+    return false;
+  };
+  const employment = text('employmentType', profile?.employmentType, row.employment === 'Part Time' ? 'PART_TIME' : 'FULL_TIME');
+  const work = text('workStatus', profile?.workStatus, row.status === 'Active' ? 'ON_DUTY' : row.status === 'On Vacation' ? 'UNAVAILABLE' : 'DAY_OFF');
+  const profileSpecialties = profile ? staffSpecialtyIds(profile) : [];
+  return {
+    values: {
+      firstName: text('firstName', profile?.firstName, row.firstName),
+      lastName: text('lastName', profile?.lastName, row.lastName),
+      phone: text('phone', profile?.phone, row.phone),
+      email: text('email', account?.email, row.email === 'Email not available' ? '' : row.email),
+      primaryRole: text('primaryRole', profile?.primaryRole, row.role),
+      position: text('position', profile?.position, row.position),
+      bio: text('bio', profile?.bio, row.bio),
+      coveredRoles: list('coveredRoles',
+        Array.isArray(profile?.coveredRoles) ? profile.coveredRoles : undefined,
+        Array.isArray(row.coveredRoles) && row.coveredRoles.length > 0 ? row.coveredRoles : undefined),
+      specialties: list('specialties',
+        profileSpecialties.length > 0 ? profileSpecialties : undefined,
+        Array.isArray(row.specialties) && row.specialties.length > 0 ? row.specialties : undefined),
+      // The directory row coerces the flag to a boolean whether the payload
+      // carried it or not, so only a payload that actually carried it (or a
+      // true row value) marks the field as loaded.
+      showOnTeam: flag('showOnTeam',
+        typeof profile?.showOnTeam === 'boolean' ? profile.showOnTeam : undefined,
+        row.showOnTeam ? true : undefined),
+      employmentType: employment === 'PART_TIME' ? 'PART_TIME' : 'FULL_TIME',
+      workStatus: work === 'ON_DUTY' ? 'ON_DUTY' : work === 'UNAVAILABLE' ? 'UNAVAILABLE' : 'DAY_OFF',
+      accountRole: text('accountRole', account?.role) || 'Unknown',
+      photoUrl: ((profile?.photoUrl ?? profile?.photo ?? row.photoUrl ?? null) as string | null),
+    },
+    known,
+  };
+}
+
+/** The account role, in the words the account pages use. */
+function accountRoleLabel(role: string): string {
+  return ({ ADMIN: 'Super Admin', MANAGER: 'Manager', STAFF: 'Staff', CUSTOMER: 'Customer' } as Record<string, string>)[role] ?? role;
+}
+
 function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose: () => void; onSaved: () => void }) {
   const [timeOff, setTimeOff] = useState<TimeOffRecord[]>([]);
   const [showTimeOff, setShowTimeOff] = useState(false);
@@ -1922,43 +2146,143 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [loadingTimeOff, setLoadingTimeOff] = useState(mockApiEnabled);
+  const [loadingTimeOff, setLoadingTimeOff] = useState(false);
   const [schedule, setSchedule] = useState(normalizeWeeklySchedule());
   const [scheduleError, setScheduleError] = useState('');
   const [savingSchedule, setSavingSchedule] = useState(false);
+  // Row ids per weekday: PATCH/DELETE take a schedule-ROW id (never the staff
+  // id), so the save diff needs the rows the API actually returned.
+  const scheduleRowsRef = useRef<Map<number, ScheduleRowLite>>(new Map());
+  const reloadScheduleRows = useCallback(async () => {
+    const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+    const response = await apiFetch(`${baseUrl}/schedules/staff`, { headers: { ...authHeader(getAccessToken()) } });
+    const payload = await response.json().catch(() => null);
+    const rows = ((payload?.data?.staffSchedules ?? []) as Array<Record<string, unknown>>)
+      .filter((row) => row.staffId === staff.id);
+    const byDay = new Map<number, ScheduleRowLite>();
+    for (const row of rows) {
+      const day = Number(row?.dayOfWeek ?? 0);
+      if (day < 1 || day > 7) continue;
+      const lite: ScheduleRowLite = {
+        id: String(row.id),
+        isActive: Boolean(row.isActive ?? true),
+        startTime: String(row.startTime ?? ''),
+        endTime: String(row.endTime ?? ''),
+      };
+      const existing = byDay.get(day);
+      if (!existing || (!existing.isActive && lite.isActive)) byDay.set(day, lite);
+    }
+    scheduleRowsRef.current = byDay;
+    setSchedule(normalizeWeeklySchedule(rows));
+  }, [staff.id]);
+
+  // The form works from the account and staff-profile records themselves, so
+  // every field shows what the server actually stores for this member.
+  const [recordState, setRecordState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [recordError, setRecordError] = useState('');
+  const [reloadNonce, setReloadNonce] = useState(0);
+  const [values, setValues] = useState<StaffEditValues>(() => mergeStaffEditValues(staff, null, null).values);
+  const knownRef = useRef<Set<string>>(new Set());
+  const touchedRef = useRef<Set<string>>(new Set());
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [specialtyError, setSpecialtyError] = useState('');
+  const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
+  const photoRef = useRef<ImageUploadHandle | null>(null);
   const dialogRef = useDialogBehavior(onClose);
 
-  useEffect(() => {
-    if (!mockApiEnabled) {
-      setTimeOffUnavailable(true);
-      setLoadingTimeOff(false);
-      return;
-    }
-    const controller = new AbortController();
-    apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/staff/${staff.id}/time-off`, { signal: controller.signal })
-      .then(async (response) => {
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload.message ?? 'Unable to load time-off records.');
-        setTimeOff(payload?.data?.timeOff ?? []);
-      })
-      .catch((cause) => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Unable to load time-off records.'); })
-      .finally(() => { if (!controller.signal.aborted) setLoadingTimeOff(false); });
-    return () => controller.abort();
-  }, [staff.id]);
+  // Role changes are an administrator action. Every other editor sees the
+  // role as read-only text; the field still submits its stored value.
+  const viewerRole = currentSession(getAccessToken())?.role ?? null;
+  const canChangeRole = viewerRole === 'ADMIN';
 
+  function setField<K extends keyof StaffEditValues>(field: K, value: StaffEditValues[K]) {
+    touchedRef.current.add(field);
+    setValues((current) => ({ ...current, [field]: value }));
+    setFieldErrors((current) => {
+      if (!current[field]) return current;
+      const next = { ...current };
+      delete next[field];
+      return next;
+    });
+  }
+
+  // Load the authoritative account and staff-profile records once per open.
+  // A late response for an earlier member is dropped, and a failed load shows
+  // a friendly message with a retry instead of an empty form.
   useEffect(() => {
-    const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
-    apiFetch(`${baseUrl}/schedules/staff`, { headers: { Authorization: `Bearer ${getAccessToken()}` } })
+    const controller = new AbortController();
+    let active = true;
+    setRecordState('loading');
+    setRecordError('');
+    void (async () => {
+      const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+      const headers = { ...authHeader(getAccessToken()) };
+      const [profileResult, accountResult] = await Promise.allSettled([
+        apiFetch(`${baseUrl}/staff/${staff.id}`, { signal: controller.signal, headers }),
+        staff.accountId
+          ? apiFetch(`${baseUrl}/accounts/${staff.accountId}`, { signal: controller.signal, headers })
+          : Promise.resolve(null),
+      ]);
+      if (!active) return;
+      const profileResponse = profileResult.status === 'fulfilled' ? profileResult.value : null;
+      if (!profileResponse || !profileResponse.ok) {
+        setRecordState('error');
+        setRecordError("We couldn't load this staff member's details. Check the connection and try again.");
+        return;
+      }
+      const profilePayload = await profileResponse.json().catch(() => null);
+      const accountResponse = accountResult.status === 'fulfilled' ? accountResult.value : null;
+      const accountPayload = accountResponse && accountResponse.ok
+        ? await accountResponse.json().catch(() => null)
+        : null;
+      if (!active) return;
+      const merged = mergeStaffEditValues(
+        staff,
+        (profilePayload?.data ?? null) as Record<string, unknown> | null,
+        (accountPayload?.data ?? null) as Record<string, unknown> | null,
+      );
+      knownRef.current = merged.known;
+      touchedRef.current = new Set();
+      setValues(merged.values);
+      setRecordState('ready');
+    })();
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [staff, reloadNonce]);
+
+  // The specialties offered are the service categories, so a staff member is
+  // marked against the catalogue the studio actually sells.
+  useEffect(() => {
+    const token = getAccessToken();
+    if (!token) return;
+    const controller = new AbortController();
+    apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/services/categories`, {
+      signal: controller.signal,
+      headers: { ...authHeader(token) },
+    })
       .then(async (response) => {
-        const payload = await response.json();
-        const staffSchedules = (payload?.data?.staffSchedules ?? []).filter((s: any) => s.staffId === staff.id);
-        if (staffSchedules.length > 0) {
-          setSchedule(normalizeWeeklySchedule(staffSchedules));
-        }
+        const payload = await response.json().catch(() => null);
+        if (!response.ok) return;
+        const rows = (payload?.data?.categories ?? []) as Array<{ id: string; name: string; isActive?: boolean }>;
+        setCategories(rows.filter((category) => category.isActive !== false).map((category) => ({ id: String(category.id), name: String(category.name) })));
       })
       .catch(() => undefined);
-  }, [staff.id]);
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    // The time-off endpoint does not exist on the configured backend.
+    setTimeOffUnavailable(true);
+    setLoadingTimeOff(false);
+  }, []);
+
+  useEffect(() => {
+    reloadScheduleRows().catch(() => {
+      setScheduleError("We couldn't load the schedule right now. Your existing information has been preserved. Please try again.");
+    });
+  }, [reloadScheduleRows]);
 
   /**
    * Check the fields of the staff editor.
@@ -1967,12 +2291,12 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
    * number, and the role as a short piece of text. The values are checked
    * whole, so a pasted value is caught as well as a typed one.
    */
-  function collectFieldErrors(form: FormData): Record<string, string> {
+  function collectFieldErrors(): Record<string, string> {
     const errors: Record<string, string> = {};
-    const firstName = String(form.get('firstName') ?? '').trim();
-    const lastName = String(form.get('lastName') ?? '').trim();
-    const phone = String(form.get('phone') ?? '').trim();
-    const primaryRole = String(form.get('primaryRole') ?? '').trim();
+    const firstName = values.firstName.trim();
+    const lastName = values.lastName.trim();
+    const phone = values.phone.trim();
+    const primaryRole = values.primaryRole.trim();
     if (!firstName) errors.firstName = 'Enter a first name.';
     else if (!isValidPersonName(firstName)) errors.firstName = personNameMessage(firstName);
     if (!lastName) errors.lastName = 'Enter a last name.';
@@ -1980,14 +2304,15 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
     if (phone && !isValidPhilippineMobile(phone)) errors.phone = PHONE_MESSAGE;
     if (!primaryRole) errors.primaryRole = 'Enter a primary role.';
     else if (primaryRole.length > 100) errors.primaryRole = 'Keep the role under 100 characters.';
+    if (values.position.trim().length > 100) errors.position = 'Keep the position under 100 characters.';
+    if (values.bio.trim().length > 1000) errors.bio = 'Keep the bio under 1000 characters.';
     return errors;
   }
 
   /** Re-check one field, once the reader has left it. */
-  function recheckField(field: string, form: HTMLFormElement | null) {
-    if (!form) return;
+  function recheckField(field: keyof StaffEditValues) {
     if (!Object.prototype.hasOwnProperty.call(fieldErrors, field)) return;
-    const errors = collectFieldErrors(new FormData(form));
+    const errors = collectFieldErrors();
     setFieldErrors((current) => {
       const next = { ...current };
       if (errors[field]) next[field] = errors[field];
@@ -1998,14 +2323,19 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const errors = collectFieldErrors(form);
+    const errors = collectFieldErrors();
     setFieldErrors(errors);
-    if (Object.keys(errors).length > 0) {
+    // Showing a profile on the team page needs at least one specialty, so the
+    // page never lists someone with nothing they are known for.
+    const specialtyMessage = values.showOnTeam && values.specialties.length === 0
+      ? 'Select at least one specialty when the profile is shown on the team page.'
+      : '';
+    setSpecialtyError(specialtyMessage);
+    if (Object.keys(errors).length > 0 || specialtyMessage) {
       // The dialog stays open and keeps what was typed.
-      for (const field of ['firstName', 'lastName', 'phone', 'primaryRole']) {
+      for (const field of ['firstName', 'lastName', 'phone', 'primaryRole', 'position', 'bio'] as const) {
         if (!errors[field]) continue;
-        event.currentTarget.querySelector<HTMLElement>(`[name="${field}"]`)?.focus();
+        dialogRef.current?.querySelector<HTMLElement>(`[name="${field}"]`)?.focus();
         break;
       }
       return;
@@ -2014,32 +2344,64 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
     if (!token) { setError('Sign in with an administrator account to edit staff.'); return; }
     setSubmitting(true);
     setError('');
-    const lastName = String(form.get('lastName') ?? '').trim();
+    // Optional profile fields travel only when a record actually carried
+    // them or the editor changed them. A field that never loaded is left out
+    // of the request entirely, so saving can never blank a stored value.
+    const known = knownRef.current;
+    const touched = touchedRef.current;
+    const optional = (field: keyof StaffEditValues) => known.has(field) || touched.has(field);
+    const body: Record<string, unknown> = {
+      // The first name is immutable after account creation; the stored value
+      // is echoed back unchanged, which is exactly what the API accepts.
+      firstName: values.firstName.trim(),
+      lastName: values.lastName.trim(),
+      phone: values.phone.trim(),
+      primaryRole: values.primaryRole.trim(),
+      employmentType: values.employmentType,
+      workStatus: values.workStatus,
+    };
+    // The API requires a non-empty position when one is set, so an empty
+    // field means "keep the stored one", never "erase it".
+    if (values.position.trim()) body.position = values.position.trim();
+    if (optional('bio')) body.bio = values.bio.trim();
+    if (optional('coveredRoles')) body.coveredRoles = values.coveredRoles;
+    if (optional('showOnTeam')) body.showOnTeam = values.showOnTeam;
+    if (optional('specialties') || (values.showOnTeam && values.specialties.length > 0)) body.specialties = values.specialties;
     try {
       const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/staff/${staff.id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          firstName: String(form.get('firstName') ?? '').trim(),
-          lastName,
-          phone: String(form.get('phone') ?? ''),
-          primaryRole: String(form.get('primaryRole') ?? '').trim(),
-          employmentType: String(form.get('employmentType')),
-          workStatus: String(form.get('workStatus')),
-        }),
+        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+        body: JSON.stringify(body),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.message ?? 'Unable to save staff changes.');
+
+      // The photo is stored against the staff row, so it is uploaded after the
+      // profile fields are saved.
+      if (photoRef.current?.hasPendingFile()) {
+        try {
+          await photoRef.current.upload(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/staff/${staff.id}/photo`);
+        } catch (cause) {
+          const message = cause instanceof Error ? cause.message : 'The photo could not be uploaded.';
+          showToast('error', message);
+          setError(message);
+          setSubmitting(false);
+          return;
+        }
+      }
+      showToast('success', 'Staff profile updated successfully.');
       onSaved();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Unable to save staff changes.');
+      const message = cause instanceof Error ? cause.message : 'Unable to save staff changes.';
+      showToast('error', message);
+      setError(message);
       setSubmitting(false);
     }
   }
 
   async function saveSchedule() {
     const token = getAccessToken();
-    if (!token) { setError('Sign in with an administrator account to save schedule.'); return; }
+    if (!token) { setScheduleError('Your session has expired. Please sign in again.'); return; }
     for (const day of schedule) {
       if (day.enabled && (!day.startTime || !day.endTime || !isValidTimeRange(day.startTime, day.endTime))) {
         setScheduleError(`${weekDayLabels[day.dayOfWeek - 1]}: Set valid start and end times (start must be before end).`);
@@ -2048,18 +2410,44 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
     }
     setScheduleError('');
     setSavingSchedule(true);
+    // The API works per schedule row: POST creates one weekday (with the
+    // required future effectiveFrom), PATCH edits/deactivates an existing row
+    // BY ROW ID. The weekly grid is diffed against the rows the API returned.
     try {
       const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
-      const response = await apiFetch(`${baseUrl}/schedules/staff/${staff.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ schedule: schedule.filter((d) => d.enabled).map((d) => ({ dayOfWeek: d.dayOfWeek, startTime: d.startTime, endTime: d.endTime, isActive: true })) }),
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.message ?? 'Unable to save schedule.');
-      setNotice('Schedule updated.');
+      let changed = 0;
+      for (const day of schedule) {
+        const row = scheduleRowsRef.current.get(day.dayOfWeek);
+        if (day.enabled) {
+          if (!row) {
+            await callScheduleApi('POST', `${baseUrl}/schedules/staff`, {
+              staffId: staff.id,
+              dayOfWeek: day.dayOfWeek,
+              startTime: day.startTime,
+              endTime: day.endTime,
+              effectiveFrom: nextWeekdayIso(day.dayOfWeek),
+              isActive: true,
+            }, token);
+            changed++;
+          } else if (!row.isActive || row.startTime !== day.startTime || row.endTime !== day.endTime) {
+            await callScheduleApi('PATCH', `${baseUrl}/schedules/staff/${row.id}`, {
+              startTime: day.startTime,
+              endTime: day.endTime,
+              isActive: true,
+            }, token);
+            changed++;
+          }
+        } else if (row?.isActive) {
+          await callScheduleApi('PATCH', `${baseUrl}/schedules/staff/${row.id}`, { isActive: false }, token);
+          changed++;
+        }
+      }
+      await reloadScheduleRows();
+      showToast(changed > 0 ? 'success' : 'info', changed > 0 ? 'Schedule updated successfully.' : 'No schedule changes to save.');
     } catch (cause) {
-      setScheduleError(cause instanceof Error ? cause.message : 'Unable to save schedule.');
+      const message = cause instanceof Error ? cause.message : "We couldn't save this schedule. Please try again.";
+      showToast('error', message);
+      setScheduleError(message);
     } finally {
       setSavingSchedule(false);
     }
@@ -2071,34 +2459,50 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
 
   async function saveTimeOff(values: Omit<TimeOffRecord, 'id' | 'staffId'>, existing: TimeOffRecord | null) {
     const token = getAccessToken();
-    if (!token) throw new Error('Sign in with an administrator account to manage time off.');
+    if (!token) {
+      showToast('error', 'Sign in with an administrator account to manage time off.');
+      throw new Error('Sign in with an administrator account to manage time off.');
+    }
     const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/staff/${staff.id}/time-off${existing ? `/${existing.id}` : ''}`, {
       method: existing ? 'PATCH' : 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
       body: JSON.stringify(values),
     });
     const payload = await response.json();
-    if (!response.ok) throw new Error(payload.message ?? 'Unable to save time off.');
+    if (!response.ok) {
+      const message = payload.message ?? 'Unable to save time off.';
+      showToast('error', message);
+      throw new Error(message);
+    }
     const saved = payload?.data?.timeOff as TimeOffRecord;
     setTimeOff((current) => (existing
       ? current.map((entry) => entry.id === existing.id ? saved : entry)
       : [...current, saved]).sort((left, right) => left.startDate.localeCompare(right.startDate)));
     setShowTimeOff(false);
     setEditingTimeOff(null);
-    setNotice(existing ? 'Time off updated.' : 'Time off added.');
+    showToast('success', existing ? 'Time off updated.' : 'Time off added.');
   }
 
   async function removeTimeOff(entry: TimeOffRecord) {
     const token = getAccessToken();
-    if (!token) { setError('Sign in with an administrator account to manage time off.'); return; }
+    if (!token) {
+      showToast('error', 'Sign in with an administrator account to manage time off.');
+      setError('Sign in with an administrator account to manage time off.');
+      return;
+    }
     const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/staff/${staff.id}/time-off/${entry.id}`, {
       method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { ...authHeader(token) },
     });
     const payload = await response.json();
-    if (!response.ok) { setError(payload.message ?? 'Unable to remove time off.'); return; }
+    if (!response.ok) {
+      const message = payload.message ?? 'Unable to remove time off.';
+      showToast('error', message);
+      setError(message);
+      return;
+    }
     setTimeOff((current) => current.filter((item) => item.id !== entry.id));
-    setNotice('Time off removed.');
+    showToast('success', 'Time off removed.');
   }
 
   return (
@@ -2108,49 +2512,145 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
           <h3 id="staff-edit-title">Edit Staff Account</h3>
           <button type="button" className="close-button" aria-label="Close" onClick={onClose}>×</button>
         </div>
-        <div className="staff-edit-content">
-          <form className="staff-account-form" onSubmit={handleSubmit} noValidate>
-            <h4>Staff Account Information</h4>
-            <p className="form-hint">{staff.email}</p>
-            <div className="form-grid">
-              <label className="field-label">FIRST NAME
-                <input className="modal-input" name="firstName" defaultValue={staff.firstName ?? ''} required maxLength={100}
-                  autoComplete="given-name"
-                  onBlur={(event) => recheckField('firstName', event.currentTarget.form)}
-                  {...invalidField('staff-edit-first-name-error', fieldErrors.firstName)} />
-                <FieldError id="staff-edit-first-name-error" message={fieldErrors.firstName} />
-              </label>
-              <label className="field-label">LAST NAME
-                <input className="modal-input" name="lastName" defaultValue={staff.lastName ?? ''} required maxLength={100}
-                  autoComplete="family-name"
-                  onBlur={(event) => recheckField('lastName', event.currentTarget.form)}
-                  {...invalidField('staff-edit-last-name-error', fieldErrors.lastName)} />
-                <FieldError id="staff-edit-last-name-error" message={fieldErrors.lastName} />
-              </label>
-            </div>
-            <label className="field-label">PHONE
-              <input className="modal-input" name="phone" type="tel" defaultValue={staff.phone ?? ''} maxLength={30}
-                inputMode="tel" autoComplete="tel"
-                onBlur={(event) => recheckField('phone', event.currentTarget.form)}
-                {...invalidField('staff-edit-phone-error', fieldErrors.phone)} />
-              <FieldError id="staff-edit-phone-error" message={fieldErrors.phone} />
-            </label>
-            <label className="field-label">PRIMARY ROLE
-              <input className="modal-input" name="primaryRole" defaultValue={staff.role} required maxLength={100}
-                onBlur={(event) => recheckField('primaryRole', event.currentTarget.form)}
-                {...invalidField('staff-edit-primary-role-error', fieldErrors.primaryRole)} />
-              <FieldError id="staff-edit-primary-role-error" message={fieldErrors.primaryRole} />
-            </label>
-            <div className="form-grid">
-              <label className="field-label">EMPLOYMENT TYPE<select className="modal-input" name="employmentType" defaultValue={staff.employment === 'Part Time' ? 'PART_TIME' : 'FULL_TIME'}><option value="FULL_TIME">Full Time</option><option value="PART_TIME">Part Time</option></select></label>
-              <label className="field-label">WORK STATUS<select className="modal-input" name="workStatus" defaultValue={staff.status === 'Active' ? 'ON_DUTY' : staff.status === 'On Vacation' ? 'UNAVAILABLE' : 'DAY_OFF'}><option value="ON_DUTY">On Duty</option><option value="DAY_OFF">Day Off</option><option value="UNAVAILABLE">Unavailable</option></select></label>
-            </div>
-            {error && <p className="form-error" role="alert">{error}</p>}
+        {recordState === 'loading' && (
+          <SkeletonRegion label="Loading the staff record">
+            <ListSkeleton rows={5} />
+          </SkeletonRegion>
+        )}
+        {recordState === 'error' && (
+          <div className="staff-record-error" role="alert">
+            <strong>This staff record could not be loaded</strong>
+            <p>{recordError}</p>
             <div className="modal-actions">
-              <button type="button" className="secondary-action" onClick={onClose}>Cancel</button>
-              <button type="submit" className="primary-action" disabled={submitting}>{submitting ? 'Saving…' : 'Save Changes'}</button>
+              <button type="button" className="secondary-action" onClick={onClose}>Close</button>
+              <button type="button" className="primary-action" onClick={() => setReloadNonce((nonce) => nonce + 1)}>Try again</button>
             </div>
+          </div>
+        )}
+        {recordState === 'ready' && (
+        <>
+        <div className="staff-edit-content">
+          <form id="staff-edit-form" className="staff-account-form" onSubmit={handleSubmit} noValidate>
+            <h4>Staff Account Information</h4>
+            <p className="form-hint">{values.email || 'No email on file'} · {accountRoleLabel(values.accountRole)}</p>
+            <div className="form-section">
+              <h5 className="form-section-title">Identity and contact</h5>
+              <div className="form-grid">
+                <label className="field-label">FIRST NAME
+                  {/* The first name is fixed at account creation. It is read
+                      only, shows the stored value, and still submits it. */}
+                  <input className="modal-input" name="firstName" value={values.firstName} readOnly required maxLength={100}
+                    autoComplete="given-name"
+                    {...invalidField('staff-edit-first-name-error', fieldErrors.firstName)} />
+                  <FieldError id="staff-edit-first-name-error" message={fieldErrors.firstName} />
+                </label>
+                <label className="field-label">LAST NAME
+                  <input className="modal-input" name="lastName" value={values.lastName} onChange={(event) => setField('lastName', event.target.value)} required maxLength={100}
+                    autoComplete="family-name" placeholder="e.g. Santos"
+                    onBlur={() => recheckField('lastName')}
+                    {...invalidField('staff-edit-last-name-error', fieldErrors.lastName)} />
+                  <FieldError id="staff-edit-last-name-error" message={fieldErrors.lastName} />
+                </label>
+              </div>
+              <p className="form-hint">First names are set when the account is created and cannot be changed.</p>
+              <label className="field-label">PHONE
+                <input className="modal-input" name="phone" type="tel" value={values.phone} onChange={(event) => setField('phone', event.target.value)} maxLength={30}
+                  inputMode="tel" autoComplete="tel" placeholder="+63 912 345 6789"
+                  onBlur={() => recheckField('phone')}
+                  {...invalidField('staff-edit-phone-error', fieldErrors.phone)} />
+                <FieldError id="staff-edit-phone-error" message={fieldErrors.phone} />
+              </label>
+            </div>
+
+            <div className="form-section">
+              <h5 className="form-section-title">Staff profile</h5>
+              <label className="field-label">POSITION
+                <input className="modal-input" name="position" value={values.position} onChange={(event) => setField('position', event.target.value)} maxLength={100}
+                  placeholder="e.g. Senior Stylist"
+                  onBlur={() => recheckField('position')}
+                  {...invalidField('staff-edit-position-error', fieldErrors.position)} />
+                <FieldError id="staff-edit-position-error" message={fieldErrors.position} />
+              </label>
+              <label className="field-label">BIO
+                <textarea className="modal-input" name="bio" value={values.bio} onChange={(event) => setField('bio', event.target.value)} rows={3} maxLength={1000}
+                  placeholder="e.g. Senior stylist specialising in balayage and bridal looks"
+                  onBlur={() => recheckField('bio')}
+                  {...invalidField('staff-edit-bio-error', fieldErrors.bio)} />
+                <FieldError id="staff-edit-bio-error" message={fieldErrors.bio} />
+              </label>
+              <TagMultiSelect
+                label="COVERED ROLES"
+                hint="Roles this staff member can step into. Pick from the list or add your own."
+                options={COVERED_ROLE_VOCABULARY}
+                value={values.coveredRoles}
+                onChange={(next) => setField('coveredRoles', next)}
+              />
+              <CheckboxMultiSelect
+                label="SPECIALTIES"
+                options={categories}
+                value={values.specialties}
+                onChange={(next) => { setField('specialties', next); if (next.length > 0) setSpecialtyError(''); }}
+                errorId="staff-edit-specialties-error"
+                errorMessage={specialtyError}
+              />
+              <ToggleSwitch
+                label="Show on team page"
+                hint="List this staff member on the public team page."
+                checked={values.showOnTeam}
+                onChange={(next) => {
+                  setField('showOnTeam', next);
+                  if (!next) setSpecialtyError('');
+                }}
+              />
+            </div>
+
+            {error && <p className="form-error" role="alert">{error}</p>}
           </form>
+
+          {/* The side column stacks the compact sections and the Vacation
+              panel beside the account form, so the form fields keep a
+              comfortable width and the right column is not mostly empty. */}
+          <div className="staff-edit-side">
+            <div className="form-section">
+              <ImageUploadField ref={photoRef} label="STAFF PHOTO" idPrefix="staff-photo" initialUrl={values.photoUrl} />
+            </div>
+            <div className="form-section">
+              <h5 className="form-section-title">Work details</h5>
+              <div className="form-grid">
+                <label className="field-label">EMPLOYMENT TYPE
+                  <select className="modal-input" name="employmentType" value={values.employmentType} onChange={(event) => setField('employmentType', event.target.value === 'PART_TIME' ? 'PART_TIME' : 'FULL_TIME')}>
+                    <option value="FULL_TIME">Full Time</option>
+                    <option value="PART_TIME">Part Time</option>
+                  </select>
+                </label>
+                <label className="field-label">WORK STATUS
+                  <select className="modal-input" name="workStatus" value={values.workStatus} onChange={(event) => setField('workStatus', event.target.value === 'ON_DUTY' ? 'ON_DUTY' : event.target.value === 'UNAVAILABLE' ? 'UNAVAILABLE' : 'DAY_OFF')}>
+                    <option value="ON_DUTY">On Duty</option>
+                    <option value="DAY_OFF">Day Off</option>
+                    <option value="UNAVAILABLE">Unavailable</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+
+            <div className="form-section">
+              <h5 className="form-section-title">Permissions</h5>
+              <label className="field-label">PRIMARY ROLE
+                {canChangeRole ? (
+                  <input className="modal-input" name="primaryRole" value={values.primaryRole} onChange={(event) => setField('primaryRole', event.target.value)} required maxLength={100}
+                    placeholder="e.g. Senior Stylist"
+                    onBlur={() => recheckField('primaryRole')}
+                    {...invalidField('staff-edit-primary-role-error', fieldErrors.primaryRole)} />
+                ) : (
+                  <input className="modal-input" name="primaryRole" value={values.primaryRole} readOnly
+                    {...invalidField('staff-edit-primary-role-error', fieldErrors.primaryRole)} />
+                )}
+                <FieldError id="staff-edit-primary-role-error" message={fieldErrors.primaryRole} />
+              </label>
+              <span className="field-label">ACCOUNT ROLE</span>
+              <p className="readonly-text">{accountRoleLabel(values.accountRole)}</p>
+              {!canChangeRole && <p className="form-hint">Only administrators can change roles.</p>}
+            </div>
 
           <div className="panel time-off-panel">
             <div className="panel-header"><div><h4>Vacation &amp; Day Off</h4><p>Set date-based availability for this staff account.</p></div><button type="button" className="primary-button" disabled={timeOffUnavailable} onClick={() => { setEditingTimeOff(null); setShowTimeOff(true); }}>+ Add Vacation / Day Off</button></div>
@@ -2171,6 +2671,8 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
             {notice && <p className="table-message" role="status">{notice}</p>}
             {showTimeOff && <TimeOffModal entry={editingTimeOff} onClose={() => { setShowTimeOff(false); setEditingTimeOff(null); }} onSave={saveTimeOff} />}
           </div>
+          </div>
+
           <div className="panel scheduling-rules-panel">
             <div className="panel-header">
               <div>
@@ -2212,6 +2714,15 @@ function StaffEditModal({ staff, onClose, onSaved }: { staff: StaffRow; onClose:
           </div>
 
         </div>
+
+        {/* The footer belongs to the whole dialog, so it pins across the
+            full modal width; the submit button targets the form by id. */}
+        <div className="modal-actions">
+          <button type="button" className="secondary-action" onClick={onClose}>Cancel</button>
+          <button type="submit" form="staff-edit-form" className="primary-action" disabled={submitting}>{submitting ? 'Saving…' : 'Save Changes'}</button>
+        </div>
+        </>
+        )}
       </section>
     </div>
   );
@@ -2273,14 +2784,18 @@ function TimeOffModal({ entry, onClose, onSave }: {
 }
 
 function AppointmentPage() {
-  const [appointments, setAppointments, appointmentsLoading] = useAppointmentData();
   const [selectedAppointment, setSelectedAppointment] = useState<AppointmentRow | null>(null);
   const [confirmation, setConfirmation] = useState<{ appointment: AppointmentRow; status: string } | null>(null);
-  const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
-  const [selectedDate, setSelectedDate] = useState(() => {
-    const date = new Date();
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  // Background refresh is skipped entirely while a dialog is open, so a
+  // poll response can never overwrite the appointment being reviewed.
+  const { appointments, setAppointments, loading: appointmentsLoading } = useAppointmentsQuery({
+    paused: selectedAppointment !== null || confirmation !== null,
   });
+  const [month, setMonth] = useState(() => {
+    const [year, monthNumber] = currentManilaMonthKey().split('-').map(Number);
+    return new Date(year, monthNumber - 1, 1);
+  });
+  const [selectedDate, setSelectedDate] = useState(() => currentManilaDateKey());
   const [message, setMessage] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'other' | (typeof SIDEBAR_STATUS_ORDER)[number]>('all');
   const token = getAccessToken();
@@ -2293,7 +2808,7 @@ function AppointmentPage() {
     const day = index - monthStart.getDay() + 1;
     return day > 0 && day <= daysInMonth ? day : null;
   });
-  const todayKey = localDateKey(new Date());
+  const todayKey = currentManilaDateKey();
   const daysInMonthPrefix = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}`;
   const monthAppointments = appointments.filter((item) => item.appointmentDate.startsWith(daysInMonthPrefix));
   const monthStatusSequence = ['CONFIRMED', 'COMPLETED', 'CANCELLED', 'RESERVED', 'NO_SHOW'] as const;
@@ -2430,11 +2945,14 @@ function AppointmentPage() {
             <div className="sidebar-appointment-list">
               {section.items.map((appt) => (
                 <button key={appt.code} type="button" className="sidebar-appointment-item" onClick={() => handleSidebarClick(appt)}>
-                  <div>
-                    <strong>{appt.customerName || 'Customer'}</strong>
-                    <small>{appt.appointmentDate} · {appt.startTime}</small>
-                    <small>{appt.staffName || 'Staff'}</small>
-                  </div>
+                  <span className="person-inline">
+                    <CustomerAvatar name={appt.customerName || 'Customer'} />
+                    <div>
+                      <strong>{appt.customerName || 'Customer'}</strong>
+                      <small>{appt.appointmentDate} · {appt.startTime}</small>
+                      <small>{appt.staffName || 'Staff'}</small>
+                    </div>
+                  </span>
                   <span>
                     <span className={`status-badge ${appointmentStatusBadge(appt.status)}`}>{appointmentStatusText(appt.status)}</span>
                     {isPastNonterminal(appt, todayKey) && <span className="past-review-tag">Past — needs review</span>}
@@ -2504,10 +3022,13 @@ function AppointmentPage() {
           )}
           {!appointmentsLoading && selectedAppointments.map((appointment) => (
             <button type="button" key={appointment.code} className="selected-appointment" onClick={() => setSelectedAppointment(appointment)}>
-              <span>
-                <strong>{appointment.customerName || 'Customer'} · {appointment.staffName || 'Staff'}</strong>
-                <small>{appointment.serviceNames} · {appointment.startTime}–{appointment.endTime} · {appointment.code}</small>
-                <small className="past-review-tag-wrap">{isPastNonterminal(appointment, todayKey) && <span className="past-review-tag">Past — needs review</span>}</small>
+              <span className="person-inline">
+                <CustomerAvatar name={appointment.customerName || 'Customer'} />
+                <span>
+                  <strong>{appointment.customerName || 'Customer'} · {appointment.staffName || 'Staff'}</strong>
+                  <small>{appointment.serviceNames} · {appointment.startTime}–{appointment.endTime} · {appointment.code}</small>
+                  <small className="past-review-tag-wrap">{isPastNonterminal(appointment, todayKey) && <span className="past-review-tag">Past — needs review</span>}</small>
+                </span>
               </span>
               <span className={`status-badge ${appointmentStatusBadge(appointment.status)}`}>{appointmentStatusText(appointment.status)}</span>
             </button>
@@ -2544,7 +3065,7 @@ function AppointmentPage() {
             <div className="modal-header"><h3 id="appointment-detail-title">Appointment Details</h3><button type="button" className="close-button" aria-label="Close appointment details" onClick={() => setSelectedAppointment(null)}>×</button></div>
             <dl className="appointment-detail-list">
               <div><dt>Booking reference</dt><dd>{selectedAppointment.code}</dd></div>
-              <div><dt>Customer</dt><dd>{selectedAppointment.customerName || 'Customer'}{selectedAppointment.customerEmail ? ` · ${selectedAppointment.customerEmail}` : ''}</dd></div>
+              <div><dt>Customer</dt><dd><span className="person-inline"><CustomerAvatar name={selectedAppointment.customerName || 'Customer'} /><span>{selectedAppointment.customerName || 'Customer'}</span></span>{selectedAppointment.customerEmail ? ` · ${selectedAppointment.customerEmail}` : ''}</dd></div>
               {selectedAppointment.customerPhone && <div><dt>Phone</dt><dd>{selectedAppointment.customerPhone}</dd></div>}
               <div><dt>Service</dt><dd>{selectedAppointment.serviceNames}</dd></div>
               <div><dt>Staff</dt><dd>{selectedAppointment.staffName || 'Staff not assigned'}</dd></div>
@@ -2554,10 +3075,27 @@ function AppointmentPage() {
             </dl>
             {!token && <p className="form-hint">Sign in with an administrator account to update appointments.</p>}
             <div className="modal-actions appointment-detail-actions">
+              {/* Cancelling applies to reserved and confirmed bookings alike —
+                  the server lets a manager cancel either; the remaining actions
+                  are confirmed-only. */}
+              {(selectedAppointment.status === 'CONFIRMED' || selectedAppointment.status === 'RESERVED') && (
+                <button type="button" className="reject-action" disabled={!token || !selectedAppointment.id} onClick={() => setConfirmation({ appointment: selectedAppointment, status: 'CANCELLED' })}>Cancel</button>
+              )}
               {selectedAppointment.status === 'CONFIRMED' && (
                 <>
-                  <button type="button" className="reject-action" disabled={!token || !selectedAppointment.id} onClick={() => setConfirmation({ appointment: selectedAppointment, status: 'CANCELLED' })}>Cancel</button>
-                  <button type="button" className="primary-action" disabled={!token || !selectedAppointment.id} onClick={() => handleComplete(selectedAppointment)}>Complete</button>
+                  {/* Service completion — the transition the review gate needs.
+                      The server refuses it before the appointment's end time,
+                      so the button mirrors that rule and explains itself. */}
+                  <button
+                    type="button"
+                    className="secondary-action"
+                    disabled={!token || !selectedAppointment.id || !canCompleteService(selectedAppointment)}
+                    title={canCompleteService(selectedAppointment) ? 'Mark the delivered service as completed' : 'Available after the appointment ends'}
+                    onClick={() => setConfirmation({ appointment: selectedAppointment, status: 'COMPLETED' })}
+                  >
+                    Mark completed
+                  </button>
+                  <button type="button" className="primary-action" disabled={!token || !selectedAppointment.id} onClick={() => handleComplete(selectedAppointment)}>Record payment</button>
                 </>
               )}
               <button type="button" className="secondary-action" onClick={() => setSelectedAppointment(null)}>Close</button>
@@ -2581,21 +3119,58 @@ function AppointmentPage() {
 }
 
 function PaymentPage() {
-  const [payments, setPayments] = useState<Array<Record<string, any>>>([]);
+  const [payments, setPayments] = useState<PaymentRow[]>([]);
   const [activities, setActivities] = useState<Array<{ id: string; message: string; createdAt: string }>>([]);
-  const [tab, setTab] = useState<'pending' | 'history'>('pending');
+  const [tab, setTab] = useState<'pending' | 'history' | 'settings'>('pending');
   const [search, setSearch] = useState('');
-  const [selectedPayment, setSelectedPayment] = useState<any | null>(null);
-  const [verificationCode, setVerificationCode] = useState('');
-  const [codeError, setCodeError] = useState('');
-  const [paymentConfirmation, setPaymentConfirmation] = useState<'VERIFIED' | 'REJECTED' | null>(null);
+  const [loadError, setLoadError] = useState('');
+  // Distinguishes 'still loading' from 'loaded with zero records': the ledger
+  // must never flash an empty state while the first fetch is in flight.
+  const [loading, setLoading] = useState(true);
+  const loadSeqRef = useRef(0);
+  const [selectedPayment, setSelectedPayment] = useState<PaymentRow | null>(null);
+  const [paymentConfirmation, setPaymentConfirmation] = useState<{ payment: PaymentRow; status: 'VERIFIED' | 'REJECTED' } | null>(null);
+  const [recordOpen, setRecordOpen] = useState(false);
+  const [completing, setCompleting] = useState(false);
+  const [pickerOptions, setPickerOptions] = useState<RecordPaymentOption[] | null>(null);
+  const [pickerLoading, setPickerLoading] = useState(false);
   const [notice, setNotice] = useState('');
-  const [busy, setBusy] = useState(false);
   const token = getAccessToken();
-  const navigate = useNavigate();
+  const role = currentSession(token)?.role ?? null;
+  const canReview = role === 'ADMIN' || role === 'MANAGER';
+  const canRecord = canRecordPayment(role);
+  const canSettings = canEditPaymentSettings(role);
   const location = useLocation();
-  const closePaymentModal = useCallback(() => setSelectedPayment(null), []);
-  const paymentDialogRef = useDialogBehavior<HTMLElement>(closePaymentModal, selectedPayment !== null);
+
+  const loadPayments = useCallback(async (signal?: AbortSignal) => {
+    const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+    const headers = authHeader(token);
+    const seq = ++loadSeqRef.current;
+    const [paymentResponse, activityResponse] = await Promise.all([
+      apiFetch(`${baseUrl}/payments?page=1&limit=100`, { signal, headers }),
+      apiFetch(`${baseUrl}/payments/activity`, { signal, headers }),
+    ]);
+    const paymentPayload = await paymentResponse.json().catch(() => null);
+    if (!paymentResponse.ok) throw new Error(paymentPayload?.message ?? 'Payment records are not available from the configured backend.');
+    const activityPayload = activityResponse.ok ? await activityResponse.json().catch(() => null) : null;
+    // A stale response must never overwrite a newer one.
+    if (seq !== loadSeqRef.current) return;
+    setPayments(((paymentPayload?.data?.payments ?? []) as any[]).map(toPaymentRow));
+    setActivities(activityPayload?.data?.activities ?? []);
+    setLoadError('');
+    setLoading(false);
+  }, [token]);
+
+  useEffect(() => {
+    if (!token) return;
+    const controller = new AbortController();
+    loadPayments(controller.signal).catch((cause) => {
+      if (controller.signal.aborted) return;
+      setLoading(false);
+      setLoadError(cause instanceof Error ? cause.message : 'Unable to load payment records.');
+    });
+    return () => controller.abort();
+  }, [loadPayments, token]);
 
   useEffect(() => {
     const state = location.state as { completeAppointmentId?: string; appointmentCode?: string } | null;
@@ -2607,178 +3182,224 @@ function PaymentPage() {
     }
   }, [location.state, payments]);
 
-  async function loadPayments(signal?: AbortSignal) {
-    const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
-    const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
-    const [paymentResponse, activityResponse] = await Promise.all([
-      apiFetch(`${baseUrl}/payments?page=1&limit=100`, { signal, headers }),
-      apiFetch(`${baseUrl}/payments/activity`, { signal, headers }),
-    ]);
-    const paymentPayload = await paymentResponse.json();
-    if (!paymentResponse.ok) throw new Error(paymentPayload.message ?? 'Payment records are not available from the configured backend.');
-    const activityPayload = activityResponse.ok ? await activityResponse.json() : { data: { activities: [] } };
-    setPayments(paymentPayload?.data?.payments ?? []);
-    setActivities(activityPayload?.data?.activities ?? []);
+  /**
+   * Mark a fully paid appointment completed. The server owns the transition
+   * rules (paid + past end time); this only sends the request and refreshes
+   * the ledger with the confirmed result.
+   */
+  async function completeAppointment(payment: PaymentRow) {
+    if (!token || !payment.appointmentId) {
+      setNotice('Sign in with an administrator account to complete appointments.');
+      return;
+    }
+    setCompleting(true);
+    try {
+      const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+      const response = await apiFetch(`${baseUrl}/appointments/${payment.appointmentId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+        body: JSON.stringify({ status: 'COMPLETED' }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(payload?.message ?? 'Unable to complete the appointment.');
+      await loadPayments();
+      setSelectedPayment(null);
+      setNotice(`Appointment ${payment.appointmentCode} marked completed.`);
+    } catch (cause) {
+      setNotice(cause instanceof Error ? cause.message : 'Unable to complete the appointment.');
+    } finally {
+      setCompleting(false);
+    }
   }
 
-  useEffect(() => {
-    if (!token && !mockApiEnabled) return;
-    const controller = new AbortController();
-    loadPayments(controller.signal).catch((cause) => {
-      if (!controller.signal.aborted) setNotice(cause instanceof Error ? cause.message : 'Unable to load payment records.');
-    });
-    return () => controller.abort();
-  }, []);
-
-  async function updatePaymentStatus(status: 'VERIFIED' | 'REJECTED') {
-    if (!selectedPayment) return;
+  async function updatePaymentStatus(payment: PaymentRow, status: 'VERIFIED' | 'REJECTED') {
     if (!token) {
       setNotice('Sign in with an administrator account to verify payments.');
       return;
     }
-    setBusy(true);
-    setNotice('');
+    const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+    const response = await apiFetch(`${baseUrl}/payments/${payment.id}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+      body: JSON.stringify({ status }),
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(payload?.message ?? 'Unable to update payment status.');
+    setPayments((current) => current.map((item) => (item.id === payment.id ? toPaymentRow(payload?.data?.payment) : item)));
+    const activityResponse = await apiFetch(`${baseUrl}/payments/activity`, { headers: authHeader(token) });
+    if (activityResponse.ok) {
+      const activityPayload = await activityResponse.json().catch(() => null);
+      setActivities(activityPayload?.data?.activities ?? []);
+    }
+    setPaymentConfirmation(null);
+    setNotice(`Payment ${payment.appointmentCode} ${status === 'VERIFIED' ? 'verified' : 'rejected'}.`);
+  }
+
+  /**
+   * Open the counter payment form.
+   *
+   * The picker is filled from the appointment list so money can be recorded
+   * for a booking that has no payment yet. The outstanding figure is shown
+   * only where the server has reported one; the API re-checks every amount.
+   */
+  async function openRecordModal() {
+    setRecordOpen(true);
+    if (pickerOptions !== null) return;
+    setPickerLoading(true);
     try {
       const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
-      const response = await apiFetch(`${baseUrl}/payments/${selectedPayment.id}/status`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ status }),
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.message ?? 'Unable to update payment status.');
-      setPayments((current) => current.map((payment) => payment.id === selectedPayment.id ? payload.data.payment : payment));
-      const activityResponse = await apiFetch(`${baseUrl}/payments/activity`, { headers: { Authorization: `Bearer ${token}` } });
-      if (activityResponse.ok) {
-        const activityPayload = await activityResponse.json();
-        setActivities(activityPayload?.data?.activities ?? []);
-      }
-      setSelectedPayment(null);
-      setPaymentConfirmation(null);
-      setNotice(`Payment ${selectedPayment.appointmentCode} ${status === 'VERIFIED' ? 'verified' : 'rejected'}.`);
-      setVerificationCode('');
+      const response = await apiFetch(`${baseUrl}/appointments?page=1&limit=100`, { headers: authHeader(token) });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(payload?.message ?? 'Appointments are not available.');
+      const rows = ((payload?.data?.appointments ?? []) as any[]).map(toAppointmentRow);
+      setPickerOptions(rows.map((row) => {
+        const known = payments.find((payment) => payment.appointmentId === String(row.id));
+        return {
+          appointmentId: String(row.id ?? ''),
+          appointmentCode: row.code,
+          label: `${row.customerName ?? 'Customer'} · ${row.serviceNames}`,
+          detail: `${formatRequestDate(row.appointmentDate)} · ${row.startTime}–${row.endTime}`,
+          outstanding: known ? known.outstanding : null,
+          total: row.totalAmount ?? null,
+        };
+      }));
     } catch (cause) {
-      throw cause instanceof Error ? cause : new Error('Unable to update payment status.');
+      setNotice(cause instanceof Error ? cause.message : 'Appointments are not available.');
+      setRecordOpen(false);
     } finally {
-      setBusy(false);
+      setPickerLoading(false);
     }
   }
 
-  function validatePaymentCode() {
-    if (!/^\d{5}$/.test(verificationCode.trim())) {
-      setCodeError('Enter the five-digit code provided with this appointment.');
-      return;
-    }
-    if (verificationCode.trim() !== String(selectedPayment?.verificationCode ?? '')) {
-      setCodeError('That code does not match this appointment. Check the booking reference and try again.');
-      return;
-    }
-    setCodeError('');
-    setPaymentConfirmation('VERIFIED');
-  }
-
-  const pendingPayments = payments.filter((payment) => payment.status === 'UNVERIFIED');
+  const pendingPayments = payments.filter((payment) => payment.status === 'UNVERIFIED' || payment.status === 'PENDING');
   const historyPayments = payments.filter((payment) => payment.status !== 'UNVERIFIED');
   const paymentToday = new Date();
   const todayKey = `${paymentToday.getFullYear()}-${String(paymentToday.getMonth() + 1).padStart(2, '0')}-${String(paymentToday.getDate()).padStart(2, '0')}`;
   const confirmedToday = payments.filter((payment) => payment.status === 'VERIFIED' && String(payment.verifiedAt ?? '').slice(0, 10) === todayKey);
   const displayedPayments = (tab === 'pending' ? pendingPayments : historyPayments).filter((payment) =>
-    `${payment.appointmentCode} ${payment.customerName} ${payment.customerEmail} ${payment.serviceName}`.toLowerCase().includes(search.toLowerCase()),
+    `${payment.appointmentCode} ${payment.customerName} ${payment.customerEmail} ${payment.serviceName} ${payment.referenceNo ?? ''}`.toLowerCase().includes(search.toLowerCase()),
   );
   const confirmedRevenue = payments.filter((payment) => payment.status === 'VERIFIED').reduce((sum, payment) => sum + Number(payment.amount ?? 0), 0);
+  const initialLoading = loading && payments.length === 0;
 
   return (
     <div className="payment-layout">
       <section className="payment-content">
         <div className="payment-stats">
-          <div className="payment-stat"><span className="status-badge warning">Needs action</span><strong>{pendingPayments.length}</strong><small>Pending payments</small></div>
-          <div className="payment-stat"><span className="status-badge success">Settled</span><strong>{confirmedToday.length}</strong><small>Confirmed today</small></div>
-          <div className="payment-stat"><span className="status-badge neutral">Review</span><strong>{payments.filter((payment) => payment.status === 'REJECTED').length}</strong><small>Rejected</small></div>
-          <div className="payment-stat"><span className="status-badge warning">Revenue</span><strong>₱{confirmedRevenue.toLocaleString()}</strong><small>Revenue confirmed</small></div>
+          <div className="payment-stat"><span className="status-badge warning">Needs action</span><strong>{initialLoading ? '…' : pendingPayments.length}</strong><small>Pending payments</small></div>
+          <div className="payment-stat"><span className="status-badge success">Settled</span><strong>{initialLoading ? '…' : confirmedToday.length}</strong><small>Confirmed today</small></div>
+          <div className="payment-stat"><span className="status-badge neutral">Review</span><strong>{initialLoading ? '…' : payments.filter((payment) => payment.status === 'REJECTED').length}</strong><small>Rejected</small></div>
+          <div className="payment-stat"><span className="status-badge warning">Revenue</span><strong>{initialLoading ? '…' : `₱${confirmedRevenue.toLocaleString()}`}</strong><small>Revenue confirmed</small></div>
         </div>
 
         <section className="panel payment-table-panel">
           <div className="payment-tabs">
             <div className="tab-group">
-              <button type="button" className={tab === 'pending' ? 'active' : ''} onClick={() => setTab('pending')}>Pending Queue <span>{pendingPayments.length}</span></button>
+              <button type="button" className={tab === 'pending' ? 'active' : ''} onClick={() => setTab('pending')}>Pending Queue <span>{initialLoading ? '' : pendingPayments.length}</span></button>
               <button type="button" className={tab === 'history' ? 'active' : ''} onClick={() => setTab('history')}>Payment History</button>
+              {canSettings && <button type="button" className={tab === 'settings' ? 'active' : ''} onClick={() => setTab('settings')}>Payment Settings</button>}
             </div>
-            <input aria-label="Search payments" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by reference or customer..." className="search-input" />
+            <div className="payment-tools">
+              <input aria-label="Search payments" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by reference or customer..." className="search-input" />
+              {canRecord && <button type="button" className="primary-action" onClick={() => void openRecordModal()}>Record payment</button>}
+            </div>
           </div>
           {notice && <p className="table-message" role="status">{notice}</p>}
-          {!mockApiEnabled && payments.length === 0 ? (
+          {tab === 'settings' ? (
+            <PaymentSettingsPanel />
+          ) : initialLoading ? (
+            <SkeletonRegion label="Loading payment records">
+              <TableSkeleton rows={5} columns={6} />
+            </SkeletonRegion>
+          ) : loadError ? (
             <div className="payment-unavailable">
-              <strong>Payments API unavailable</strong>
-              <p>{notice || 'The configured backend does not expose payment records. No demo payments are mixed into live data.'}</p>
+              <strong>Payments could not be loaded</strong>
+              <p>{loadError}</p>
+              <button type="button" className="secondary-action" onClick={() => { setLoading(true); void loadPayments().catch((cause) => { setLoading(false); setLoadError(cause instanceof Error ? cause.message : 'Unable to load payment records.'); }); }}>Try again</button>
+            </div>
+          ) : payments.length === 0 ? (
+            <div className="payment-unavailable">
+              <strong>No payments recorded yet</strong>
+              <p>Payments submitted online or recorded at the counter will appear here.</p>
             </div>
           ) : (
             <div className="payment-table-scroll">
               <table role="table" className="responsive-table">
-                <thead role="rowgroup"><tr><th role="columnheader" scope="col">Reference / Customer</th><th role="columnheader" scope="col">Service</th><th role="columnheader" scope="col">Amount</th><th role="columnheader" scope="col">Booking</th><th role="columnheader" scope="col">Payment</th><th role="columnheader" scope="col">Action</th></tr></thead>
+                <thead role="rowgroup"><tr><th role="columnheader" scope="col">Reference / Customer</th><th role="columnheader" scope="col">Service</th><th role="columnheader" scope="col">Amount</th><th role="columnheader" scope="col">Channel</th><th role="columnheader" scope="col">Booking</th><th role="columnheader" scope="col">Payment</th><th role="columnheader" scope="col">Action</th></tr></thead>
                 <tbody role="rowgroup">
                   {displayedPayments.map((payment) => (
                     <tr role="row" key={payment.id}>
-                      <td role="cell" data-label="Reference / Customer" data-primary><div className="payment-customer"><strong>{payment.customerName}</strong><small>{payment.appointmentCode} · {payment.customerEmail}</small></div></td>
+                      <td role="cell" data-label="Reference / Customer" data-primary><div className="payment-customer"><CustomerAvatar name={payment.customerName} /><div><strong>{payment.customerName}</strong><small>{payment.appointmentCode} · {payment.customerEmail}</small></div></div></td>
                       <td role="cell" data-label="Service">{payment.serviceName}</td>
-                      <td role="cell" data-label="Amount"><strong>₱{Number(payment.amount).toLocaleString()}</strong><small className="payment-method">{payment.paymentMethod}</small></td>
+                      <td role="cell" data-label="Amount"><strong>₱{Number(payment.amount).toLocaleString()}</strong><small className="payment-method">{methodLabel(payment.paymentMethod)}</small></td>
+                      <td role="cell" data-label="Channel"><span className={`status-badge ${channelBadge(payment.channel)}`}>{channelLabel(payment.channel)}</span></td>
                       <td role="cell" data-label="Booking"><span className={`status-badge ${appointmentStatusBadge(String(payment.bookingStatus ?? 'RESERVED'))}`}>{appointmentStatusText(String(payment.bookingStatus ?? 'RESERVED'))}</span></td>
-                      <td role="cell" data-label="Payment"><span className={`status-badge ${payment.status === 'VERIFIED' ? 'success' : payment.status === 'REJECTED' ? 'danger' : 'warning'}`}>{payment.status === 'VERIFIED' ? 'Verified' : payment.status === 'REJECTED' ? 'Rejected' : 'Pending'}</span></td>
-                      <td className="cell-actions" role="cell" data-label="Action">{payment.status === 'UNVERIFIED'
-                        ? <button type="button" className="payment-action approve-action" disabled={!token || !mockApiEnabled} onClick={() => { setSelectedPayment(payment); setVerificationCode(''); setCodeError(''); }}>Verify</button>
-                        : <span className="payment-date">{payment.verifiedAt ? new Date(payment.verifiedAt).toLocaleDateString() : '—'}</span>}</td>
+                      <td role="cell" data-label="Payment"><span className={`status-badge ${paymentStatusBadge(payment.status)}`}>{paymentStatusLabel(payment.status)}</span></td>
+                      <td className="cell-actions" role="cell" data-label="Action"><button type="button" className="payment-action" onClick={() => setSelectedPayment(payment)}>Details</button></td>
                     </tr>
                   ))}
-                  {displayedPayments.length === 0 && <tr role="row"><td colSpan={6} className="cell-empty" role="cell" data-empty>{payments.length ? 'No payments match this view.' : 'No payment records are available.'}</td></tr>}
+                  {displayedPayments.length === 0 && <tr role="row"><td colSpan={7} className="cell-empty" role="cell" data-empty>No payments match this view.</td></tr>}
                 </tbody>
               </table>
             </div>
           )}
-          {!token && mockApiEnabled && <p className="payment-hint">Sign in with the demo administrator to verify payments.</p>}
         </section>
 
-        <section className="panel payment-activity">
-          <div className="panel-header compact"><h3>Payment Activity Log</h3><span>Verification history</span></div>
-          {activities.length ? (
-            <ul className="payment-activity-list">
-              {activities.slice(0, 6).map((activity) => (
-                <li key={activity.id}><strong>{activity.message}</strong><small>{new Date(activity.createdAt).toLocaleString()}</small></li>
-              ))}
-            </ul>
-          ) : <p className="empty-list">Payment activity will appear here when payments are verified or rejected.</p>}
-        </section>
+        {tab !== 'settings' && (
+          <section className="panel payment-activity">
+            <div className="panel-header compact"><h3>Payment Activity Log</h3><span>Verification history</span></div>
+            {activities.length ? (
+              <ul className="payment-activity-list">
+                {activities.slice(0, 6).map((activity) => (
+                  <li key={activity.id}><strong>{activity.message}</strong><small>{new Date(activity.createdAt).toLocaleString()}</small></li>
+                ))}
+              </ul>
+            ) : <p className="empty-list">Payment activity will appear here when payments are verified or rejected.</p>}
+          </section>
+        )}
       </section>
 
       {selectedPayment && (
-        <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="verify-payment-title" onClick={closePaymentModal}>
-          <section ref={paymentDialogRef} className="modal-card payment-modal" onClick={(event) => event.stopPropagation()}>
-            <div className="modal-header"><h3 id="verify-payment-title">Verify payment</h3><button type="button" className="close-button" aria-label="Close payment verification" onClick={() => setSelectedPayment(null)}>×</button></div>
-            <p className="form-hint">Enter the five-digit payment code supplied for this appointment. This development verification does not process a real payment.</p>
-            <dl className="payment-details">
-              <div><dt>Reference</dt><dd>{selectedPayment.appointmentCode}</dd></div>
-              <div><dt>Customer</dt><dd>{selectedPayment.customerName}</dd></div>
-              <div><dt>Service</dt><dd>{selectedPayment.serviceName}</dd></div>
-              <div><dt>Amount</dt><dd>₱{Number(selectedPayment.amount).toLocaleString()}</dd></div>
-              <div><dt>Method</dt><dd>{selectedPayment.paymentMethod}</dd></div>
-            </dl>
-            {mockApiEnabled && <label className="field-label payment-code-field">PAYMENT CODE<input className="modal-input" inputMode="numeric" autoComplete="off" maxLength={5} value={verificationCode} onChange={(event) => { setVerificationCode(event.target.value.replace(/\D/g, '').slice(0, 5)); setCodeError(''); }} aria-describedby={codeError ? 'payment-code-error' : undefined} aria-invalid={codeError ? true : undefined} /></label>}
-            {codeError && <p id="payment-code-error" className="form-error" role="alert">{codeError}</p>}
-            <div className="modal-actions">
-              <button type="button" className="secondary-action" onClick={() => setSelectedPayment(null)}>Cancel</button>
-              <button type="button" className="reject-action" disabled={!token || !mockApiEnabled} onClick={() => setPaymentConfirmation('REJECTED')}>Reject</button>
-              <button type="button" className="primary-action" disabled={!token || !mockApiEnabled || busy} onClick={validatePaymentCode}>Validate code</button>
-            </div>
-          </section>
-        </div>
+        <PaymentDetailModal
+          payment={selectedPayment}
+          payments={payments}
+          canReview={canReview}
+          onComplete={() => completeAppointment(selectedPayment)}
+          completing={completing}
+          onClose={() => setSelectedPayment(null)}
+          onVerify={() => {
+            setPaymentConfirmation({ payment: selectedPayment, status: 'VERIFIED' });
+            setSelectedPayment(null);
+          }}
+          onReject={() => {
+            setPaymentConfirmation({ payment: selectedPayment, status: 'REJECTED' });
+            setSelectedPayment(null);
+          }}
+        />
       )}
-      {paymentConfirmation && selectedPayment && (
+      {paymentConfirmation && (
         <ConfirmModal
-          title={paymentConfirmation === 'VERIFIED' ? 'Confirm payment?' : 'Reject payment?'}
-          message={paymentConfirmation === 'VERIFIED' ? `The code matches ${selectedPayment.appointmentCode}. Record ₱${Number(selectedPayment.amount).toLocaleString()} as verified in the development demo?` : `Reject the payment for ${selectedPayment.appointmentCode}? This changes only the development demo record.`}
-          confirmLabel={paymentConfirmation === 'VERIFIED' ? 'Confirm payment' : 'Reject payment'}
-          danger={paymentConfirmation === 'REJECTED'}
+          title={paymentConfirmation.status === 'VERIFIED' ? 'Confirm payment?' : 'Reject payment?'}
+          message={paymentConfirmation.status === 'VERIFIED'
+            ? `Record ₱${Number(paymentConfirmation.payment.amount).toLocaleString()} as verified for ${paymentConfirmation.payment.appointmentCode}? The appointment balance is updated by the server.`
+            : `Reject the ₱${Number(paymentConfirmation.payment.amount).toLocaleString()} payment for ${paymentConfirmation.payment.appointmentCode}? The transaction stays on record as rejected.`}
+          confirmLabel={paymentConfirmation.status === 'VERIFIED' ? 'Confirm payment' : 'Reject payment'}
+          danger={paymentConfirmation.status === 'REJECTED'}
           onClose={() => setPaymentConfirmation(null)}
-          onConfirm={() => updatePaymentStatus(paymentConfirmation)}
+          onConfirm={() => updatePaymentStatus(paymentConfirmation.payment, paymentConfirmation.status)}
           onError={setNotice}
+        />
+      )}
+      {recordOpen && (
+        <RecordPaymentModal
+          options={pickerOptions ?? []}
+          loadingOptions={pickerLoading}
+          onClose={() => setRecordOpen(false)}
+          onRecorded={(payment) => {
+            setRecordOpen(false);
+            setNotice(`Payment recorded for ${payment.appointmentCode}.`);
+            void loadPayments().catch(() => undefined);
+          }}
         />
       )}
     </div>
@@ -2790,7 +3411,8 @@ function PaymentVerificationPage() {
   const navigate = useNavigate();
   const token = getAccessToken();
   const [payment, setPayment] = useState<any | null>(null);
-  const [verificationCode, setVerificationCode] = useState('');
+  // Appointment code for the manual validate step (APT- + typed part).
+  const [typedAppointmentCode, setTypedAppointmentCode] = useState('');
   const [codeError, setCodeError] = useState('');
   const [status, setStatus] = useState<'VERIFIED' | 'REJECTED' | null>(null);
   const [busy, setBusy] = useState(false);
@@ -2843,11 +3465,13 @@ function PaymentVerificationPage() {
 
   function validatePaymentCode() {
     if (!payment) return;
-    if (!/^\d{5}$/.test(verificationCode.trim())) {
-      setCodeError('Enter the five-digit code provided with this appointment.');
+    // The field carries the full appointment code (APT- + the typed part).
+    const typed = typedAppointmentCode.trim().toUpperCase();
+    if (!typed.startsWith('APT-') || typed.length <= 4) {
+      setCodeError('Enter the appointment code shown on the booking.');
       return;
     }
-    if (verificationCode.trim() !== String(payment.verificationCode ?? '')) {
+    if (!codesMatch(typed, String(payment.appointmentCode ?? ''))) {
       setCodeError('That code does not match this appointment. Check the booking reference and try again.');
       return;
     }
@@ -2873,14 +3497,21 @@ function PaymentVerificationPage() {
       <div className="payment-verify-grid">
         <dl className="payment-details">
           <div><dt>Reference</dt><dd>{payment.appointmentCode}</dd></div>
-          <div><dt>Customer</dt><dd>{payment.customerName}</dd></div>
+          <div><dt>Customer</dt><dd><span className="person-inline"><CustomerAvatar name={payment.customerName} /><span>{payment.customerName}</span></span></dd></div>
           <div><dt>Service</dt><dd>{payment.serviceName}</dd></div>
           <div><dt>Amount</dt><dd>₱{Number(payment.amount).toLocaleString()}</dd></div>
           <div><dt>Method</dt><dd>{payment.paymentMethod}</dd></div>
           <div><dt>Status</dt><dd>{payment.status === 'VERIFIED' ? 'Verified' : payment.status === 'REJECTED' ? 'Rejected' : 'Pending verification'}</dd></div>
         </dl>
         <div className="payment-verify-form">
-          <label className="field-label payment-code-field">PAYMENT CODE<input className="modal-input" inputMode="numeric" autoComplete="off" maxLength={5} value={verificationCode} onChange={(event) => { setVerificationCode(event.target.value.replace(/\D/g, '').slice(0, 5)); setCodeError(''); }} aria-describedby={codeError ? 'payment-code-error' : undefined} /></label>
+          <div className="payment-code-field">
+            <AppointmentCodeInput
+              label="APPOINTMENT CODE"
+              value={typedAppointmentCode}
+              onChange={(next) => { setTypedAppointmentCode(next); setCodeError(''); }}
+              describedBy={codeError ? 'payment-code-error' : undefined}
+            />
+          </div>
           {codeError && <p id="payment-code-error" className="form-error" role="alert">{codeError}</p>}
           {notice && <p className="table-message" role="status">{notice}</p>}
           <div className="modal-actions">
@@ -2912,7 +3543,33 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
   const [scheduleError, setScheduleError] = useState('');
   const [copied, setCopied] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [coveredRoles, setCoveredRoles] = useState<string[]>([]);
+  const [specialties, setSpecialties] = useState<string[]>([]);
+  const [showOnTeam, setShowOnTeam] = useState(false);
+  const [specialtyError, setSpecialtyError] = useState('');
+  const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
+  const photoRef = useRef<ImageUploadHandle | null>(null);
   const dialogRef = useDialogBehavior<HTMLFormElement>(onClose);
+
+  // The specialties offered are the service categories, so a staff member is
+  // marked against the catalogue the studio actually sells.
+  useEffect(() => {
+    const token = getAccessToken();
+    if (!token) return;
+    const controller = new AbortController();
+    apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/services/categories`, {
+      signal: controller.signal,
+      headers: { ...authHeader(token) },
+    })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => null);
+        if (!response.ok) return;
+        const rows = (payload?.data?.categories ?? []) as Array<{ id: string; name: string; isActive?: boolean }>;
+        setCategories(rows.filter((category) => category.isActive !== false).map((category) => ({ id: String(category.id), name: String(category.name) })));
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, []);
 
   function validatePasswordStrength(value: string): boolean {
     return isValidPassword(value);
@@ -2942,6 +3599,12 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
     else if (!isValidPassword(password)) errors.password = PASSWORD_MESSAGE;
     if (!confirmPassword) errors.confirmPassword = 'Repeat the temporary password.';
     else if (!passwordsMatch(password, confirmPassword)) errors.confirmPassword = PASSWORD_MATCH_MESSAGE;
+    const phone = String(form.get('phone') ?? '').trim();
+    if (phone && !isValidPhilippineMobile(phone)) errors.phone = PHONE_MESSAGE;
+    const position = String(form.get('position') ?? '').trim();
+    if (position.length > 100) errors.position = 'Keep the position under 100 characters.';
+    const bio = String(form.get('bio') ?? '').trim();
+    if (bio.length > 1000) errors.bio = 'Keep the bio under 1000 characters.';
     return errors;
   }
 
@@ -2960,7 +3623,7 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
 
   /** Show the message for the first field that is not acceptable. */
   function focusFirstError(errors: Record<string, string>) {
-    const order = ['firstName', 'lastName', 'email', 'password', 'confirmPassword'];
+    const order = ['firstName', 'lastName', 'email', 'password', 'confirmPassword', 'phone', 'position', 'bio'];
     for (const field of order) {
       if (!errors[field]) continue;
       dialogRef.current?.querySelector<HTMLElement>(`[name="${field}"]`)?.focus();
@@ -3017,19 +3680,21 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
     const form = new FormData(event.currentTarget);
     const errors = collectFieldErrors(form);
     setFieldErrors(errors);
-    if (Object.keys(errors).length > 0) {
+    // Showing a profile on the team page needs at least one specialty, so the
+    // page never lists someone with nothing they are known for.
+    const specialtyMessage = showOnTeam && specialties.length === 0
+      ? 'Select at least one specialty when the profile is shown on the team page.'
+      : '';
+    setSpecialtyError(specialtyMessage);
+    if (Object.keys(errors).length > 0 || specialtyMessage) {
       // The form stays open and keeps what was typed, so the reader can
       // put right the one field that is wrong.
       focusFirstError(errors);
       return;
     }
-    if (!mockApiEnabled) {
-      setResult({ success: false, title: 'Account not created', message: 'Account provisioning is not available: the configured backend has no administrator account-creation endpoint.' });
-      return;
-    }
     const token = getAccessToken();
     if (!token) {
-      setResult({ success: false, title: 'Account not created', message: 'Sign in with the demo administrator before creating accounts.' });
+      setResult({ success: false, title: 'Account not created', message: 'Sign in as an administrator before creating accounts.' });
       return;
     }
     if (!validatePasswordStrength(password)) {
@@ -3042,49 +3707,94 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
     }
     if (!validateSchedule()) return;
     setSubmitting(true);
+    const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+    const firstName = String(form.get('firstName') ?? '').trim();
+    const lastName = String(form.get('lastName') ?? '').trim();
+    const phone = String(form.get('phone') ?? '').trim();
+    const position = String(form.get('position') ?? '').trim();
+    const bio = String(form.get('bio') ?? '').trim();
     try {
-    const response = await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/accounts`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({
-        firstName: String(form.get('firstName')).trim(),
-        lastName: String(form.get('lastName')).trim(),
-        email: form.get('email'),
-        role: selectedRole.toUpperCase(),
-        password,
-        schedule: schedule.filter((day) => day.enabled).map((day) => ({
-          dayOfWeek: day.dayOfWeek,
-          startTime: day.startTime,
-          endTime: day.endTime,
-          isActive: true,
-        })),
-      }),
-    });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.message ?? 'Unable to create demo account.');
-      const staffId = payload.data?.staffId;
-      if (staffId && payload.data?.schedule && payload.data.schedule.length > 0) {
-        await apiFetch(`${import.meta.env.VITE_API_URL ?? 'http://localhost:3000'}/schedules/staff`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ staffId, schedule: payload.data.schedule }),
-        });
-      }
-      const firstName = String(form.get('firstName')).trim();
-      const email = String(form.get('email')).trim();
-      // The credentials are shown once, in the handover panel, so the
-      // administrator can copy them. They are not kept in any storage.
-      setCreatedCredentials({
-        accountId: String(payload.data?.id ?? ''),
-        email,
-        name: firstName,
-        password,
+      const response = await apiFetch(`${baseUrl}/accounts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+        body: JSON.stringify({
+          email: String(form.get('email') ?? '').trim(),
+          password,
+          // The API refuses the ADMIN role, and this form never offers it.
+          role: selectedRole === 'Manager' ? 'MANAGER' : 'STAFF',
+          firstName,
+          lastName,
+          phone: phone || undefined,
+          position: position || undefined,
+          bio: bio || undefined,
+          coveredRoles,
+          showOnTeam,
+          specialties,
+        }),
       });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(payload?.message ?? 'The account could not be created.');
+      const account = payload?.data?.account ?? {};
+      const staffId = payload?.data?.staff?.id ? String(payload.data.staff.id) : '';
+      let caveats = '';
+
+      // The photo belongs to the staff profile, so it is uploaded only once
+      // the account has been created and its staff row exists.
+      if (photoRef.current?.hasPendingFile()) {
+        if (!staffId) {
+          caveats = ' The photo was not uploaded because this account has no staff profile.';
+        } else {
+          try {
+            await photoRef.current.upload(`${baseUrl}/staff/${staffId}/photo`);
+          } catch (cause) {
+            caveats = ` The account was created, but the photo was not uploaded: ${cause instanceof Error ? cause.message : 'the upload failed.'}`;
+          }
+        }
+      }
+
+      // The weekly schedule is set the same way the staff editor sets it.
+      if (staffId && schedule.some((day) => day.enabled)) {
+        try {
+          await apiFetch(`${baseUrl}/schedules/staff/${staffId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+            body: JSON.stringify({
+              schedule: schedule
+                .filter((day) => day.enabled)
+                .map((day) => ({ dayOfWeek: day.dayOfWeek, startTime: day.startTime, endTime: day.endTime, isActive: true })),
+            }),
+          });
+        } catch {
+          // A schedule that could not be saved is set in the staff editor.
+          caveats += ' The weekly schedule could not be saved; set it in the staff editor.';
+        }
+      }
+
+      const credentials: StaffCredentials = {
+        accountId: String(account.id ?? ''),
+        email: String(account.email ?? form.get('email') ?? ''),
+        name: `${firstName} ${lastName}`.trim(),
+        password,
+      };
+      setSubmitting(false);
+      showToast('success', 'Staff member created successfully.');
+      if (caveats) {
+        setResult({ success: true, title: 'Account created', message: `${credentials.name} can now sign in.${caveats}` });
+      }
+      setCreatedCredentials(credentials);
     } catch (cause) {
-      setResult({ success: false, title: 'Account not created', message: cause instanceof Error ? cause.message : 'Unable to create demo account.' });
-    } finally {
+      const message = cause instanceof Error ? cause.message : 'The account could not be created.';
+      showToast('error', message);
+      setResult({ success: false, title: 'Account not created', message });
       setSubmitting(false);
     }
+  }
+
+  if (result) {
+    return <ResultModal success={result.success} title={result.title} message={result.message} onClose={() => {
+      if (result.success && !createdCredentials) window.location.reload();
+      else setResult(null);
+    }} />;
   }
 
   if (createdCredentials) {
@@ -3096,13 +3806,6 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
     );
   }
 
-  if (result) {
-    return <ResultModal success={result.success} title={result.title} message={result.message} onClose={() => {
-      if (result.success) window.location.reload();
-      else setResult(null);
-    }} />;
-  }
-
   return (
     <div className="modal-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="account-creation-title">
       <form ref={dialogRef} className="modal-card account-creation-modal" onSubmit={createAccount} onClick={(event) => event.stopPropagation()} noValidate>
@@ -3110,7 +3813,7 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
           <h3 id="account-creation-title">Create Staff / Manager Account</h3>
           <button type="button" className="close-button" aria-label="Close account modal" onClick={onClose}>×</button>
         </div>
-        <div className="modal-subtitle">Enter the account details, choose a role, and set the weekly schedule.</div>
+        <div className="modal-subtitle">Enter the account details, choose a role, and set the profile and weekly schedule.</div>
 
         <div className="form-section">
           <h4 className="form-section-title">Account details</h4>
@@ -3138,6 +3841,58 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
               {...invalidField('account-email-error', fieldErrors.email)} />
             <FieldError id="account-email-error" message={fieldErrors.email} />
           </label>
+        </div>
+
+        <div className="form-section">
+          <h4 className="form-section-title">Profile</h4>
+          <ImageUploadField ref={photoRef} label="STAFF PHOTO" idPrefix="account-photo" />
+          <div className="form-grid">
+            <label className="field-label" htmlFor="account-phone">PHONE
+              <input id="account-phone" name="phone" className="modal-input" type="tel" maxLength={30}
+                inputMode="tel" autoComplete="tel"
+                onBlur={(event) => recheckField('phone', event.currentTarget.form)}
+                {...invalidField('account-phone-error', fieldErrors.phone)} />
+              <FieldError id="account-phone-error" message={fieldErrors.phone} />
+            </label>
+            <label className="field-label" htmlFor="account-position">POSITION
+              <input id="account-position" name="position" className="modal-input" maxLength={100}
+                placeholder="e.g. Senior Stylist"
+                onBlur={(event) => recheckField('position', event.currentTarget.form)}
+                {...invalidField('account-position-error', fieldErrors.position)} />
+              <FieldError id="account-position-error" message={fieldErrors.position} />
+            </label>
+          </div>
+          <label className="field-label" htmlFor="account-bio">BIO
+            <textarea id="account-bio" name="bio" className="modal-input" rows={3} maxLength={1000}
+              placeholder="A short introduction shown on the team page."
+              onBlur={(event) => recheckField('bio', event.currentTarget.form)}
+              {...invalidField('account-bio-error', fieldErrors.bio)} />
+            <FieldError id="account-bio-error" message={fieldErrors.bio} />
+          </label>
+          <TagMultiSelect
+            label="COVERED ROLES"
+            hint="Roles this staff member can step into. Pick from the list or add your own."
+            options={COVERED_ROLE_VOCABULARY}
+            value={coveredRoles}
+            onChange={setCoveredRoles}
+          />
+          <CheckboxMultiSelect
+            label="SPECIALTIES"
+            options={categories}
+            value={specialties}
+            onChange={(next) => { setSpecialties(next); if (next.length > 0) setSpecialtyError(''); }}
+            errorId="account-specialties-error"
+            errorMessage={specialtyError}
+          />
+          <ToggleSwitch
+            label="Show on team page"
+            hint="List this staff member on the public team page."
+            checked={showOnTeam}
+            onChange={(next) => {
+              setShowOnTeam(next);
+              if (!next) setSpecialtyError('');
+            }}
+          />
         </div>
 
         <div className="form-section">
@@ -3236,11 +3991,9 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
           </div>
         </div>
 
-        {!mockApiEnabled && <p className="form-hint">This configured backend does not support administrator-created accounts.</p>}
-
         <div className="modal-actions">
           <button type="button" className="secondary-action" onClick={onClose}>Cancel</button>
-          <button type="submit" className="primary-action" disabled={!mockApiEnabled || submitting}>{submitting ? 'Creating…' : 'Create Account'}</button>
+          <button type="submit" className="primary-action" disabled={submitting}>{submitting ? 'Creating…' : 'Create Account'}</button>
         </div>
       </form>
     </div>
@@ -3248,12 +4001,14 @@ function AccountCreationModal({ onClose }: { onClose: () => void }) {
 }
 
 
-function LoginPage({ onLogin }: { onLogin: (role: AccountRole | null) => void }) {
+function LoginPage({ onLogin, sessionExpired = false }: { onLogin: (role: AccountRole | null) => void; sessionExpired?: boolean }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   /**
@@ -3274,7 +4029,8 @@ function LoginPage({ onLogin }: { onLogin: (role: AccountRole | null) => void })
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (submitting) return;
+    // Guards duplicate submissions even before React re-renders.
+    if (submittingRef.current || submitting) return;
     const errors = collectFieldErrors();
     setFieldErrors(errors);
     if (Object.keys(errors).length > 0) {
@@ -3286,6 +4042,7 @@ function LoginPage({ onLogin }: { onLogin: (role: AccountRole | null) => void })
       }
       return;
     }
+    submittingRef.current = true;
     setSubmitting(true);
     setError('');
 
@@ -3293,12 +4050,14 @@ function LoginPage({ onLogin }: { onLogin: (role: AccountRole | null) => void })
       const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
       const response = await apiFetch(`${baseUrl}/auth/login`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), password }),
+        // Cookie mode: the refresh token comes back as an httpOnly cookie and
+        // never appears in the response body or in web storage.
+        headers: { 'Content-Type': 'application/json', 'X-Auth-Mode': 'cookie' },
+        body: JSON.stringify({ email: email.trim(), password, ...(rememberMe ? { rememberMe: true } : {}) }),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.message ?? 'Unable to sign in. Check your credentials and API connection.');
-      storeAccessTokens(payload.data.accessToken, payload.data.refreshToken);
+      storeAccessTokens(payload.data.accessToken);
       // The role decides which area the session opens. It is read from the
       // sign-in response and used for navigation only; the API remains the
       // authority on what the session may do.
@@ -3307,6 +4066,7 @@ function LoginPage({ onLogin }: { onLogin: (role: AccountRole | null) => void })
       onLogin(session?.role ?? null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unable to sign in.');
+      submittingRef.current = false;
       setSubmitting(false);
     }
   }
@@ -3376,6 +4136,19 @@ function LoginPage({ onLogin }: { onLogin: (role: AccountRole | null) => void })
               </div>
               <FieldError id="login-password-error" message={fieldErrors.password} />
             </div>
+            <label className="login-remember">
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(event) => setRememberMe(event.target.checked)}
+              />
+              Keep me logged in
+            </label>
+            {sessionExpired && (
+              <p className="login-session-expired" role="status">
+                Your session has expired. Please sign in again.
+              </p>
+            )}
             {error && (
               <p className="login-error" role="alert">
                 <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.5"/><path d="M12 8v4M12 16h.01" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"/></svg>
@@ -3390,7 +4163,6 @@ function LoginPage({ onLogin }: { onLogin: (role: AccountRole | null) => void })
                 <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeDasharray="31.4 31.4"/></svg>
               </span>
             </button>
-            {mockApiEnabled && <DemoCredentials />}
           </form>
           <footer className="login-footer">
             <p>Royalty Hair &amp; Nails Studio</p>

@@ -1,5 +1,11 @@
-import { randomUUID } from 'node:crypto';
+import {
+  createWithUniqueAppointmentCode,
+  normalizeAppointmentCode,
+} from './appointment-code.js';
+import { mapWithConcurrency } from '../../utils/concurrency.js';
 import { db } from '../../prisma/db.js';
+import { categoryRatingsFromRows, computeOverallRating, type CategoryRatings } from '../reviews/reviews.rules.js';
+import { ReviewPhotosService } from '../reviews/photos.service.js';
 import {
   pgNumeric,
   pgVarchar,
@@ -20,6 +26,7 @@ import {
   toPlainTime,
 } from '../../utils/date-time.js';
 import { StaffService, type EligibleStaffInfo } from '../staff/staff.service.js';
+import { PaymentsService } from '../payments/payments.service.js';
 import type { CreateAppointmentInput } from './appointments.schemas.js';
 import type { CalendarAvailabilityQuery } from './appointments.schemas.js';
 import {
@@ -29,12 +36,14 @@ import {
   canTransitionStatus,
   dateOnly,
   dateString,
+  assertWithinBookingMonth,
   hasAppointmentTimePassed,
   isoDayOfWeek,
   incrementTime,
   localDateAndTime,
   sumDecimalStrings,
   timeRangesOverlap,
+  weekdayName,
 } from './appointments.rules.js';
 type AppointmentRecord = {
   id: string;
@@ -68,6 +77,8 @@ interface BookingPlan {
   totalAmount: string;
   services: BookingService[];
   available: boolean;
+  /** First clear rule message when available is false. */
+  unavailableReason?: string;
 }
 
 type EligibleCalendarStaff = EligibleStaffInfo;
@@ -97,6 +108,25 @@ export interface CompletedAppointmentInfo extends AppointmentInfo {
   staff: { id: string; firstName: string; lastName: string; primaryRole: string } | null;
   reviewEligible: boolean;
   alreadyReviewed: boolean;
+}
+
+/**
+ * The caller's own appointment with its review status — the read side of the
+ * review flow: which visits are reviewed and which are still reviewable.
+ */
+export interface MineAppointmentInfo extends AppointmentInfo {
+  alreadyReviewed: boolean;
+  /** Assigned staff identity for display; null when unassigned. */
+  staff: { id: string; firstName: string; lastName: string } | null;
+  review: {
+    /** Computed category average (1 dp), or the grandfathered legacy rating. */
+    overallRating: number;
+    /** Four category ratings, or null for grandfathered reviews (overall-only). */
+    ratings: CategoryRatings | null;
+    comment: string | null;
+    /** Visible photos only: { position, url }. */
+    photos: Array<{ position: number; url: string }>;
+  } | null;
 }
 
 /**
@@ -141,6 +171,15 @@ function toApplicationAppointment(appointment: AppointmentRecord): ApplicationAp
     startTime: fromPrismaTime(appointment.startTime),
     endTime: fromPrismaTime(appointment.endTime),
   };
+}
+
+// Per staff+date mutex for booking creation (see AppointmentsService.create).
+const staffSlotLocks = new Map<string, Promise<unknown>>();
+async function withStaffSlotLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const previous = staffSlotLocks.get(key) ?? Promise.resolve();
+  const run = previous.then(fn, fn);
+  staffSlotLocks.set(key, run.then(() => undefined, () => undefined));
+  return run;
 }
 
 export class AppointmentsService {
@@ -218,37 +257,75 @@ export class AppointmentsService {
     return { timezone: env.STUDIO_TIME_ZONE, dates };
   }
 
+  /**
+   * Serialize the availability plan and the insert per staff member and day,
+   * so two concurrent requests can never both pass the conflict check and
+   * double-book the same stylist (single-process mutex, mirroring the
+   * payments module's appointment lock; the unique appointment-code
+   * constraint remains the race-safe backstop for code collisions).
+   */
   static async create(data: CreateAppointmentInput, requestingUserId: string): Promise<AppointmentInfo> {
+    return withStaffSlotLock(`${data.staffId ?? 'auto'}|${String(data.appointmentDate)}`, () =>
+      this.createLocked(data, requestingUserId),
+    );
+  }
+
+  private static async createLocked(data: CreateAppointmentInput, requestingUserId: string): Promise<AppointmentInfo> {
     const customer = await db.orm.public.Customer.where({ accountId: requestingUserId }).first();
     if (!customer) throw new NotFoundError('No customer profile found for this account');
 
     const plan = await this.getBookingPlan(data);
     if (!plan.available) {
-      throw new ConflictError('The requested staff member is not available for this appointment');
+      const reason = plan.unavailableReason ?? 'The requested staff member is not available for this appointment';
+      if (reason === 'The chosen stylist already has a booking at that time.') {
+        throw new ConflictError(reason);
+      }
+      throw new BadRequestError(reason);
+    }
+
+    // Server-side re-validation (never trust the client's recommendation):
+    // the chosen staff must cover every category the selected services need.
+    if (data.staffId) {
+      const neededCategories = new Set<string>();
+      for (const serviceId of data.serviceIds) {
+        const service = await db.orm.public.Service.where({ id: serviceId }).first();
+        if (service) neededCategories.add(String(service.categoryId));
+      }
+      const links = await db.orm.public.StaffCategory.where({ staffId: data.staffId }).all();
+      const covered = links.map((link) => String(link.categoryId));
+      const missing = [...neededCategories].filter((categoryId) => !covered.includes(categoryId));
+      if (missing.length > 0) {
+        throw new ConflictError('The chosen stylist does not cover every selected service category');
+      }
     }
 
     let appointmentId = '';
-    await db.transaction(async (tx: TransactionContext) => {
-      const appointment = await tx.orm.public.Appointment.create(withStaffAssignment({
-        appointmentCode: pgVarchar<40>(`APT-${randomUUID().toUpperCase()}`),
-        customerId: customer.id,
-        appointmentDate: toPlainDate(plan.appointmentDate),
-        startTime: toPlainTime(data.startTime),
-        endTime: toPlainTime(plan.endTime),
-        totalAmount: pgNumeric(plan.totalAmount),
-        status: 'RESERVED',
-      }, data.staffId));
-      appointmentId = appointment.id;
+    // Short codes (APT- + five digits) share a 100k space, so the unique
+    // constraint appointments_appointment_code_key is the race-safe backstop:
+    // a code collision re-runs the whole transaction with fresh digits.
+    await createWithUniqueAppointmentCode(async (appointmentCode) => {
+      await db.transaction(async (tx: TransactionContext) => {
+        const appointment = await tx.orm.public.Appointment.create(withStaffAssignment({
+          appointmentCode: pgVarchar<40>(appointmentCode),
+          customerId: customer.id,
+          appointmentDate: toPlainDate(plan.appointmentDate),
+          startTime: toPlainTime(data.startTime),
+          endTime: toPlainTime(plan.endTime),
+          totalAmount: pgNumeric(plan.totalAmount),
+          status: 'RESERVED',
+        }, data.staffId));
+        appointmentId = appointment.id;
 
-      for (const service of plan.services) {
-        await tx.orm.public.AppointmentService.create({
-          appointmentId: appointment.id,
-          serviceId: service.id,
-          serviceName: pgVarchar<200>(service.name),
-          price: pgNumeric(service.price),
-          durationMinutes: service.durationMinutes,
-        });
-      }
+        for (const service of plan.services) {
+          await tx.orm.public.AppointmentService.create({
+            appointmentId: appointment.id,
+            serviceId: service.id,
+            serviceName: pgVarchar<200>(service.name),
+            price: pgNumeric(service.price),
+            durationMinutes: service.durationMinutes,
+          });
+        }
+      });
     });
 
     const appointment = await db.orm.public.Appointment.where({ id: appointmentId }).first();
@@ -297,7 +374,37 @@ export class AppointmentsService {
     const appointmentsRaw = await query.offset(skip).limit(limit).all();
     const appointments = await collect(appointmentsRaw as Iterable<AppointmentRecord> | AsyncIterable<AppointmentRecord>);
     return {
-      appointments: await Promise.all(appointments.map((appointment) => this.mapAppointment(toApplicationAppointment(appointment)))),
+      // The admin calendar reads the customer and the assigned stylist by
+      // name (appointmentsQuery.toAppointmentRow), so every row is enriched
+      // exactly like the customer-facing lists: the stylist chosen in the
+      // booking modal must be visible on the admin side.
+      appointments: await mapWithConcurrency(appointments, 3, async (appointment) => {
+        const [mapped, customer, staffRecord] = await Promise.all([
+          this.mapAppointment(toApplicationAppointment(appointment)),
+          db.orm.public.Customer.where({ id: appointment.customerId }).first(),
+          appointment.staffId
+            ? db.orm.public.Staff.where({ id: appointment.staffId }).first()
+            : Promise.resolve(null),
+        ]);
+        return {
+          ...mapped,
+          customer: customer
+            ? {
+                id: customer.id,
+                firstName: customer.firstName,
+                lastName: customer.lastName,
+                phone: customer.phone,
+              }
+            : null,
+          staff: staffRecord
+            ? {
+                id: staffRecord.id,
+                firstName: staffRecord.firstName,
+                lastName: staffRecord.lastName,
+              }
+            : null,
+        };
+      }),
       total,
     };
   }
@@ -324,7 +431,68 @@ export class AppointmentsService {
     const appointmentsRaw = await query.offset(skip).limit(limit).all();
     const appointments = await collect(appointmentsRaw as Iterable<AppointmentRecord> | AsyncIterable<AppointmentRecord>);
     return {
-      appointments: await Promise.all(appointments.map((appointment) => this.mapAppointment(toApplicationAppointment(appointment)))),
+      appointments: await mapWithConcurrency(appointments, 3, (appointment) => this.mapAppointment(toApplicationAppointment(appointment))),
+      total,
+    };
+  }
+
+  /**
+   * The caller's appointments with services and review status. Read-only;
+   * the review flag mirrors the one-review-per-appointment unique constraint.
+   */
+  static async listMineWithReviewStatus(
+    requestingUserId: string,
+    role: string,
+    page: number,
+    limit: number
+  ): Promise<{ appointments: MineAppointmentInfo[]; total: number }> {
+    const customer = await db.orm.public.Customer.where({ accountId: requestingUserId }).first();
+    if (!customer) {
+      // Staff-side roles have no customer profile. They must never see other
+      // customers' appointments, so they get their own (empty) list.
+      if (role === 'ADMIN' || role === 'MANAGER') return { appointments: [], total: 0 };
+      throw new NotFoundError('No customer profile found for this account');
+    }
+    if (role !== 'CUSTOMER' && role !== 'ADMIN' && role !== 'MANAGER') {
+      throw new ForbiddenError('Only customers and administrators can view customer appointments');
+    }
+
+    const totalResult = await db.orm.public.Appointment
+      .where({ customerId: customer.id })
+      .aggregate((aggregate) => ({ total: aggregate.count() }));
+    const total = typeof totalResult.total === 'number' ? totalResult.total : 0;
+    const skip = (page - 1) * limit;
+    const query = db.orm.public.Appointment.where({ customerId: customer.id })
+      .orderBy((appointment) => appointment.appointmentDate.desc());
+    const appointmentsRaw = await query.offset(skip).limit(limit).all();
+    const mineRecords = await collect(appointmentsRaw as Iterable<AppointmentRecord> | AsyncIterable<AppointmentRecord>);
+    return {
+      appointments: await mapWithConcurrency(mineRecords, 2, async (appointment): Promise<MineAppointmentInfo> => {
+        const [mapped, review, staffRecord] = await Promise.all([
+          this.mapAppointment(toApplicationAppointment(appointment)),
+          db.orm.public.Review.where({ appointmentId: appointment.id }).first(),
+          appointment.staffId
+            ? db.orm.public.Staff.where({ id: appointment.staffId }).first()
+            : Promise.resolve(null),
+        ]);
+        const staff = staffRecord
+          ? { id: staffRecord.id, firstName: staffRecord.firstName, lastName: staffRecord.lastName }
+          : null;
+        if (!review) return { ...mapped, alreadyReviewed: false, staff, review: null };
+        const ratingRows = await db.orm.public.ReviewRating.where({ reviewId: review.id }).all();
+        const ratings = categoryRatingsFromRows(ratingRows.map((row) => ({ category: row.category, rating: row.rating })));
+        return {
+          ...mapped,
+          alreadyReviewed: true,
+          staff,
+          review: {
+            overallRating: ratings ? computeOverallRating(ratings) : review.rating,
+            ratings,
+            comment: review.comment,
+            photos: await ReviewPhotosService.visiblePhotos(String(review.id)),
+          },
+        };
+      }),
       total,
     };
   }
@@ -346,7 +514,7 @@ export class AppointmentsService {
       .orderBy((appointment) => appointment.appointmentDate.desc());
     const appointmentRecords = await appointmentsRaw.offset(skip).limit(limit).all();
     const appointments = await collect(appointmentRecords as Iterable<AppointmentRecord> | AsyncIterable<AppointmentRecord>);
-    const completed = await Promise.all(appointments.map(async (appointment): Promise<CompletedAppointmentInfo> => {
+    const completed = await mapWithConcurrency(appointments, 2, async (appointment): Promise<CompletedAppointmentInfo> => {
       const [mapped, staff, review] = await Promise.all([
         this.mapAppointment(toApplicationAppointment(appointment)),
         appointment.staffId ? db.orm.public.Staff.where({ id: appointment.staffId }).first() : Promise.resolve(null),
@@ -364,7 +532,7 @@ export class AppointmentsService {
         reviewEligible: !alreadyReviewed,
         alreadyReviewed,
       };
-    }));
+    });
 
     return { appointments: completed, total };
   }
@@ -386,12 +554,18 @@ export class AppointmentsService {
       .orderBy((appointment) => appointment.appointmentDate.desc());
     const appointmentsRaw = await query.offset(skip).limit(limit).all();
     const appointments = await collect(appointmentsRaw as Iterable<AppointmentRecord> | AsyncIterable<AppointmentRecord>);
+    // Resolve each distinct customer once instead of per appointment row.
+    type CustomerBrief = { id: string; firstName: string; lastName: string; phone: string | null };
+    const customerIds = [...new Set(appointments.map((appointment) => String(appointment.customerId)))];
+    const fetchedCustomers = await Promise.all(customerIds.map((id) => db.orm.public.Customer.where({ id }).first()));
+    const customerById = new Map<string, CustomerBrief>();
+    for (const customer of fetchedCustomers) {
+      if (customer) customerById.set(String(customer.id), customer as unknown as CustomerBrief);
+    }
     return {
-      appointments: await Promise.all(appointments.map(async (appointment) => {
-        const [mapped, customer] = await Promise.all([
-          this.mapAppointment(toApplicationAppointment(appointment)),
-          db.orm.public.Customer.where({ id: appointment.customerId }).first(),
-        ]);
+      appointments: await mapWithConcurrency(appointments, 2, async (appointment) => {
+        const mapped = await this.mapAppointment(toApplicationAppointment(appointment));
+        const customer = customerById.get(String(appointment.customerId));
         return {
           ...mapped,
           customer: customer
@@ -403,13 +577,21 @@ export class AppointmentsService {
               }
             : null,
         };
-      })),
+      }),
       total,
     };
   }
 
   static async getById(appointmentId: string, requestingUserId: string, role: string): Promise<AppointmentInfo> {
-    const appointment = await db.orm.public.Appointment.where({ id: appointmentId }).first();
+    let appointment = await db.orm.public.Appointment.where({ id: appointmentId }).first();
+    if (!appointment) {
+      // Customer-facing codes resolve here too (APT-12345 and legacy
+      // APT-<UUID>), always by exact match on the unique code column.
+      const code = normalizeAppointmentCode(appointmentId);
+      if (code.startsWith('APT-') && code.length > 4) {
+        appointment = await db.orm.public.Appointment.where({ appointmentCode: pgVarchar<40>(code) }).first();
+      }
+    }
     if (!appointment) throw new NotFoundError('Appointment not found');
     await this.assertCanView(appointment, requestingUserId, role);
     return this.mapAppointment(toApplicationAppointment(appointment));
@@ -427,6 +609,15 @@ export class AppointmentsService {
 
     if (!canTransitionStatus(appointment.status, nextStatus)) {
       throw new ConflictError(`Appointment cannot transition from ${appointment.status} to ${nextStatus}`);
+    }
+
+    if (nextStatus === 'CANCELLED') {
+      // Paid bookings can only be cancelled by a MANAGER or ADMIN — a
+      // customer or STAFF cancellation is rejected on the server.
+      const settled = await PaymentsService.settledCentsFor(appointmentId);
+      if (settled > 0 && role !== 'MANAGER' && role !== 'ADMIN') {
+        throw new ForbiddenError('Paid bookings can only be cancelled by a manager or admin');
+      }
     }
 
     if (role === 'CUSTOMER') {
@@ -459,15 +650,80 @@ export class AppointmentsService {
       entityType: 'Appointment',
       entityId: appointmentId,
       oldData: { status: appointment.status },
-      newData: { status: updated.status },
+      // Every cancellation carries an audit note.
+      newData: nextStatus === 'CANCELLED'
+        ? { status: updated.status, note: `Cancelled by ${role}` }
+        : { status: updated.status },
     });
 
     return this.mapAppointment(toApplicationAppointment(updated));
   }
 
-  private static async getBookingPlan(data: CreateAppointmentInput): Promise<BookingPlan> {
+  /**
+   * Re-run every booking rule for an existing appointment before a payment
+   * attempt is created (the payment spec's revalidation gate): the services
+   * must still be active, the stylist still assigned to every selected
+   * service, the slot still inside the salon's schedule, and the slot still
+   * free of other bookings. The appointment itself is excluded from the
+   * conflict scan. Throws the first failing rule's message.
+   */
+  static async revalidateForPayment(appointmentId: string): Promise<void> {
+    const appointment = await db.orm.public.Appointment.where({ id: appointmentId }).first();
+    if (!appointment) throw new NotFoundError('Appointment not found');
+    const services = await db.orm.public.AppointmentService.where({ appointmentId }).all();
+    const data: CreateAppointmentInput = {
+      appointmentDate: String(appointment.appointmentDate),
+      startTime: normalizeTimeOnly(String(appointment.startTime)),
+      serviceIds: services.map((service) => String(service.serviceId)),
+      staffId: staffIdOf(appointment) ?? '',
+    };
+    const plan = await AppointmentsService.getBookingPlan(data, appointmentId);
+    if (!plan.available) {
+      throw new BadRequestError(plan.unavailableReason ?? 'The booking is no longer available');
+    }
+  }
+
+  /**
+   * Payment-hold hygiene: an unpaid RESERVED appointment whose 15-minute
+   * hold has passed is cancelled (with an audit note) so it can never keep
+   * blocking the slot.
+   */
+  static async releaseExpiredHolds(now: Date = new Date()): Promise<number> {
+    const reserved = await db.orm.public.Appointment.where({ status: 'RESERVED' }).all();
+    let released = 0;
+    for (const appointment of reserved) {
+      const holdExpiresAt = appointment.holdExpiresAt ? new Date(String(appointment.holdExpiresAt)) : null;
+      if (!holdExpiresAt || holdExpiresAt.getTime() > now.getTime()) continue;
+      const settled = await PaymentsService.settledCentsFor(String(appointment.id));
+      if (settled > 0) continue;
+      const updated = await db.orm.public.Appointment
+        .where({ id: String(appointment.id), status: 'RESERVED' })
+        .update({ status: 'CANCELLED' })
+        .catch(() => null);
+      if (updated) {
+        released += 1;
+        await generateAuditLog({
+          actorAccountId: undefined,
+          action: 'APPOINTMENT_CANCELLED',
+          entityType: 'Appointment',
+          entityId: String(appointment.id),
+          oldData: { status: 'RESERVED' },
+          newData: { status: 'CANCELLED', note: 'Payment hold expired before payment' },
+        });
+      }
+    }
+    return released;
+  }
+
+  private static async getBookingPlan(data: CreateAppointmentInput, excludeAppointmentId?: string): Promise<BookingPlan> {
+    // Payment-hold hygiene: an unpaid hold past its 15 minutes no longer
+    // reserves the slot, so release those before checking availability.
+    await AppointmentsService.releaseExpiredHolds();
     const requestedDate = dateOnly(data.appointmentDate);
     const localNow = localDateAndTime(new Date(), env.STUDIO_TIME_ZONE);
+    // Current-month-only policy (Asia/Manila), checked before the past-date
+    // rule so a date outside the month gets the month-specific message.
+    assertWithinBookingMonth(data.appointmentDate, localNow.date);
     if (data.appointmentDate < localNow.date ||
       (data.appointmentDate === localNow.date && data.startTime <= localNow.time)) {
       throw new BadRequestError('Appointment date and time must be in the future');
@@ -498,14 +754,21 @@ export class AppointmentsService {
       throw new BadRequestError('The selected staff member is not assigned to every selected service');
     }
 
-    let available = staff.workStatus === 'ON_DUTY';
+    // Booking rules (Asia/Manila wall clock throughout). Each failure gets its
+    // own clear reason; the first reason is what the caller sees.
+    const reasons: string[] = [];
     const dayOfWeek = isoWeekdayToPostgres(isoDayOfWeek(data.appointmentDate));
+    const weekday = weekdayName(dayOfWeek);
     const businessHour = await db.orm.public.BusinessHour.where({ dayOfWeek }).first();
     const businessOpen = businessHour?.openTime ? fromPrismaTime(businessHour.openTime) : null;
     const businessClose = businessHour?.closeTime ? fromPrismaTime(businessHour.closeTime) : null;
     if (!businessHour || !businessHour.isOpen || !businessHour.openTime || !businessHour.closeTime ||
-      !businessOpen || !businessClose || data.startTime < businessOpen || endTime > businessClose) {
-      available = false;
+      !businessOpen || !businessClose) {
+      reasons.push(`The salon is closed on ${weekday}.`);
+    } else if (data.startTime < businessOpen) {
+      reasons.push(`The salon opens at ${businessOpen} on ${weekday}.`);
+    } else if (endTime > businessClose) {
+      reasons.push(`The appointment must end by ${businessClose} on ${weekday}.`);
     }
 
     const schedules = await db.orm.public.StaffSchedule.where({ staffId: staff.id, dayOfWeek, isActive: true }).all();
@@ -516,22 +779,41 @@ export class AppointmentsService {
         (!scheduleEndDate || scheduleEndDate >= data.appointmentDate) &&
         data.startTime >= fromPrismaTime(schedule.startTime) && endTime <= fromPrismaTime(schedule.endTime);
     });
-    if (!hasMatchingSchedule || !Number.isFinite(dateValue)) available = false;
+    if (!hasMatchingSchedule || !Number.isFinite(dateValue)) {
+      reasons.push('The chosen stylist is not scheduled at that time.');
+    }
+
+    // Approved time off (full day or a time window) excludes the stylist.
+    const timeOffRequests = await db.orm.public.ScheduleRequest.where({ staffId: staff.id, status: 'APPROVED' }).all();
+    const onTimeOff = timeOffRequests.some((request) => {
+      if (fromPrismaDateString(request.requestedDate) !== data.appointmentDate) return false;
+      const offStart = request.requestedStartTime ? fromPrismaTime(request.requestedStartTime) : null;
+      const offEnd = request.requestedEndTime ? fromPrismaTime(request.requestedEndTime) : null;
+      if (!offStart || !offEnd) return true;
+      return timeRangesOverlap(data.startTime, endTime, offStart, offEnd);
+    });
+    if (onTimeOff) {
+      reasons.push('The chosen stylist is on approved time off that day.');
+    }
 
     const staffAppointments = await db.orm.public.Appointment.where(staffWhere({ staffId: staff.id })).all();
     const hasConflict = staffAppointments.some((appointment) => {
+      if (excludeAppointmentId && String(appointment.id) === excludeAppointmentId) return false;
       if (fromPrismaDateString(appointment.appointmentDate) !== data.appointmentDate) return false;
       if (appointment.status !== 'RESERVED' && appointment.status !== 'CONFIRMED') return false;
       return timeRangesOverlap(data.startTime, endTime, fromPrismaTime(appointment.startTime), fromPrismaTime(appointment.endTime));
     });
-    if (hasConflict) available = false;
+    if (hasConflict) {
+      reasons.push('The chosen stylist already has a booking at that time.');
+    }
 
     return {
       appointmentDate: dateString(requestedDate),
       endTime,
       totalAmount: sumDecimalStrings(serviceRows.map((service) => service.price)),
       services: serviceRows,
-      available,
+      available: reasons.length === 0,
+      unavailableReason: reasons[0],
     };
   }
 

@@ -1,5 +1,7 @@
 import { useCallback } from 'react'
-import { Outlet } from 'react-router-dom'
+import { Outlet, useLocation, useNavigate } from 'react-router-dom'
+import OutageHost from './OutageHost.jsx'
+import ErrorBoundary from './ErrorBoundary.jsx'
 import Footer from './Footer.jsx'
 import Login from './Login.jsx'
 import MobileBookCTA from './MobileBookCTA.jsx'
@@ -12,8 +14,10 @@ import { useToast } from '../context/useToast.jsx'
 // booking action. Routes render their own content through <Outlet /> so the
 // chrome stays mounted (and keeps working) across navigations and lazy loads.
 function AppShell() {
-  const { user, authView, login, logout, openAuth, closeAuth, switchAuth } = useAuth()
+  const { user, authView, authIntent, login, logout, openAuth, closeAuth, switchAuth } = useAuth()
   const { showToast } = useToast()
+  const location = useLocation()
+  const navigate = useNavigate()
 
   const handleLogin = useCallback(
     (nextUser) => {
@@ -24,8 +28,12 @@ function AppShell() {
           ? `Welcome, ${nextUser.name}. Your account is ready.`
           : `Welcome back, ${nextUser.name}.`,
       )
+      // Every new sign-in lands on Services (password and Google alike).
+      // Session restoration never passes through here, so refreshing the page
+      // keeps the current route.
+      navigate('/services')
     },
-    [authView, login, showToast],
+    [authView, login, navigate, showToast],
   )
 
   const handleLogout = useCallback(() => {
@@ -40,16 +48,21 @@ function AppShell() {
         onLogout={handleLogout}
         user={user}
       />
-      <div>
-        <Outlet />
+      <OutageHost />
+      {/* Keyed wrapper replays the page entrance on every navigation. */}
+      <div className="page-enter" key={location.pathname}>
+        {/* Per-route boundary: keyed by pathname so navigation resets it. */}
+        <ErrorBoundary key={location.pathname}>
+          <Outlet />
+        </ErrorBoundary>
       </div>
       <Footer onLoginClick={() => openAuth('login')} user={user} />
       <MobileBookCTA />
       {authView === 'login' && (
-        <Login onClose={closeAuth} onLogin={handleLogin} onSwitch={switchAuth} />
+        <Login intent={authIntent} onClose={closeAuth} onLogin={handleLogin} onSwitch={switchAuth} />
       )}
       {authView === 'signin' && (
-        <Signin onClose={closeAuth} onLogin={handleLogin} onSwitch={switchAuth} />
+        <Signin intent={authIntent} onClose={closeAuth} onLogin={handleLogin} onSwitch={switchAuth} />
       )}
     </div>
   )

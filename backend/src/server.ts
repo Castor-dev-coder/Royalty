@@ -2,6 +2,7 @@ import express from 'express';
 import 'dotenv/config';
 import { db } from './prisma/db.js';
 import { errorHandler, notFoundHandler } from './middleware/error.js';
+import { corsMiddleware } from './middleware/cors.js';
 import { authenticate, AuthenticatedRequest } from './middleware/auth.js';
 import { authRouter } from './routes/auth.js';
 import { accountsRouter } from './routes/accounts.js';
@@ -11,12 +12,31 @@ import { servicesRouter } from './routes/services.js';
 import { schedulesRouter } from './routes/schedules.js';
 import { appointmentsRouter } from './routes/appointments.js';
 import { reviewsRouter } from './routes/reviews.js';
+import { matchingRouter } from './routes/matching.js';
+import { attendanceRouter } from './routes/attendance.js';
+import { paymentsRouter } from './routes/payments.js';
+import { PaymentsService } from './modules/payments/payments.service.js';
 
 export function createApp() {
   const app = express();
 
   // Middleware
   app.use(express.json());
+  app.use(corsMiddleware);
+  // Safe default: nothing is cacheable unless a route opts in via publicCache
+  // (see utils/http.ts). Keeps auth, appointment, payment and admin responses
+  // out of every shared cache — including error responses.
+  app.use((_req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store');
+    next();
+  });
+  // Safe default: nothing is cacheable unless a route opts in via publicCache
+  // (see utils/http.ts). Keeps auth, appointment, payment and admin responses
+  // out of every shared cache — including error responses.
+  app.use((_req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store');
+    next();
+  });
 
   // Routes
   app.get('/health', async (_req, res) => {
@@ -47,6 +67,9 @@ export function createApp() {
   app.use('/schedules', schedulesRouter);
   app.use('/appointments', appointmentsRouter);
   app.use('/reviews', reviewsRouter);
+  app.use('/matching', matchingRouter);
+  app.use('/attendance', attendanceRouter);
+  app.use('/payments', paymentsRouter);
 
   // Protected test route (to verify auth works)
   app.get('/api/me', authenticate, (req: AuthenticatedRequest, res) => {
@@ -66,6 +89,11 @@ const PORT = process.env.PORT || 3000;
 if (process.env.NODE_ENV !== 'test') {
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
+    // Controlled warm-up of the one-row payment settings cache so the first
+    // payment screen is not charged a cold read. A failure here only leaves
+    // the cache empty — every read then falls back to a live query and
+    // serves the database's answer, never a stale one.
+    void PaymentsService.warmSettingsCache();
   });
 }
 

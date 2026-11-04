@@ -1,45 +1,34 @@
 import { useRef, useState } from 'react'
 import AuthModal from './AuthModal.jsx'
 import BrandMark from './BrandMark.jsx'
+import GoogleSignInButton from './GoogleSignInButton.jsx'
+import { useAuth } from '../context/useAuth.jsx'
+import { ApiError, AuthError, ValidationError } from '../lib/api.js'
+import { useFieldErrors, validateEmail, validateRequiredPassword } from '../lib/validation.js'
 
-// Development-only convenience for local testing: fills the mock sign-in form
-// with obviously fictional values. It never submits on its own — the regular
-// LOG IN button stays the authoritative path — and it is compiled out of
-// production builds (import.meta.env.DEV is false there). The project defines
-// no seeded demo account; these values exist only to speed up local testing of
-// the mock authentication flow.
-const DEV_DEMO_FILL = {
-  email: 'maria@demo.example',
-  password: 'demo1234',
-}
-
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-
-function Login({ onClose, onSwitch, onLogin = () => {} }) {
+function Login({ onClose, onSwitch, onLogin = () => {}, intent = null }) {
+  const { signIn } = useAuth()
   const [showPassword, setShowPassword] = useState(false)
   const [message, setMessage] = useState('')
-  const [errors, setErrors] = useState({})
+  const { errors, setErrors, field, submitErrors } = useFieldErrors()
   const [submitting, setSubmitting] = useState(false)
   const submittingRef = useRef(false)
   const formRef = useRef(null)
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault()
     // Guards duplicate submissions even before React re-renders.
     if (submittingRef.current) return
 
     const form = event.currentTarget
     const email = String(form.elements.email.value).trim()
+    const password = String(form.elements.password.value)
     const nextErrors = {}
-    if (!email) {
-      nextErrors.email = 'Enter your email address.'
-    } else if (!EMAIL_PATTERN.test(email)) {
-      nextErrors.email = 'Enter a valid email address, such as you@example.com.'
-    }
-    if (!form.elements.password.value) {
-      nextErrors.password = 'Enter your password.'
-    }
-    setErrors(nextErrors)
+    const emailError = validateEmail(email)
+    if (emailError) nextErrors.email = emailError
+    const passwordError = validateRequiredPassword(password)
+    if (passwordError) nextErrors.password = passwordError
+    submitErrors(nextErrors)
     const firstError = Object.keys(nextErrors)[0]
     if (firstError) {
       form.elements[firstError]?.focus()
@@ -48,20 +37,26 @@ function Login({ onClose, onSwitch, onLogin = () => {} }) {
 
     submittingRef.current = true
     setSubmitting(true)
-    const name = email.split('@')[0].replace(/[._-]/g, ' ') || 'Maria'
-    const user = { name: name.replace(/\b\w/g, (letter) => letter.toUpperCase()), email }
-    localStorage.setItem('royalty-user', JSON.stringify(user))
-    onLogin(user)
-    onClose()
-  }
-
-  function fillDemoCredentials() {
-    const form = formRef.current
-    if (!form) return
-    form.elements.email.value = DEV_DEMO_FILL.email
-    form.elements.password.value = DEV_DEMO_FILL.password
-    setErrors({})
-    setMessage('Demo values filled. Press LOG IN to continue.')
+    setMessage('')
+    const rememberMe = Boolean(form.elements.rememberMe?.checked)
+    try {
+      const user = await signIn(email, password, rememberMe)
+      onLogin(user)
+      onClose()
+    } catch (error) {
+      if (error instanceof ValidationError && error.details && typeof error.details === 'object') {
+        setErrors((current) => ({ ...current, ...error.details }))
+      } else if (error instanceof AuthError) {
+        setMessage('Email or password is incorrect.')
+      } else if (error instanceof ApiError) {
+        setMessage(error.message)
+      } else {
+        setMessage('Something went wrong. Please try again.')
+      }
+    } finally {
+      submittingRef.current = false
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -71,6 +66,11 @@ function Login({ onClose, onSwitch, onLogin = () => {} }) {
         <h2 className="my-[25px] mb-[27px] text-center text-[clamp(1.35rem,4vw,1.75rem)] font-normal text-[#f0efed]" id="login-title">
           Login to your account
         </h2>
+        {intent && (
+          <p className="-mt-4 mb-5 text-center text-[12px] font-semibold tracking-[0.14em] text-[var(--gold)] uppercase">
+            Sign in to {intent}
+          </p>
+        )}
         <form className="flex w-full flex-col gap-[14px]" noValidate onSubmit={handleSubmit} ref={formRef}>
           <div className="flex w-full flex-col gap-[7px]">
             <label className="text-[0.62rem] font-semibold tracking-[0.12em] text-[#918c82] uppercase" htmlFor="login-email">
@@ -89,6 +89,7 @@ function Login({ onClose, onSwitch, onLogin = () => {} }) {
                 id="login-email"
                 name="email"
                 placeholder="you@example.com"
+                {...field('email', validateEmail)}
                 required
                 type="email"
               />
@@ -116,6 +117,7 @@ function Login({ onClose, onSwitch, onLogin = () => {} }) {
                 id="login-password"
                 name="password"
                 placeholder="Enter your password"
+                {...field('password', validateRequiredPassword)}
                 required
                 type={showPassword ? 'text' : 'password'}
               />
@@ -148,12 +150,24 @@ function Login({ onClose, onSwitch, onLogin = () => {} }) {
               Forgot password?
             </button>
           </div>
+          <label className="-mt-[2px] flex cursor-pointer items-center gap-[8px] text-[0.72rem] text-[#b3ada2]">
+            <input
+              className="size-[15px] cursor-pointer accent-[var(--gold)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--gold)]"
+              name="rememberMe"
+              type="checkbox"
+            />
+            Keep me logged in
+          </label>
           <button
-            className="btn-pill mt-1 inline-flex min-h-[46px] w-full cursor-pointer items-center justify-center rounded-full border border-[var(--gold)] bg-[var(--gold)] px-[1.4rem] py-[0.8rem] text-[0.7rem] font-bold tracking-[0.13em] text-[#111] uppercase hover:bg-[var(--gold-bright)] disabled:cursor-default disabled:opacity-60"
+            className="btn-pill mt-1 inline-flex min-h-[46px] w-full cursor-pointer items-center justify-center gap-2 rounded-full border border-[var(--gold)] bg-[var(--gold)] px-[1.4rem] py-[0.8rem] text-[0.7rem] font-bold tracking-[0.13em] text-[#111] uppercase hover:bg-[var(--gold-bright)] active:translate-y-px motion-reduce:active:translate-y-0 disabled:cursor-wait focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--gold)]"
             disabled={submitting}
+            aria-busy={submitting}
             type="submit"
           >
-            LOG IN
+            {submitting && (
+              <span className="size-4 animate-spin rounded-full border-2 border-[#111]/30 border-t-[#111] motion-reduce:animate-none" aria-hidden="true" />
+            )}
+            {submitting ? 'Signing in…' : 'LOG IN'}
           </button>
         </form>
         {message && <p className="auth-note mt-[13px] text-center text-[0.68rem] leading-[1.5]" role="status">{message}</p>}
@@ -163,27 +177,12 @@ function Login({ onClose, onSwitch, onLogin = () => {} }) {
             Sign up
           </button>
         </p>
-        <div className="relative my-[21px] w-full text-center text-[0.58rem] text-[#77736b] before:absolute before:top-1/2 before:right-0 before:left-0 before:h-px before:bg-[#34322e] before:content-['']">
-          <span className="relative bg-[#11110f] px-3">OR</span>
-        </div>
-        <button
-          className="flex min-h-11 w-full cursor-pointer items-center justify-center gap-[10px] rounded border border-[#34322e] bg-[#171716] text-[0.7rem] text-[#e1ded8] transition-[border-color,background] duration-[180ms] hover:border-[var(--gold)] hover:bg-[#1d1c19]"
-          onClick={() => setMessage('Google sign-in is not connected yet.')}
-          type="button"
-        >
-          <span className="font-[Arial,sans-serif] text-base font-bold text-[#4285f4]" aria-hidden="true">G</span>
-          Log in with Google
-        </button>
-        {import.meta.env.DEV && (
-          <button
-            aria-label="Fill the form with fictional demo values (development helper). Does not submit the form."
-            className="auth-helper mt-[14px] cursor-pointer border-0 bg-transparent p-0 text-[0.6rem] font-semibold tracking-[0.12em] uppercase"
-            onClick={fillDemoCredentials}
-            type="button"
-          >
-            Fill demo credentials (dev)
-          </button>
-        )}
+        <GoogleSignInButton
+          onSignedIn={(nextUser) => {
+            onLogin(nextUser)
+            onClose()
+          }}
+        />
       </div>
     </AuthModal>
   )

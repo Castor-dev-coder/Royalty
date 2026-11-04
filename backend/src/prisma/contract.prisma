@@ -55,13 +55,28 @@ namespace public {
   native_enum PaymentMethod {
     CASH = "CASH"
     GCASH = "GCASH"
+    // Server-confirmed Maya checkout payments. Never labelled GCASH: Maya rows
+    // carry provider='MAYA' and provider reference ids instead of GCash refs.
+    MAYA = "MAYA"
     @@map("payment_method")
+  }
+
+  native_enum PaymentChannel {
+    ONLINE = "ONLINE"
+    IN_PERSON = "IN_PERSON"
+    @@map("payment_channel")
   }
 
   native_enum PaymentStatus {
     UNVERIFIED = "UNVERIFIED"
     VERIFIED = "VERIFIED"
     REJECTED = "REJECTED"
+    // Maya checkout lifecycle (provider-side); legacy rows keep the three
+    // values above. PAID means the provider confirmed the money.
+    PENDING = "PENDING"
+    PAID = "PAID"
+    FAILED = "FAILED"
+    EXPIRED = "EXPIRED"
     @@map("payment_status")
   }
 
@@ -79,22 +94,39 @@ namespace public {
     @@map("staff_work_status")
   }
 
+  native_enum ReviewRatingCategory {
+    SERVICE = "SERVICE"
+    PRODUCTS = "PRODUCTS"
+    STAFF = "STAFF"
+    TIME_MANAGEMENT = "TIME_MANAGEMENT"
+    @@map("review_rating_category")
+  }
+
   model Account {
     id               Uuid                   @id(map: "accounts_pkey") @default(sql`gen_random_uuid()`)
     email            VarChar(255)           @unique(map: "accounts_email_key")
-    passwordHash     String                 @map("password_hash")
+    // Google Identity link (stable `sub` claim). Nullable: password accounts
+    // have none. Accounts are never merged silently — linking is explicit.
+    googleId         VarChar(255)?          @unique(map: "accounts_google_id_key") @map("google_id")
+    // Nullable for Google-only accounts (no password).
+    passwordHash     String?                @map("password_hash")
     role             pg.enum(AccountRole)   @default("CUSTOMER")
     status           pg.enum(AccountStatus) @default("ACTIVE")
+    isSystem         Boolean                @default(false) @map("is_system")
     createdAt        Timestamptz            @default(now()) @map("created_at")
     updatedAt        Timestamptz            @default(now()) @map("updated_at")
     auditLogs        AuditLog[]
     customers        Customer?
-    payments         Payment[]
+    payments         Payment[]              @relation("PaymentVerifier")
+    recordedPayments Payment[]              @relation("PaymentRecorder")
+    paymentSettings  PaymentSetting[]
     scheduleRequests ScheduleRequest[]
     staff            Staff?
+    staffAttendance  StaffAttendance[]
 
     @@index([role], map: "idx_accounts_role")
     @@index([status], map: "idx_accounts_status")
+    @@index([isSystem], map: "accounts_single_system_key", unique: true, where: "is_system")
     @@rls
     @@map("accounts")
   }
@@ -129,8 +161,11 @@ namespace public {
     createdAt           Timestamptz                @default(now()) @map("created_at")
     updatedAt           Timestamptz                @default(now()) @map("updated_at")
     staffId             Uuid?                      @map("staff_id")
+    // Maya payment hold: while unexpired the RESERVED appointment blocks the
+    // slot; an expired hold frees the slot lazily (no cron).
+    holdExpiresAt       Timestamptz?               @map("hold_expires_at")
     appointmentServices AppointmentService[]
-    payments            Payment?
+    payments            Payment[]
     reviews             Review?
     customer            Customer                  @relation(fields: [customerId], references: [id], onDelete: Restrict, map: "fk_appointment_customer")
     staff               Staff?                    @relation(fields: [staffId], references: [id], onDelete: Restrict, map: "fk_appointment_staff", index: false)
@@ -153,6 +188,7 @@ namespace public {
     createdAt Timestamptz  @default(now()) @map("created_at")
     updatedAt Timestamptz  @default(now()) @map("updated_at")
     services  Service[]
+    staffCategories StaffCategory[]
 
     @@rls
     @@map("service_categories")
@@ -163,6 +199,7 @@ namespace public {
     categoryId          Uuid                  @map("category_id")
     name                VarChar(200)
     description         String?
+    imageUrl            String?                @map("image_url")
     price               Numeric(10, 2)
     durationMinutes     Int                   @map("duration_minutes")
     isActive            Boolean               @default(true) @map("is_active")
@@ -193,6 +230,7 @@ namespace public {
 
     @@unique([appointmentId, serviceId], map: "unique_appointment_service")
     @@index([appointmentId], map: "idx_appointment_services_appointment_id")
+    @@index([serviceId], map: "idx_appointment_services_service_id")
     @@check(expression: "(duration_minutes > 0)", map: "appointment_service_duration_positive")
     @@check(expression: "(price >= (0)::numeric)", map: "appointment_service_price_positive")
     @@rls
@@ -232,25 +270,74 @@ namespace public {
     @@map("business_hours")
   }
 
+  // One row per TRANSACTION: an online GCash deposit and later in-person
+  // balance payments are separate rows on the same appointment. The old
+  // one-payment-per-appointment unique is replaced by an index.
   model Payment {
-    id            Uuid                   @id(map: "payments_pkey") @default(sql`gen_random_uuid()`)
-    appointmentId Uuid                   @unique(map: "payments_appointment_id_key") @map("appointment_id")
-    amount        Numeric(10, 2)
-    paymentMethod pg.enum(PaymentMethod) @map("payment_method")
-    status        pg.enum(PaymentStatus) @default("UNVERIFIED")
-    verifiedBy    Uuid?                  @map("verified_by")
-    verifiedAt    Timestamptz?           @map("verified_at")
-    createdAt     Timestamptz            @default(now()) @map("created_at")
-    updatedAt     Timestamptz            @default(now()) @map("updated_at")
-    appointment   Appointment           @relation(fields: [appointmentId], references: [id], onDelete: Restrict, map: "fk_payment_appointment")
-    accounts      Account?              @relation(fields: [verifiedBy], references: [id], onDelete: Restrict, map: "fk_payment_verifier", index: false)
+    id               Uuid                   @id(map: "payments_pkey") @default(sql`gen_random_uuid()`)
+    appointmentId    Uuid                   @map("appointment_id")
+    amount           Numeric(10, 2)
+    paymentMethod    pg.enum(PaymentMethod) @map("payment_method")
+    channel          pg.enum(PaymentChannel) @map("channel")
+    status           pg.enum(PaymentStatus) @default("UNVERIFIED")
+    // GCash reference number (online submissions require one; unique across
+    // payments so the same reference can never be credited twice).
+    referenceNo      VarChar(100)?          @unique(map: "payments_reference_no_key") @map("reference_no")
+    proofUrl         VarChar(500)?          @map("proof_url")
+    proofStoragePath VarChar(500)?          @map("proof_storage_path")
+    // Payment provider: MANUAL (human-recorded cash / GCash-era rows) or
+    // MAYA (server-confirmed Maya checkout). Provider identity columns are
+    // unique where set (Postgres UNIQUE ignores NULLs).
+    provider         VarChar(20)             @default(sql`'MANUAL'`) @map("provider")
+    providerCheckoutId VarChar(100)?         @unique(map: "payments_provider_checkout_id_key") @map("provider_checkout_id")
+    providerPaymentId  VarChar(100)?         @unique(map: "payments_provider_payment_id_key") @map("provider_payment_id")
+    recordedBy       Uuid?                  @map("recorded_by")
+    verifiedBy       Uuid?                  @map("verified_by")
+    verifiedAt       Timestamptz?           @map("verified_at")
+    createdAt        Timestamptz            @default(now()) @map("created_at")
+    updatedAt        Timestamptz            @default(now()) @map("updated_at")
+    appointment      Appointment            @relation(fields: [appointmentId], references: [id], onDelete: Restrict, map: "fk_payment_appointment")
+    accounts         Account?               @relation("PaymentVerifier", fields: [verifiedBy], references: [id], onDelete: Restrict, map: "fk_payment_verifier", index: false)
+    recorder         Account?               @relation("PaymentRecorder", fields: [recordedBy], references: [id], onDelete: Restrict, map: "fk_payment_recorder", index: false)
 
+    @@index([appointmentId], map: "idx_payments_appointment_id")
     @@index([createdAt], map: "idx_payments_created_at")
     @@index([status], map: "idx_payments_status")
+    @@index([verifiedBy], map: "idx_payments_verified_by")
     @@check(expression: "(amount >= (0)::numeric)", map: "payment_amount_positive")
     @@check(expression: "((status <> 'VERIFIED'::payment_status) OR ((verified_by IS NOT NULL) AND (verified_at IS NOT NULL)))", map: "valid_verified_payment")
+    @@check(expression: "(((provider)::text <> 'MANUAL'::text) OR ((channel <> 'ONLINE'::payment_channel) OR ((reference_no IS NOT NULL) AND (proof_url IS NOT NULL))))", map: "online_payment_requires_proof")
+    @@check(expression: "((provider)::text = ANY ((ARRAY['MANUAL'::character varying, 'MAYA'::character varying])::text[]))", map: "payments_provider_check")
     @@rls
     @@map("payments")
+  }
+
+  native_enum DownPaymentKind {
+    NONE = "NONE"
+    FIXED = "FIXED"
+    PERCENT = "PERCENT"
+    @@map("down_payment_kind")
+  }
+
+  // Single-row salon payment configuration (GCash QR display + online
+  // down-payment policy). Written by ADMIN only; every change is audited.
+  model PaymentSetting {
+    id                  Uuid            @id(map: "payment_settings_pkey") @default(sql`gen_random_uuid()`)
+    gcashQrUrl          VarChar(500)?   @map("gcash_qr_url")
+    gcashQrStoragePath  VarChar(500)?   @map("gcash_qr_storage_path")
+    receiverName        VarChar(100)?   @map("receiver_name")
+    accountNumberMasked VarChar(30)?    @map("account_number_masked")
+    // Policy is configurable; the approved configuration is PERCENT = 50.
+    downPaymentKind     pg.enum(DownPaymentKind) @default("PERCENT") @map("down_payment_kind")
+    downPaymentValue    Numeric(10, 2)  @default(sql`50`) @map("down_payment_value")
+    updatedBy           Uuid?           @map("updated_by")
+    createdAt           Timestamptz     @default(now()) @map("created_at")
+    updatedAt           Timestamptz     @default(now()) @map("updated_at")
+    updater             Account?        @relation(fields: [updatedBy], references: [id], onDelete: SetNull, map: "fk_payment_settings_updater")
+
+    @@check(expression: "(down_payment_value >= (0)::numeric)", map: "payment_settings_value_positive")
+    @@rls
+    @@map("payment_settings")
   }
 
   model ExternalUser {
@@ -314,17 +401,53 @@ namespace public {
     id            Uuid         @id(map: "reviews_pkey") @default(sql`gen_random_uuid()`)
     appointmentId Uuid         @unique(map: "reviews_appointment_id_key") @map("appointment_id")
     customerId    Uuid         @map("customer_id")
+    // DEPRECATED (G-07): legacy overall rating. Kept, never dropped — grandfathered
+    // rows display it as overall-only. New reviews store category ratings in
+    // review_ratings; the overall value is computed in read queries.
     rating        SmallInt
     comment       String?
     createdAt     Timestamptz  @default(now()) @map("created_at")
     updatedAt     Timestamptz  @default(now()) @map("updated_at")
     appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Restrict, map: "fk_review_appointment")
     customer      Customer    @relation(fields: [customerId], references: [id], onDelete: Restrict, map: "fk_review_customer")
+    reviewRatings ReviewRating[]
+    reviewPhotos  ReviewPhoto[]
 
     @@index([customerId], map: "idx_reviews_customer_id")
     @@check(expression: "((rating >= 1) AND (rating <= 5))", map: "valid_rating")
     @@rls
     @@map("reviews")
+  }
+
+  // Customer-uploaded photos for a review (max 3: the database enforces the
+  // cap via the position range and the unique (review_id, position) index).
+  model ReviewPhoto {
+    id          Uuid      @id(map: "review_photos_pkey") @default(sql`gen_random_uuid()`)
+    reviewId    Uuid      @map("review_id")
+    position    SmallInt
+    storagePath VarChar(500) @map("storage_path")
+    url         VarChar(500)
+    hidden      Boolean   @default(false)
+    createdAt   Timestamptz @default(now()) @map("created_at")
+    review      Review    @relation(fields: [reviewId], references: [id], onDelete: Cascade, map: "fk_review_photo_review")
+
+    @@unique([reviewId, position], map: "review_photos_review_position_key")
+    @@check(expression: "((\"position\" >= 1) AND (\"position\" <= 3))", map: "review_photo_position_range")
+    @@rls
+    @@map("review_photos")
+  }
+
+  model ReviewRating {
+    id       Uuid                      @id(map: "review_ratings_pkey") @default(sql`gen_random_uuid()`)
+    reviewId Uuid                      @map("review_id")
+    category pg.enum(ReviewRatingCategory)
+    rating   SmallInt
+    review   Review                    @relation(fields: [reviewId], references: [id], onDelete: Cascade, map: "fk_review_rating_review", index: false)
+
+    @@unique([reviewId, category], map: "review_ratings_review_category_key")
+    @@check(expression: "((rating >= 1) AND (rating <= 5))", map: "valid_review_rating")
+    @@rls
+    @@map("review_ratings")
   }
 
   model Staff {
@@ -336,12 +459,19 @@ namespace public {
     primaryRole      VarChar(100)             @map("primary_role")
     employmentType   pg.enum(EmploymentType)  @map("employment_type")
     workStatus       pg.enum(StaffWorkStatus) @default("DAY_OFF") @map("work_status")
+    photoUrl         VarChar(500)?            @map("photo_url")
+    position         VarChar(100)?
+    bio              String?
+    coveredRoles     String[]?                @map("covered_roles")
+    showOnTeam       Boolean                  @default(false) @map("show_on_team")
     createdAt        Timestamptz              @default(now()) @map("created_at")
     updatedAt        Timestamptz              @default(now()) @map("updated_at")
     appointments    Appointment[]
     scheduleRequests ScheduleRequest[]
     staffSchedules   StaffSchedule[]
     staffServices    StaffService[]
+    staffCategories  StaffCategory[]
+    staffAttendance  StaffAttendance[]
     account          Account                 @relation(fields: [accountId], references: [id], onDelete: Restrict, map: "fk_staff_account")
 
     @@index([accountId], map: "idx_staff_account_id")
@@ -367,6 +497,7 @@ namespace public {
 
     @@index([staffId], map: "idx_schedule_requests_staff_id")
     @@index([status], map: "idx_schedule_requests_status")
+    @@index([reviewedBy], map: "idx_schedule_requests_reviewed_by")
     @@check(expression: "(((requested_start_time IS NULL) AND (requested_end_time IS NULL)) OR ((requested_start_time IS NOT NULL) AND (requested_end_time IS NOT NULL) AND (requested_start_time < requested_end_time)))", map: "valid_requested_time")
     @@rls
     @@map("schedule_requests")
@@ -404,6 +535,38 @@ namespace public {
     @@index([serviceId], map: "idx_staff_services_service_id")
     @@rls
     @@map("staff_services")
+  }
+
+  model StaffCategory {
+    staffId    Uuid            @map("staff_id")
+    categoryId Uuid            @map("category_id")
+    createdAt  Timestamptz     @default(now()) @map("created_at")
+    staff      Staff           @relation(fields: [staffId], references: [id], onDelete: Cascade, map: "fk_staff_categories_staff", index: false)
+    category   ServiceCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict, map: "fk_staff_categories_category")
+
+    @@id([staffId, categoryId], map: "staff_categories_pkey")
+    @@index([categoryId], map: "idx_staff_categories_category_id")
+    @@rls
+    @@map("staff_categories")
+  }
+
+  model StaffAttendance {
+    id        Uuid        @id(map: "staff_attendance_pkey") @default(sql`gen_random_uuid()`)
+    staffId   Uuid?       @map("staff_id")
+    accountId Uuid?       @map("account_id")
+    timeIn    Timestamptz @default(now()) @map("time_in")
+    timeOut   Timestamptz? @map("time_out")
+    createdAt Timestamptz @default(now()) @map("created_at")
+    staff     Staff?      @relation(fields: [staffId], references: [id], onDelete: Restrict, map: "fk_staff_attendance_staff")
+    account   Account?    @relation(fields: [accountId], references: [id], onDelete: Restrict, map: "fk_staff_attendance_account")
+
+    @@index([staffId, timeIn], map: "idx_staff_attendance_staff_id_time")
+    @@check(expression: "((time_out IS NULL) OR (time_out > time_in))", map: "valid_attendance_time")
+    @@index([staffId], map: "staff_attendance_open_shift_key", unique: true, where: "(time_out IS NULL)")
+    @@index([accountId], map: "staff_attendance_open_shift_account_key", unique: true, where: "(time_out IS NULL)")
+    @@check(expression: "((staff_id IS NOT NULL) <> (account_id IS NOT NULL))", map: "exactly_one_attendance_owner")
+    @@rls
+    @@map("staff_attendance")
   }
 
 

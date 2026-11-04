@@ -17,7 +17,9 @@ export function errorHandler(
       },
     };
 
-    if (err.details && process.env.NODE_ENV === 'development') {
+    // Field-level validation details are user-facing: send them in every
+    // environment (400 only). Other details stay development-only.
+    if (err.details && (process.env.NODE_ENV === 'development' || err.statusCode === 400)) {
       response.error.details = err.details;
     }
 

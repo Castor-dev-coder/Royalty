@@ -1,0 +1,210 @@
+[
+  {
+    "id": "column.public.staff_attendance.account_id",
+    "label": "Add column \"account_id\" to \"staff_attendance\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "account_id",
+        "table": "staff_attendance"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"account_id\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "staff_attendance",
+          "account_id"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"account_id\"",
+        "sql": "ALTER TABLE \"public\".\"staff_attendance\" ADD COLUMN \"account_id\" uuid"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"account_id\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "staff_attendance",
+          "account_id"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "alterNullability.dropNotNull.staff_attendance.staff_id",
+    "label": "Drop NOT NULL on \"staff_attendance\".\"staff_id\"",
+    "operationClass": "widening",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "staff_id",
+        "table": "staff_attendance"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"staff_id\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "staff_attendance",
+          "staff_id"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "drop NOT NULL on \"staff_id\"",
+        "sql": "ALTER TABLE \"public\".\"staff_attendance\" ALTER COLUMN \"staff_id\" DROP NOT NULL"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"staff_id\" is nullable",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3 AND \"is_nullable\" = $4)) AS \"result\"",
+        "params": [
+          "public",
+          "staff_attendance",
+          "staff_id",
+          "YES"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "checkConstraint.staff_attendance.exactly_one_attendance_owner",
+    "label": "Add check constraint \"exactly_one_attendance_owner\" on \"staff_attendance\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "checkConstraint",
+        "name": "exactly_one_attendance_owner",
+        "table": "staff_attendance"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure constraint \"exactly_one_attendance_owner\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "exactly_one_attendance_owner",
+          "public",
+          "\"public\".\"staff_attendance\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add check constraint \"exactly_one_attendance_owner\"",
+        "sql": "ALTER TABLE \"public\".\"staff_attendance\" ADD CONSTRAINT \"exactly_one_attendance_owner\" CHECK ((((staff_id IS NOT NULL)) <> ((account_id IS NOT NULL))))"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify constraint \"exactly_one_attendance_owner\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "exactly_one_attendance_owner",
+          "public",
+          "\"public\".\"staff_attendance\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.staff_attendance.staff_attendance_open_shift_account_key",
+    "label": "Create index \"staff_attendance_open_shift_account_key\" on \"staff_attendance\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "staff_attendance_open_shift_account_key",
+        "table": "staff_attendance"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"staff_attendance_open_shift_account_key\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"staff_attendance_open_shift_account_key\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"staff_attendance_open_shift_account_key\"",
+        "sql": "CREATE UNIQUE INDEX \"staff_attendance_open_shift_account_key\" ON \"public\".\"staff_attendance\" (\"account_id\") WHERE ((time_out IS NULL))",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"staff_attendance_open_shift_account_key\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"staff_attendance_open_shift_account_key\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "foreignKey.staff_attendance.fk_staff_attendance_account",
+    "label": "Add foreign key \"fk_staff_attendance_account\" on \"staff_attendance\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "foreignKey",
+        "name": "fk_staff_attendance_account",
+        "table": "staff_attendance"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure FK \"fk_staff_attendance_account\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_staff_attendance_account",
+          "public",
+          "\"public\".\"staff_attendance\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add FK \"fk_staff_attendance_account\"",
+        "sql": "ALTER TABLE \"public\".\"staff_attendance\"\nADD CONSTRAINT \"fk_staff_attendance_account\"\nFOREIGN KEY (\"account_id\")\nREFERENCES \"public\".\"accounts\" (\"id\")\nON DELETE RESTRICT"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify FK \"fk_staff_attendance_account\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_staff_attendance_account",
+          "public",
+          "\"public\".\"staff_attendance\""
+        ]
+      }
+    ]
+  }
+]

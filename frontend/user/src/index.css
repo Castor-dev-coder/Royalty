@@ -28,6 +28,18 @@
   --review-panel: var(--color-review-panel);
   --review-card: var(--color-review-card);
   --review-border: var(--color-review-border);
+  /* Navigation surfaces: translucent so the sticky header keeps its
+     backdrop blur; redefined per theme below. */
+  --color-nav-bg: rgba(10, 10, 10, 0.84);
+  --color-nav-panel: rgba(10, 10, 10, 0.98);
+  --color-nav-line: rgba(212, 180, 92, 0.12);
+  --color-nav-popover: #15130f;
+  --color-nav-caption: #c7c1b4;
+  --nav-bg: var(--color-nav-bg);
+  --nav-panel: var(--color-nav-panel);
+  --nav-line: var(--color-nav-line);
+  --nav-popover: var(--color-nav-popover);
+  --nav-caption: var(--color-nav-caption);
   --toast-success: #9dbb8f;
   --toast-error: #e0917f;
   --toast-warning: #d9b45c;
@@ -37,6 +49,15 @@
   --skeleton-sheen: rgba(212, 180, 92, 0.16);
   --atmosphere-a: rgba(212, 180, 92, 0.1);
   --atmosphere-b: rgba(245, 242, 237, 0.05);
+  /* --- Backdrop gold-thread config (tunable) --- */
+  --atmo-gold-1: #8a6a2f;
+  --atmo-gold-2: #e8c77a;
+  --atmo-gold-3: #b98b3e;
+  --atmo-gold-4: #f6e3a1;
+  --atmo-thread-angle: 105deg;
+  --atmo-lines-opacity: 0.75;
+  --atmo-vignette: radial-gradient(130% 140% at 50% 38%, rgba(36, 28, 16, 0.6) 0%, rgba(12, 10, 8, 0.3) 55%, rgba(0, 0, 0, 0.78) 100%);
+  --atmo-parallax: 8px;
   --serif: var(--font-serif);
   --sans: var(--font-sans);
 }
@@ -378,6 +399,11 @@ html[data-theme='light'] {
   --color-review-panel: #eee8dc;
   --color-review-card: #fffdf8;
   --color-review-border: rgba(143, 108, 37, 0.42);
+  --color-nav-bg: rgba(255, 253, 248, 0.88);
+  --color-nav-panel: rgba(255, 253, 248, 0.98);
+  --color-nav-line: rgba(112, 87, 34, 0.22);
+  --color-nav-popover: #fffdf8;
+  --color-nav-caption: #554d43;
 }
 
 html[data-theme='light'] body {
@@ -474,7 +500,8 @@ html[data-theme='light'] [class*='text-[#898783'],
 html[data-theme='light'] [class*='text-[#77736b'],
 html[data-theme='light'] [class*='text-[#b1b1b1'],
 html[data-theme='light'] [class*='text-[#b9b4aa'],
-html[data-theme='light'] [class*='text-[#a7a198'] {
+html[data-theme='light'] [class*='text-[#a7a198'],
+html[data-theme='light'] [class*='text-[#b3ada2'] {
   color: var(--muted);
 }
 
@@ -483,6 +510,7 @@ html[data-theme='light'] [class*='text-[#ddd8cf'],
 html[data-theme='light'] [class*='text-[#d5d0c8'],
 html[data-theme='light'] [class*='text-[#d8d1c5'],
 html[data-theme='light'] [class*='text-[#d9d3ca'],
+html[data-theme='light'] [class*='text-[#d8d4cb'],
 html[data-theme='light'] [class*='text-[#ddd9d1'],
 html[data-theme='light'] [class*='text-[#eee]'],
 html[data-theme='light'] [class*='text-[#f0efed'],
@@ -553,6 +581,12 @@ html[data-theme='light'] {
   --skeleton-sheen: rgba(143, 108, 37, 0.18);
   --atmosphere-a: rgba(212, 180, 92, 0.16);
   --atmosphere-b: rgba(255, 255, 255, 0.65);
+  --atmo-gold-1: #7d5f1f;
+  --atmo-gold-2: #b08c2d;
+  --atmo-gold-3: #8a6a2f;
+  --atmo-gold-4: #c9a24a;
+  --atmo-lines-opacity: 0.5;
+  --atmo-vignette: radial-gradient(130% 140% at 50% 38%, rgba(255, 252, 244, 0.5) 0%, rgba(255, 253, 248, 0.28) 55%, rgba(238, 232, 220, 0.45) 100%);
 }
 
 /* Toast viewport: bottom-right on desktop, above the mobile booking button
@@ -708,6 +742,7 @@ img.img-skeleton {
 .salon-atmosphere {
   position: relative;
   isolation: isolate;
+  contain: layout paint;
 }
 
 .salon-atmosphere::before {
@@ -723,22 +758,78 @@ img.img-skeleton {
   pointer-events: none;
 }
 
-.salon-lines {
+.salon-atmosphere::after {
+  content: '';
   position: absolute;
   z-index: -1;
   inset: 0;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='360' viewBox='0 0 1440 360' preserveAspectRatio='none'%3E%3Cpath d='M0 60 C 140 20 360 88 520 52 S 820 -8 1020 44 S 1240 78 1440 34' fill='none' stroke='%23d4b45c' stroke-width='1.2' opacity='0.3'/%3E%3Cpath d='M0 96 C 210 40 330 150 560 118 S 900 30 1180 96 S 1330 130 1440 84' fill='none' stroke='%23d4b45c' stroke-width='1' opacity='0.34'/%3E%3Cpath d='M0 168 C 180 128 420 210 640 172 S 980 108 1220 168 S 1360 190 1440 152' fill='none' stroke='%23d4b45c' stroke-width='0.9' opacity='0.24'/%3E%3Cpath d='M0 240 C 240 200 380 286 620 248 S 1020 190 1260 244 S 1380 262 1440 232' fill='none' stroke='%23d4b45c' stroke-width='0.8' opacity='0.15'/%3E%3C/svg%3E");
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='360' viewBox='0 0 1440 360' preserveAspectRatio='none'%3E%3Cpath d='M0 74 C 190 26 380 118 620 82 S 980 18 1180 74 S 1350 104 1440 66' fill='none' stroke='%23d4b45c' stroke-width='0.9' opacity='0.3'/%3E%3Cpath d='M0 196 C 240 150 420 240 660 198 S 1040 142 1260 194 S 1380 214 1440 188' fill='none' stroke='%232f2a22' stroke-width='0.8' opacity='0.55'/%3E%3Cpath d='M0 300 C 200 258 460 336 700 296 S 1100 240 1300 292 S 1400 308 1440 286' fill='none' stroke='%23d4b45c' stroke-width='0.6' opacity='0.18'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-size: 100% 100%;
-  opacity: 0.45;
+  background: var(--atmo-vignette);
   pointer-events: none;
 }
 
-html[data-theme='light'] .salon-lines {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='360' viewBox='0 0 1440 360' preserveAspectRatio='none'%3E%3Cpath d='M0 60 C 140 20 360 88 520 52 S 820 -8 1020 44 S 1240 78 1440 34' fill='none' stroke='%238f6c25' stroke-width='1.2' opacity='0.26'/%3E%3Cpath d='M0 96 C 210 40 330 150 560 118 S 900 30 1180 96 S 1330 130 1440 84' fill='none' stroke='%238f6c25' stroke-width='1' opacity='0.3'/%3E%3Cpath d='M0 168 C 180 128 420 210 640 172 S 980 108 1220 168 S 1360 190 1440 152' fill='none' stroke='%238f6c25' stroke-width='0.9' opacity='0.2'/%3E%3Cpath d='M0 240 C 240 200 380 286 620 248 S 1020 190 1260 244 S 1380 262 1440 232' fill='none' stroke='%238f6c25' stroke-width='0.8' opacity='0.13'/%3E%3C/svg%3E");
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='360' viewBox='0 0 1440 360' preserveAspectRatio='none'%3E%3Cpath d='M0 74 C 190 26 380 118 620 82 S 980 18 1180 74 S 1350 104 1440 66' fill='none' stroke='%238f6c25' stroke-width='0.9' opacity='0.26'/%3E%3Cpath d='M0 196 C 240 150 420 240 660 198 S 1040 142 1260 194 S 1380 214 1440 188' fill='none' stroke='%23c9bfa8' stroke-width='0.8' opacity='0.5'/%3E%3Cpath d='M0 300 C 200 258 460 336 700 296 S 1100 240 1300 292 S 1400 308 1440 286' fill='none' stroke='%238f6c25' stroke-width='0.6' opacity='0.14'/%3E%3C/svg%3E");
+/* Decorative gold threads behind the dark sections. One non-repeating STATIC
+   stroke mask (unique continuous curves; non-scaling strokes keep weights
+   exact at any box size) with the metallic sweep painted as a CSS gradient
+   from the --atmo-gold-* stops. Mask-internal tunables (single config
+   object, the data URI below): crisp stroke weights 2 / 1.8 / 1.3 / 1.1 /
+   .55 / .5 px with line alpha .95 / .9 / .42 / .32, glow tier = stacked
+   translucent stroke copies (no live filter; the mask raster is cached and
+   must stay static), tapered accent ends via the fadeR/fadeL gradients.
+   The mask must never contain animation: Chrome freezes a mask-image SVG at
+   whatever frame it first rasterizes, which permanently clipped the threads
+   mid-draw. The one-time draw-on is therefore a clip wipe on this element,
+   and scroll parallax animates transform only on a promoted layer. */
+.salon-lines {
+  position: absolute;
+  z-index: -1;
+  inset: -2% 0;
+  pointer-events: none;
+  opacity: var(--atmo-lines-opacity);
+  background: linear-gradient(var(--atmo-thread-angle), var(--atmo-gold-1) 0%, var(--atmo-gold-2) 30%, var(--atmo-gold-3) 62%, var(--atmo-gold-4) 100%);
+  mask-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20width%3D'1440'%20height%3D'360'%20viewBox%3D'0%200%201440%20360'%20preserveAspectRatio%3D'none'%3E%0A%3Cdefs%3E%0A%3ClinearGradient%20id%3D'fadeR'%20gradientUnits%3D'userSpaceOnUse'%20x1%3D'830'%20y1%3D'0'%20x2%3D'1400'%20y2%3D'0'%3E%0A%3Cstop%20offset%3D'0'%20stop-color%3D'%23fff'%20stop-opacity%3D'0'%2F%3E%3Cstop%20offset%3D'.3'%20stop-color%3D'%23fff'%20stop-opacity%3D'1'%2F%3E%3Cstop%20offset%3D'.62'%20stop-color%3D'%23fff'%20stop-opacity%3D'.9'%2F%3E%3Cstop%20offset%3D'1'%20stop-color%3D'%23fff'%20stop-opacity%3D'0'%2F%3E%0A%3C%2FlinearGradient%3E%0A%3ClinearGradient%20id%3D'fadeL'%20gradientUnits%3D'userSpaceOnUse'%20x1%3D'30'%20y1%3D'0'%20x2%3D'650'%20y2%3D'0'%3E%0A%3Cstop%20offset%3D'0'%20stop-color%3D'%23fff'%20stop-opacity%3D'0'%2F%3E%3Cstop%20offset%3D'.32'%20stop-color%3D'%23fff'%20stop-opacity%3D'1'%2F%3E%3Cstop%20offset%3D'.64'%20stop-color%3D'%23fff'%20stop-opacity%3D'.85'%2F%3E%3Cstop%20offset%3D'1'%20stop-color%3D'%23fff'%20stop-opacity%3D'0'%2F%3E%0A%3C%2FlinearGradient%3E%0A%3C%2Fdefs%3E%0A%3Cg%20fill%3D'none'%20stroke-linecap%3D'round'%20vector-effect%3D'non-scaling-stroke'%3E%0A%3Cpath%20d%3D'M-40%2074%20C%20230%2012%20400%20128%20640%2092%20S%201030%206%201230%2068%20S%201400%20104%201480%2062'%20stroke%3D'%23fff'%20stroke-width%3D'5'%20opacity%3D'.10'%20vector-effect%3D'non-scaling-stroke'%2F%3E%0A%3Cpath%20d%3D'M-40%2074%20C%20230%2012%20400%20128%20640%2092%20S%201030%206%201230%2068%20S%201400%20104%201480%2062'%20stroke%3D'%23fff'%20stroke-width%3D'3.2'%20opacity%3D'.18'%20vector-effect%3D'non-scaling-stroke'%2F%3E%0A%3Cpath%20d%3D'M-40%20108%20C%20250%2044%20420%20158%20660%20122%20S%201060%2038%201250%20100%20S%201410%20134%201480%2096'%20stroke%3D'%23fff'%20stroke-width%3D'1.8'%20opacity%3D'.10'%20vector-effect%3D'non-scaling-stroke'%2F%3E%0A%3Cpath%20d%3D'M-40%20262%20C%20280%20198%20430%20312%20720%20266%20S%201140%20202%201320%20258%20S%201420%20288%201480%20252'%20stroke%3D'%23fff'%20stroke-width%3D'4.6'%20opacity%3D'.10'%20vector-effect%3D'non-scaling-stroke'%2F%3E%0A%3Cpath%20d%3D'M-40%20262%20C%20280%20198%20430%20312%20720%20266%20S%201140%20202%201320%20258%20S%201420%20288%201480%20252'%20stroke%3D'%23fff'%20stroke-width%3D'3'%20opacity%3D'.18'%20vector-effect%3D'non-scaling-stroke'%2F%3E%0A%3Cpath%20d%3D'M-40%20322%20C%20320%20296%20540%20150%20850%20118%20S%201260%2052%201480%20112'%20stroke%3D'%23fff'%20stroke-width%3D'1.6'%20opacity%3D'.10'%20vector-effect%3D'non-scaling-stroke'%2F%3E%0A%3Cpath%20d%3D'M830%20186%20C%201010%20152%201120%20226%201270%20198%20S%201370%20168%201400%20176'%20stroke%3D'url(%23fadeR)'%20stroke-width%3D'3.6'%20opacity%3D'.10'%20vector-effect%3D'non-scaling-stroke'%2F%3E%0A%3Cpath%20d%3D'M830%20186%20C%201010%20152%201120%20226%201270%20198%20S%201370%20168%201400%20176'%20stroke%3D'url(%23fadeR)'%20stroke-width%3D'2.4'%20opacity%3D'.16'%20vector-effect%3D'non-scaling-stroke'%2F%3E%0A%3Cpath%20d%3D'M30%20212%20C%20170%20184%20310%20246%20480%20222%20S%20610%20192%20650%20202'%20stroke%3D'url(%23fadeL)'%20stroke-width%3D'3.2'%20opacity%3D'.10'%20vector-effect%3D'non-scaling-stroke'%2F%3E%0A%3Cpath%20d%3D'M30%20212%20C%20170%20184%20310%20246%20480%20222%20S%20610%20192%20650%20202'%20stroke%3D'url(%23fadeL)'%20stroke-width%3D'2.2'%20opacity%3D'.16'%20vector-effect%3D'non-scaling-stroke'%2F%3E%0A%3C%2Fg%3E%0A%3Cg%20fill%3D'none'%20stroke-linecap%3D'round'%20vector-effect%3D'non-scaling-stroke'%3E%0A%3Cpath%20d%3D'M-40%2074%20C%20230%2012%20400%20128%20640%2092%20S%201030%206%201230%2068%20S%201400%20104%201480%2062'%20stroke%3D'%23fff'%20stroke-width%3D'2'%20opacity%3D'.95'%20vector-effect%3D'non-scaling-stroke'%2F%3E%0A%3Cpath%20d%3D'M-40%20108%20C%20250%2044%20420%20158%20660%20122%20S%201060%2038%201250%20100%20S%201410%20134%201480%2096'%20stroke%3D'%23fff'%20stroke-width%3D'.55'%20opacity%3D'.42'%20vector-effect%3D'non-scaling-stroke'%2F%3E%0A%3Cpath%20d%3D'M-40%20262%20C%20280%20198%20430%20312%20720%20266%20S%201140%20202%201320%20258%20S%201420%20288%201480%20252'%20stroke%3D'%23fff'%20stroke-width%3D'1.8'%20opacity%3D'.9'%20vector-effect%3D'non-scaling-stroke'%2F%3E%0A%3Cpath%20d%3D'M-40%20322%20C%20320%20296%20540%20150%20850%20118%20S%201260%2052%201480%20112'%20stroke%3D'%23fff'%20stroke-width%3D'.5'%20opacity%3D'.32'%20vector-effect%3D'non-scaling-stroke'%2F%3E%0A%3Cpath%20d%3D'M830%20186%20C%201010%20152%201120%20226%201270%20198%20S%201370%20168%201400%20176'%20stroke%3D'url(%23fadeR)'%20stroke-width%3D'1.3'%20vector-effect%3D'non-scaling-stroke'%2F%3E%0A%3Cpath%20d%3D'M30%20212%20C%20170%20184%20310%20246%20480%20222%20S%20610%20192%20650%20202'%20stroke%3D'url(%23fadeL)'%20stroke-width%3D'1.1'%20vector-effect%3D'non-scaling-stroke'%2F%3E%0A%3C%2Fg%3E%0A%3C%2Fsvg%3E");
+  mask-size: 100% 100%;
+  mask-repeat: no-repeat;
+  will-change: transform;
+  animation: atmo-draw 1.4s ease-out both;
 }
+
+@keyframes atmo-draw {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+
+  to {
+    clip-path: inset(0);
+  }
+}
+
+@keyframes atmo-parallax {
+  from {
+    transform: translateY(calc(var(--atmo-parallax) * -1));
+  }
+
+  to {
+    transform: translateY(var(--atmo-parallax));
+  }
+}
+
+@supports (animation-timeline: scroll()) {
+  @media (min-width: 769px) {
+    .salon-lines {
+      animation: atmo-draw 1.4s ease-out both, atmo-parallax linear both;
+      animation-timeline: auto, scroll(root block);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .salon-lines {
+    animation: none;
+    transform: none;
+    clip-path: none;
+  }
+}
+
 
 /* Gold text links inside the auth dialogs. The brand gold is calibrated for
    the dark theme, so in light mode these fall back to a darker gold that
@@ -1180,6 +1271,12 @@ html[data-theme='light'] .btn-pill[class~='bg-[var(--gold)]'] {
   opacity: 0.55;
 }
 
+/* While a request is in flight the spinner and label carry the signal — the
+   button keeps its full brand fill and text contrast (no dimmed loading state). */
+.btn-pill:disabled:has(.animate-spin) {
+  opacity: 1;
+}
+
 /* --- Booking progress + gold wipe transitions (P5) --- */
 
 .booking-progress {
@@ -1407,4 +1504,292 @@ html[data-theme='light'] .auth-helper:hover {
   .gallery-pause-control {
     display: none;
   }
+}
+
+
+/* --- Google sign-in frame (wraps Google's own rendered button) ----------
+   The button itself is Google's and is never restyled; the frame around it
+   carries the app theme. color-scheme matches the mode so Google's iframe
+   cannot paint a mismatched rectangle behind the button. */
+.google-button-frame {
+  display: flex;
+  width: 100%;
+  min-height: 46px; /* same height as the sign-in buttons */
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border: 1px solid var(--gold);
+  border-radius: 4px; /* matches Google's rect button shape */
+  background: #131314; /* Google's dark button fill — button and frame match */
+  color-scheme: dark;
+  overflow: hidden;
+}
+
+html[data-theme='light'] .google-button-frame {
+  background: var(--color-surface);
+  border-color: #8f6c25; /* existing darker light-mode gold */
+  color-scheme: light;
+}
+
+.google-button-frame:focus-within {
+  outline: 2px solid var(--gold-bright);
+  outline-offset: 2px;
+}
+
+html[data-theme='light'] .google-button-frame:focus-within {
+  outline-color: #b08c2d;
+}
+
+.google-button-host {
+  display: flex;
+  width: 100%;
+  justify-content: center;
+}
+
+.google-button-host > div {
+  max-width: 100%;
+}
+
+/* ==========================================================================
+   UI REFRESH — THE GOLD HAIRLINE RULE (signature detail)
+
+   One motif, used with discipline: a hairline gold rule that fades out to
+   the right. It underlines every eyebrow label, divides section from
+   section, warms the top edge of cards, and caps the footer. Everything
+   else in the refresh — the editorial type scale, the press feedback —
+   exists to let that one line carry the brand.
+   ========================================================================== */
+
+:root {
+  --rule-gold: rgba(212, 180, 92, 0.6);
+  --rule-gold-soft: rgba(212, 180, 92, 0.26);
+  --rule-fade: linear-gradient(90deg, var(--rule-gold) 0%, rgba(212, 180, 92, 0) 100%);
+  --rule-fade-soft: linear-gradient(90deg, var(--rule-gold-soft) 0%, rgba(212, 180, 92, 0) 100%);
+  --shadow-lift: 0 18px 38px rgba(0, 0, 0, 0.28);
+}
+
+html[data-theme='light'] {
+  --rule-gold: rgba(122, 90, 28, 0.55);
+  --rule-gold-soft: rgba(122, 90, 28, 0.24);
+  --rule-fade: linear-gradient(90deg, var(--rule-gold) 0%, rgba(122, 90, 28, 0) 100%);
+  --rule-fade-soft: linear-gradient(90deg, var(--rule-gold-soft) 0%, rgba(122, 90, 28, 0) 100%);
+  --shadow-lift: 0 18px 38px rgba(88, 66, 24, 0.16);
+}
+
+/* --- 1. The rule under every eyebrow label (pure CSS, no markup change) --- */
+.type-hero-eyebrow::after,
+.type-section-eyebrow::after {
+  content: '';
+  display: inline-block;
+  width: clamp(40px, 5vw, 64px);
+  height: 1px;
+  margin-left: clamp(12px, 1.4vw, 18px);
+  vertical-align: 0.32em;
+  background: var(--rule-fade);
+}
+
+/* --- 2. Editorial type scale (fonts already loaded) --- */
+.type-hero-title {
+  font-family: var(--font-display);
+  letter-spacing: 0.012em;
+  line-height: 0.98;
+}
+
+.type-hero-eyebrow {
+  letter-spacing: 2.4px;
+}
+
+.type-hero-script {
+  line-height: 0.92;
+}
+
+.type-section-eyebrow {
+  letter-spacing: 2.2px;
+}
+
+.type-section-heading {
+  line-height: 1.06;
+  letter-spacing: -0.012em;
+}
+
+/* --- 3. Section rhythm: the rule between sections --- */
+main > section + section::before {
+  content: '';
+  display: block;
+  width: min(100% - 48px, 1180px);
+  height: 1px;
+  margin: 0 auto 0;
+  background: linear-gradient(90deg, rgba(212, 180, 92, 0) 0%, var(--rule-gold-soft) 18%, var(--rule-gold-soft) 82%, rgba(212, 180, 92, 0) 100%);
+}
+
+/* --- 4. Card hairline: a warm wash at the top edge, hairline border --- */
+.service-card {
+  border-color: var(--rule-gold-soft);
+  background-image: linear-gradient(180deg, rgba(212, 180, 92, 0.09) 0%, rgba(212, 180, 92, 0) 110px);
+}
+
+html[data-theme='light'] .service-card {
+  background-image: linear-gradient(180deg, rgba(122, 90, 28, 0.07) 0%, rgba(122, 90, 28, 0) 110px);
+}
+
+.service-card:active {
+  transform: translateY(-2px) scale(0.995);
+}
+
+/* --- 5. Button press feedback (motion only when allowed) --- */
+@media (prefers-reduced-motion: no-preference) {
+  .btn-pill {
+    transition:
+      transform 160ms ease,
+      background-color 160ms ease,
+      border-color 160ms ease,
+      color 160ms ease,
+      box-shadow 160ms ease;
+  }
+
+  .btn-pill:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-lift);
+  }
+
+  .btn-pill:active {
+    transform: translateY(0) scale(0.985);
+  }
+}
+
+/* --- 6. The footer carries the same rule as the section dividers --- */
+footer.site-footer {
+  border-top: 1px solid var(--rule-gold-soft);
+  background-image: linear-gradient(180deg, rgba(212, 180, 92, 0.05) 0%, rgba(212, 180, 92, 0) 160px);
+}
+
+html[data-theme='light'] footer.site-footer {
+  background-image: linear-gradient(180deg, rgba(122, 90, 28, 0.05) 0%, rgba(122, 90, 28, 0) 160px);
+}
+
+/* --- 7. Light theme: gold TEXT must carry text contrast (WCAG AA) --- */
+html[data-theme='light'] .type-hero-eyebrow,
+html[data-theme='light'] .type-section-eyebrow,
+html[data-theme='light'] [class*='text-[var(--gold)]'],
+html[data-theme='light'] [class*='text-(--gold)'] {
+  color: #7a5a1c;
+}
+
+/* --- 8. Touch targets: nothing interactive under 44x44 --- */
+/* :not([class~='hidden']) keeps the unlayered min-size rule from overriding
+   Tailwind's `hidden` on responsive controls (the mobile nav toggle carries
+   `hidden max-[900px]:flex` and must stay display:none on desktop). */
+nav a,
+nav button:not([class~='hidden']),
+footer a,
+footer button,
+.service-card a,
+.service-card button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+}
+
+/* Carousel arrows grow to the full target; the dots keep their 8px look and
+   carry a 44x44 invisible hit area instead (no layout change). */
+[aria-label='Previous review'],
+[aria-label='Next review'] {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+[aria-label^='Show review'] {
+  position: relative;
+}
+
+[aria-label^='Show review']::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
+
+/* --- 9. Reduced motion: nothing moves, nothing loops --- */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .service-card:hover,
+  .service-card:focus-within,
+  .service-card:active,
+  .btn-pill:hover,
+  .btn-pill:active {
+    transform: none;
+  }
+
+  /* Scroll reveals and route/dialog entrances show content immediately. */
+  .reveal {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* --- 10. Route transitions, scroll reveals, modal reveals --- */
+/* Composited properties only (opacity/transform): the page/dialog entrances
+   and the scroll-triggered reveals never touch layout. Staggering is opt-in
+   per element via --reveal-delay. */
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.page-enter {
+  animation: page-in 260ms ease-out both;
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.dialog-reveal {
+  animation: dialog-in 220ms ease-out both;
+}
+
+.reveal {
+  opacity: 0;
+  transform: translateY(16px);
+  transition:
+    opacity 500ms ease-out,
+    transform 500ms ease-out;
+  transition-delay: var(--reveal-delay, 0ms);
+}
+
+.reveal.reveal-in {
+  opacity: 1;
+  transform: none;
 }

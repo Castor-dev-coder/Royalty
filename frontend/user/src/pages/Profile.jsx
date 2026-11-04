@@ -1,25 +1,102 @@
-import { useCallback, useState } from 'react'
-import { Navigate, useNavigate } from 'react-router-dom'
+import { useCallback, useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import CustomerInitials from '../components/CustomerInitials.jsx'
+import SignInPanel from '../components/SignInPanel.jsx'
 import { useAuth } from '../context/useAuth.jsx'
+import {
+  useFieldErrors,
+  validatePersonName,
+  validatePhone,
+} from '../lib/validation.js'
+import { useRecoveryTick } from '../lib/useOutage.js'
+import { useAutoRefresh } from '../lib/useAutoRefresh.js'
 import { useToast } from '../context/useToast.jsx'
+import { fetchMyCustomer, updateCustomer } from '../lib/api.js'
 
 function Profile() {
   const navigate = useNavigate()
-  const { user, login } = useAuth()
+  const { user, restoring, login } = useAuth()
+  // Refetches the page's data whenever an outage recovers.
+  const recoveryTick = useRecoveryTick()
   const { showToast } = useToast()
   const [saved, setSaved] = useState(false)
+  const [customer, setCustomer] = useState(null)
+  // True while the customer is editing the form: background refreshes must
+  // never overwrite what they are typing.
+  const [dirty, setDirty] = useState(false)
+
+  // Real profile: GET /customers/me fills the form.
+  const load = useCallback(
+    () =>
+      fetchMyCustomer().then(
+        (data) => {
+          setCustomer(data ?? null)
+          return true
+        },
+        // Keep the loaded form visible across a failed refetch; the outage
+        // banner explains staleness.
+        () => false,
+      ),
+    [],
+  )
+
+  useEffect(() => {
+    void load()
+  }, [load, recoveryTick])
+
+  // Signed-in background refresh (focus / online / 45s ± jitter) — skipped
+  // entirely while the form is dirty.
+  useAutoRefresh(load, { enabled: Boolean(user) && user.role === 'CUSTOMER', paused: dirty })
+
+  const { errors, field, submitErrors } = useFieldErrors()
+  const lastNameLive = field('lastName', (value) =>
+    validatePersonName(value, { emptyMessage: 'Enter your last name.' }),
+  )
+  const phoneLive = field('phone', validatePhone)
 
   const updateProfile = useCallback((event) => {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
-    const nextUser = { ...user, name: `${form.get('firstName')} ${form.get('lastName')}`.trim(), email: form.get('email') }
-    localStorage.setItem('royalty-user', JSON.stringify(nextUser))
-    login(nextUser)
-    setSaved(true)
-    showToast('success', 'Your profile has been updated.')
-  }, [login, showToast, user])
+    const payload = {
+      firstName: String(form.get('firstName') ?? '').trim(),
+      lastName: String(form.get('lastName') ?? '').trim(),
+      phone: String(form.get('phone') ?? '').trim(),
+    }
+    if (!customer?.id) return
+    const nextErrors = {}
+    const lastNameError = validatePersonName(payload.lastName, { emptyMessage: 'Enter your last name.' })
+    if (lastNameError) nextErrors.lastName = lastNameError
+    const phoneError = validatePhone(payload.phone)
+    if (phoneError) nextErrors.phone = phoneError
+    submitErrors(nextErrors)
+    if (Object.keys(nextErrors).length > 0) return
+    updateCustomer(customer.id, payload).then(
+      () => {
+        setSaved(true)
+        setDirty(false)
+        // The in-memory session keeps the display name in sync (no storage).
+        login({ ...user, name: `${payload.firstName} ${payload.lastName}`.trim() || user.name })
+        showToast('success', 'Your profile has been updated.')
+      },
+      (error) => {
+        showToast('error', error?.message || 'Your profile could not be updated.')
+      },
+    )
+  }, [customer, login, showToast, submitErrors, user])
 
-  if (!user) return <Navigate to="/services" replace />
+  // Keep the skeleton up while the session restores — a redirect here would
+  // bounce the visitor away from the profile they asked for.
+  if (restoring) {
+    return (
+      <main className="min-h-[calc(100vh-76px)] bg-black py-16">
+        <div className="mx-auto w-[min(100%-48px,980px)] max-[680px]:w-[min(100%-36px,980px)]">
+          <div className="h-[420px] animate-pulse rounded-lg border border-[rgba(212,180,92,0.22)] bg-[#11100e]" />
+        </div>
+      </main>
+    )
+  }
+
+  if (!user) return <SignInPanel standalone action="view your account" />
 
   return (
     <>
@@ -29,30 +106,48 @@ function Profile() {
             <h1 className="m-0 font-(--serif) text-3xl text-(--gold)">Profile Information</h1>
             <p className="mt-2 text-sm text-[#918c82]">Manage your personal details</p>
           </div>
-          <form onSubmit={updateProfile} className="rounded-lg border border-[rgba(212,180,92,0.22)] bg-[#11100e] p-8 shadow-[0_8px_32px_rgba(0,0,0,0.4)] max-[680px]:p-6">
+          {!customer ? (
+            <div className="rounded-lg border border-[rgba(212,180,92,0.22)] bg-[#11100e] p-8 text-center text-sm text-[#b3ada2]" role="status">
+              Loading your profile…
+            </div>
+          ) : (
+          <form onSubmit={updateProfile} onInput={() => setDirty(true)} className="rounded-lg border border-[rgba(212,180,92,0.22)] bg-[#11100e] p-8 shadow-[0_8px_32px_rgba(0,0,0,0.4)] max-[680px]:p-6">
             <div className="mb-8 flex flex-col items-center border-b border-[rgba(212,180,92,0.15)] pb-8">
-              <div className="grid size-25 place-items-center rounded-full border-2 border-(--gold) bg-[#1a1815] text-4xl font-medium text-(--gold)">{user.name?.[0]?.toUpperCase() || 'U'}</div>
-              <p className="mt-4 font-(--serif) text-xl text-[#f4f1eb]">{user.name}</p>
+              {/* Customer identity is initials only — never a photo. */}
+              <CustomerInitials className="size-25 text-4xl font-medium" name={`${customer.firstName ?? ''} ${customer.lastName ?? ''}`.trim() || user.name} />
+              <p className="mt-4 font-(--serif) text-xl text-[#f4f1eb]">{`${customer.firstName || ''} ${customer.lastName || ''}`.trim() || user.name}</p>
               <p className="text-sm text-[#918c82]">{user.email}</p>
             </div>
             <div className="grid gap-6">
               <div className="grid grid-cols-2 gap-4 max-[680px]:grid-cols-1">
                 <div className="flex flex-col gap-2">
                   <label htmlFor="firstName" className="text-xs font-medium uppercase tracking-wider text-[#918c82]">First Name</label>
-                  <input id="firstName" name="firstName" defaultValue={user.name?.split(' ')[0]} className="w-full rounded-md border border-[rgba(212,180,92,0.3)] bg-[#0d0d0c] px-4 py-3 text-sm text-[#f4f1eb] placeholder-[#5a5550] outline-none transition-colors focus:border-(--gold)" />
+                  <input id="firstName" name="firstName" defaultValue={customer.firstName} readOnly aria-readonly="true" aria-describedby="firstName-hint" className="w-full rounded-md border border-[rgba(212,180,92,0.3)] bg-[#0d0d0c] px-4 py-3 text-sm text-[#f4f1eb] placeholder-[#5a5550] outline-none transition-colors focus:border-(--gold)" />
+                  <p id="firstName-hint" className="text-xs text-[#918c82]">Your first name is tied to your account. Contact the salon to change it.</p>
                 </div>
                 <div className="flex flex-col gap-2">
                   <label htmlFor="lastName" className="text-xs font-medium uppercase tracking-wider text-[#918c82]">Last Name</label>
-                  <input id="lastName" name="lastName" defaultValue={user.name?.split(' ').slice(1).join(' ')} className="w-full rounded-md border border-[rgba(212,180,92,0.3)] bg-[#0d0d0c] px-4 py-3 text-sm text-[#f4f1eb] placeholder-[#5a5550] outline-none transition-colors focus:border-(--gold)" />
+                  <input id="lastName" name="lastName" defaultValue={customer.lastName} aria-describedby={errors.lastName ? 'lastName-error' : undefined} aria-invalid={errors.lastName ? 'true' : undefined} {...lastNameLive} className="w-full rounded-md border border-[rgba(212,180,92,0.3)] bg-[#0d0d0c] px-4 py-3 text-sm text-[#f4f1eb] placeholder-[#5a5550] outline-none transition-colors focus:border-(--gold)" />
+                  {errors.lastName && (
+                    <p className="m-0 text-[0.68rem] leading-[1.5] text-[#e9a68c]" id="lastName-error" role="alert">
+                      {errors.lastName}
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="flex flex-col gap-2">
                 <label htmlFor="email" className="text-xs font-medium uppercase tracking-wider text-[#918c82]">Email Address</label>
-                <input id="email" name="email" type="email" defaultValue={user.email} className="w-full rounded-md border border-[rgba(212,180,92,0.3)] bg-[#0d0d0c] px-4 py-3 text-sm text-[#f4f1eb] placeholder-[#5a5550] outline-none transition-colors focus:border-(--gold)" />
+                <input id="email" name="email" type="email" defaultValue={user.email} disabled className="w-full rounded-md border border-[rgba(212,180,92,0.15)] bg-[#0d0d0c] px-4 py-3 text-sm text-[#8d877c] outline-none" />
+                <p className="m-0 text-[11px] text-[#8d877c]">Email changes are not supported yet.</p>
               </div>
               <div className="flex flex-col gap-2">
                 <label htmlFor="phone" className="text-xs font-medium uppercase tracking-wider text-[#918c82]">Phone Number</label>
-                <input id="phone" name="phone" type="tel" placeholder="+63 976 475 422" className="w-full rounded-md border border-[rgba(212,180,92,0.3)] bg-[#0d0d0c] px-4 py-3 text-sm text-[#f4f1eb] placeholder-[#5a5550] outline-none transition-colors focus:border-(--gold)" />
+                <input id="phone" name="phone" type="tel" defaultValue={customer.phone ?? ''} placeholder="09XX XXX XXXX" required aria-describedby={errors.phone ? 'phone-error' : undefined} aria-invalid={errors.phone ? 'true' : undefined} {...phoneLive} className="w-full rounded-md border border-[rgba(212,180,92,0.3)] bg-[#0d0d0c] px-4 py-3 text-sm text-[#f4f1eb] placeholder-[#5a5550] outline-none transition-colors focus:border-(--gold)" />
+                {errors.phone && (
+                  <p className="m-0 text-[0.68rem] leading-[1.5] text-[#e9a68c]" id="phone-error" role="alert">
+                    {errors.phone}
+                  </p>
+                )}
               </div>
               <div className="flex flex-col gap-2 pt-2">
                 <label className="text-xs font-medium uppercase tracking-wider text-[#918c82]">Security</label>
@@ -71,6 +166,7 @@ function Profile() {
               </button>
             </div>
           </form>
+          )}
         </div>
       </main>
     </>

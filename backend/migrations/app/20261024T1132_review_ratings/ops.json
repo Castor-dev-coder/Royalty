@@ -1,0 +1,303 @@
+[
+  {
+    "id": "createNativeEnumType.review_rating_category",
+    "label": "Create enum type \"review_rating_category\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "type",
+        "name": "review_rating_category"
+      }
+    },
+    "precheck": [],
+    "execute": [
+      {
+        "description": "create enum type \"review_rating_category\"",
+        "sql": "CREATE TYPE \"public\".\"review_rating_category\" AS ENUM ('SERVICE', 'PRODUCTS', 'STAFF', 'TIME_MANAGEMENT')",
+        "params": []
+      }
+    ],
+    "postcheck": []
+  },
+  {
+    "id": "table.review_ratings",
+    "label": "Create table \"review_ratings\"",
+    "summary": "Creates table \"review_ratings\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "review_ratings"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"review_ratings\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"review_ratings\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"review_ratings\"",
+        "sql": "CREATE TABLE \"public\".\"review_ratings\" (\n  \"category\" \"review_rating_category\" NOT NULL,\n  \"id\" uuid DEFAULT (gen_random_uuid()) NOT NULL,\n  \"rating\" int2 NOT NULL,\n  \"review_id\" uuid NOT NULL,\n  CONSTRAINT \"review_ratings_pkey\" PRIMARY KEY (\"id\"),\n  CONSTRAINT \"valid_review_rating\" CHECK (((rating >= 1) AND (rating <= 5)))\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"review_ratings\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"review_ratings\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "unique.review_ratings.review_ratings_review_category_key",
+    "label": "Add unique constraint on \"review_ratings\" (review_id, category)",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "unique",
+        "name": "review_ratings_review_category_key",
+        "table": "review_ratings"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure constraint \"review_ratings_review_category_key\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "review_ratings_review_category_key",
+          "public",
+          "\"public\".\"review_ratings\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add unique constraint \"review_ratings_review_category_key\"",
+        "sql": "ALTER TABLE \"public\".\"review_ratings\" ADD CONSTRAINT \"review_ratings_review_category_key\" UNIQUE (\"review_id\", \"category\")"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify constraint \"review_ratings_review_category_key\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "review_ratings_review_category_key",
+          "public",
+          "\"public\".\"review_ratings\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.appointment_services.idx_appointment_services_service_id",
+    "label": "Create index \"idx_appointment_services_service_id\" on \"appointment_services\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "idx_appointment_services_service_id",
+        "table": "appointment_services"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"idx_appointment_services_service_id\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_appointment_services_service_id\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"idx_appointment_services_service_id\"",
+        "sql": "CREATE INDEX \"idx_appointment_services_service_id\" ON \"public\".\"appointment_services\" (\"service_id\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"idx_appointment_services_service_id\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_appointment_services_service_id\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.payments.idx_payments_verified_by",
+    "label": "Create index \"idx_payments_verified_by\" on \"payments\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "idx_payments_verified_by",
+        "table": "payments"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"idx_payments_verified_by\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_payments_verified_by\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"idx_payments_verified_by\"",
+        "sql": "CREATE INDEX \"idx_payments_verified_by\" ON \"public\".\"payments\" (\"verified_by\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"idx_payments_verified_by\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_payments_verified_by\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.schedule_requests.idx_schedule_requests_reviewed_by",
+    "label": "Create index \"idx_schedule_requests_reviewed_by\" on \"schedule_requests\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "idx_schedule_requests_reviewed_by",
+        "table": "schedule_requests"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"idx_schedule_requests_reviewed_by\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_schedule_requests_reviewed_by\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"idx_schedule_requests_reviewed_by\"",
+        "sql": "CREATE INDEX \"idx_schedule_requests_reviewed_by\" ON \"public\".\"schedule_requests\" (\"reviewed_by\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"idx_schedule_requests_reviewed_by\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"idx_schedule_requests_reviewed_by\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "foreignKey.review_ratings.fk_review_rating_review",
+    "label": "Add foreign key \"fk_review_rating_review\" on \"review_ratings\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "foreignKey",
+        "name": "fk_review_rating_review",
+        "table": "review_ratings"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure FK \"fk_review_rating_review\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_review_rating_review",
+          "public",
+          "\"public\".\"review_ratings\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add FK \"fk_review_rating_review\"",
+        "sql": "ALTER TABLE \"public\".\"review_ratings\"\nADD CONSTRAINT \"fk_review_rating_review\"\nFOREIGN KEY (\"review_id\")\nREFERENCES \"public\".\"reviews\" (\"id\")\nON DELETE CASCADE"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify FK \"fk_review_rating_review\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "fk_review_rating_review",
+          "public",
+          "\"public\".\"review_ratings\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "rowLevelSecurity.public.review_ratings",
+    "label": "Enable row-level security on \"review_ratings\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "rowLevelSecurity",
+        "name": "review_ratings"
+      }
+    },
+    "precheck": [
+      {
+        "description": "check RLS is not already enabled on \"review_ratings\"",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_class\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"relnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"c\".\"relname\" = $2 AND NOT (\"c\".\"relrowsecurity\"))) AS \"result\"",
+        "params": [
+          "public",
+          "review_ratings"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "enable row-level security on \"review_ratings\"",
+        "sql": "ALTER TABLE \"public\".\"review_ratings\" ENABLE ROW LEVEL SECURITY"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify row-level security is enabled on \"review_ratings\"",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_class\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"relnamespace\" WHERE (\"n\".\"nspname\" = $1 AND \"c\".\"relname\" = $2 AND \"c\".\"relrowsecurity\")) AS \"result\"",
+        "params": [
+          "public",
+          "review_ratings"
+        ]
+      }
+    ]
+  }
+]

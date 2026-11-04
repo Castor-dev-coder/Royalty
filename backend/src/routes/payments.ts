@@ -1,0 +1,86 @@
+import express, { Router } from 'express';
+import { authenticate, requireRole } from '../middleware/auth.js';
+import { rateLimit } from '../middleware/rateLimit.js';
+import { validateQuery, validateRequest } from '../middleware/validator.js';
+import {
+  mayaCheckoutController,
+  mayaReturnController,
+  mayaStatusController,
+  mayaWebhookController,
+  mayaCheckoutSchema,
+} from '../modules/payments/maya.controller.js';
+import {
+  getPaymentSettingsController,
+  listMyPaymentsController,
+  listPaymentsController,
+  paymentActivityController,
+  paymentProofController,
+  paymentQuoteController,
+  recordInPersonPaymentController,
+  submitOnlinePaymentController,
+  updatePaymentSettingsController,
+  updatePaymentStatusController,
+  uploadGcashQrController,
+} from '../modules/payments/payments.controller.js';
+import {
+  inPersonPaymentSchema,
+  onlinePaymentSchema,
+  paymentSettingsSchema,
+  paymentStatusUpdateSchema,
+} from '../modules/payments/payments.schemas.js';
+
+export const paymentsRouter = Router();
+
+// Public: the GCash QR display (image URL, receiver, masked number) and the
+// configured down-payment policy. Never contains secrets.
+paymentsRouter.get('/settings', getPaymentSettingsController);
+
+// PUBLIC: the Maya redirect target and the provider webhook. The webhook body
+// is never trusted — payments are re-verified server-side against the Maya
+// API. Rate-limited like every other public surface.
+paymentsRouter.get('/maya/return', rateLimit({ max: 30, windowMs: 60 * 1000 }), mayaReturnController);
+paymentsRouter.post('/maya/webhook', rateLimit({ max: 60, windowMs: 60 * 1000 }), express.json({ limit: '256kb' }), mayaWebhookController);
+
+paymentsRouter.use(authenticate);
+
+// CUSTOMER: start one idempotent Maya payment attempt (15-minute hold).
+paymentsRouter.post(
+  '/maya/checkout',
+  requireRole('CUSTOMER'),
+  rateLimit({ max: 20, windowMs: 60 * 1000 }),
+  validateRequest(mayaCheckoutSchema),
+  mayaCheckoutController,
+);
+// Authenticated: authoritative payment state (owner/staff/manager/admin).
+paymentsRouter.get('/maya/:id/status', mayaStatusController);
+
+// Server-calculated amounts for one appointment (owner customer + staff).
+paymentsRouter.get('/quote/:appointmentId', paymentQuoteController);
+paymentsRouter.get('/:id/proof', paymentProofController);
+
+// CUSTOMER: online GCash submission (proof image = raw body; 10 uploads/hour).
+paymentsRouter.post(
+  '/:appointmentId/online',
+  requireRole('CUSTOMER'),
+  rateLimit({ max: 10, windowMs: 60 * 60 * 1000 }),
+  express.raw({ type: () => true, limit: '10mb' }),
+  validateQuery(onlinePaymentSchema),
+  submitOnlinePaymentController,
+);
+
+// STAFF/MANAGER/ADMIN: record money actually received at the salon.
+paymentsRouter.post('/in-person', requireRole('STAFF', 'MANAGER', 'ADMIN'), validateRequest(inPersonPaymentSchema), recordInPersonPaymentController);
+
+// ADMIN/MANAGER: verify or reject online proof (one-way, audited).
+paymentsRouter.patch('/:id/status', requireRole('ADMIN', 'MANAGER'), validateRequest(paymentStatusUpdateSchema), updatePaymentStatusController);
+
+// Customer's own transactions.
+paymentsRouter.get('/mine', listMyPaymentsController);
+
+// ADMIN/MANAGER listings and activity (STAFF see their own appointments only).
+paymentsRouter.get('/activity', requireRole('ADMIN', 'MANAGER', 'STAFF'), paymentActivityController);
+paymentsRouter.get('/', requireRole('ADMIN', 'MANAGER', 'STAFF'), listPaymentsController);
+
+// ADMIN: payment settings + QR upload.
+paymentsRouter.put('/settings', requireRole('ADMIN'), validateRequest(paymentSettingsSchema), updatePaymentSettingsController);
+paymentsRouter.post('/settings/qr', requireRole('ADMIN'), rateLimit({ max: 10, windowMs: 60 * 60 * 1000 }), express.raw({ type: () => true, limit: '10mb' }), uploadGcashQrController);

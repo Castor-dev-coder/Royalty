@@ -1,0 +1,209 @@
+/* Meet Our Team: 2-column grid of horizontal staff cards (portrait photo on
+   the left, text block on the right) on the dark salon canvas, matching the
+   gold-hairline reference. Scoped to .team-* class names so nothing leaks
+   into the rest of the page. Decorative arcs are hairline circle strokes
+   (no gradient fills); the warm photo glow is a box-shadow only. */
+
+/* Faint gold arc lines sweeping behind the team section (reference motif). */
+.team-arcs {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.team-arcs::before,
+.team-arcs::after {
+  content: '';
+  position: absolute;
+  border: 1px solid color-mix(in srgb, var(--gold) 15%, transparent);
+  border-radius: 50%;
+}
+
+.team-arcs::before {
+  width: 760px;
+  height: 760px;
+  top: -300px;
+  left: -240px;
+}
+
+.team-arcs::after {
+  width: 980px;
+  height: 980px;
+  right: -340px;
+  bottom: -540px;
+  border-color: color-mix(in srgb, var(--gold) 10%, transparent);
+}
+
+.team-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  margin: 0 auto;
+  padding: 0;
+  list-style: none;
+}
+
+.team-grid > li {
+  display: flex;
+}
+
+.team-card {
+  display: flex;
+  flex: 1;
+  align-items: stretch;
+  gap: clamp(18px, 2vw, 28px);
+  padding: clamp(18px, 1.8vw, 26px);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--card);
+}
+
+/* Left column: portrait photo, ~3:4, rounded, with a subtle warm gold glow. */
+.team-card__photo {
+  flex: 0 0 clamp(110px, 34%, 230px);
+  align-self: flex-start;
+  min-width: 0;
+}
+
+.team-card__img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  border-radius: 12px;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--gold) 38%, transparent),
+    0 12px 28px color-mix(in srgb, var(--gold) 14%, transparent);
+}
+
+/* Fallback avatar when the member has no photo: same portrait frame. */
+.team-card__initials {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  border: 1px solid color-mix(in srgb, var(--gold) 45%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--gold) 8%, var(--card));
+  box-shadow: 0 12px 28px color-mix(in srgb, var(--gold) 12%, transparent);
+  font-family: var(--font-serif);
+  font-size: clamp(30px, 3vw, 44px);
+  font-weight: 600;
+  line-height: 1;
+  color: var(--gold);
+}
+
+/* Right column: name, role, gold rule, bio, tags anchored to the bottom. */
+.team-card__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.team-card__name {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-weight: 600;
+  font-size: clamp(25px, 2.3vw, 33px);
+  line-height: 1.12;
+  color: var(--gold);
+}
+
+.team-card__role {
+  margin: 8px 0 0;
+  font-family: var(--font-salon);
+  font-size: clamp(12px, 0.95vw, 14px);
+  font-weight: 600;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+/* Short thin gold rule between role and bio (reference divider). */
+.team-card__rule {
+  display: block;
+  width: 24px;
+  height: 2px;
+  margin: 14px 0 16px;
+  border-radius: 1px;
+  background: var(--gold);
+}
+
+.team-card__bio {
+  margin: 0;
+  font-family: var(--font-salon);
+  font-size: clamp(13.5px, 1vw, 15px);
+  line-height: 1.75;
+  color: #c8c3bb;
+}
+
+/* QA demo disclaimer stays visible and distinct whenever a bio carries one. */
+.team-card__disclaimer {
+  margin: 10px 0 0;
+  padding-left: 10px;
+  border-left: 2px solid color-mix(in srgb, var(--gold) 55%, transparent);
+  font-family: var(--font-salon);
+  font-size: 12px;
+  font-style: italic;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.team-card__meta {
+  margin-top: auto;
+  padding-top: 18px;
+}
+
+.team-card__covers {
+  margin: 0 0 6px;
+  font-family: var(--font-salon);
+  font-size: 11px;
+  line-height: 1.6;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Services offered: slash-separated, gray tags with gold slashes, smallest
+   type on the card. */
+.team-card__tags {
+  margin: 0;
+  font-family: var(--font-salon);
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+
+.team-card__tag-sep {
+  padding: 0 6px;
+  color: var(--gold);
+}
+
+@media (max-width: 820px) {
+  .team-grid {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+}
+
+@media (max-width: 680px) {
+  .team-card {
+    gap: 16px;
+    padding: 16px;
+    border-radius: 14px;
+  }
+
+  .team-card__photo {
+    flex-basis: 118px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .team-arcs {
+    animation: none;
+  }
+}

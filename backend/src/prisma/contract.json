@@ -28,6 +28,10 @@
       "model": "Customer",
       "namespace": "public"
     },
+    "payment_settings": {
+      "model": "PaymentSetting",
+      "namespace": "public"
+    },
     "payments": {
       "model": "Payment",
       "namespace": "public"
@@ -38,6 +42,14 @@
     },
     "posts": {
       "model": "ExternalPosts",
+      "namespace": "public"
+    },
+    "review_photos": {
+      "model": "ReviewPhoto",
+      "namespace": "public"
+    },
+    "review_ratings": {
+      "model": "ReviewRating",
       "namespace": "public"
     },
     "reviews": {
@@ -58,6 +70,14 @@
     },
     "staff": {
       "model": "Staff",
+      "namespace": "public"
+    },
+    "staff_attendance": {
+      "model": "StaffAttendance",
+      "namespace": "public"
+    },
+    "staff_categories": {
+      "model": "StaffCategory",
       "namespace": "public"
     },
     "staff_schedules": {
@@ -100,6 +120,16 @@
                   }
                 }
               },
+              "googleId": {
+                "nullable": true,
+                "type": {
+                  "codecId": "sql/varchar@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "length": 255
+                  }
+                }
+              },
               "id": {
                 "nullable": false,
                 "type": {
@@ -107,8 +137,15 @@
                   "kind": "scalar"
                 }
               },
-              "passwordHash": {
+              "isSystem": {
                 "nullable": false,
+                "type": {
+                  "codecId": "pg/bool@1",
+                  "kind": "scalar"
+                }
+              },
+              "passwordHash": {
+                "nullable": true,
                 "type": {
                   "codecId": "pg/text@1",
                   "kind": "scalar"
@@ -174,6 +211,21 @@
                   "namespace": "public"
                 }
               },
+              "paymentSettings": {
+                "cardinality": "1:N",
+                "on": {
+                  "localFields": [
+                    "id"
+                  ],
+                  "targetFields": [
+                    "updatedBy"
+                  ]
+                },
+                "to": {
+                  "model": "PaymentSetting",
+                  "namespace": "public"
+                }
+              },
               "payments": {
                 "cardinality": "1:N",
                 "on": {
@@ -182,6 +234,21 @@
                   ],
                   "targetFields": [
                     "verifiedBy"
+                  ]
+                },
+                "to": {
+                  "model": "Payment",
+                  "namespace": "public"
+                }
+              },
+              "recordedPayments": {
+                "cardinality": "1:N",
+                "on": {
+                  "localFields": [
+                    "id"
+                  ],
+                  "targetFields": [
+                    "recordedBy"
                   ]
                 },
                 "to": {
@@ -219,6 +286,21 @@
                   "model": "Staff",
                   "namespace": "public"
                 }
+              },
+              "staffAttendance": {
+                "cardinality": "1:N",
+                "on": {
+                  "localFields": [
+                    "id"
+                  ],
+                  "targetFields": [
+                    "accountId"
+                  ]
+                },
+                "to": {
+                  "model": "StaffAttendance",
+                  "namespace": "public"
+                }
               }
             },
             "storage": {
@@ -229,8 +311,14 @@
                 "email": {
                   "column": "email"
                 },
+                "googleId": {
+                  "column": "google_id"
+                },
                 "id": {
                   "column": "id"
+                },
+                "isSystem": {
+                  "column": "is_system"
                 },
                 "passwordHash": {
                   "column": "password_hash"
@@ -286,6 +374,13 @@
                 "nullable": false,
                 "type": {
                   "codecId": "pg/time-temporal@1",
+                  "kind": "scalar"
+                }
+              },
+              "holdExpiresAt": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/timestamptz-temporal@1",
                   "kind": "scalar"
                 }
               },
@@ -372,8 +467,7 @@
                 }
               },
               "payments": {
-                "cardinality": "1:1",
-                "nullable": true,
+                "cardinality": "1:N",
                 "on": {
                   "localFields": [
                     "id"
@@ -436,6 +530,9 @@
                 },
                 "endTime": {
                   "column": "end_time"
+                },
+                "holdExpiresAt": {
+                  "column": "hold_expires_at"
                 },
                 "id": {
                   "column": "id"
@@ -1331,6 +1428,16 @@
                   "kind": "scalar"
                 }
               },
+              "channel": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/enum@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "typeName": "payment_channel"
+                  }
+                }
+              },
               "createdAt": {
                 "nullable": false,
                 "type": {
@@ -1352,6 +1459,73 @@
                   "kind": "scalar",
                   "typeParams": {
                     "typeName": "payment_method"
+                  }
+                }
+              },
+              "proofStoragePath": {
+                "nullable": true,
+                "type": {
+                  "codecId": "sql/varchar@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "length": 500
+                  }
+                }
+              },
+              "proofUrl": {
+                "nullable": true,
+                "type": {
+                  "codecId": "sql/varchar@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "length": 500
+                  }
+                }
+              },
+              "provider": {
+                "nullable": false,
+                "type": {
+                  "codecId": "sql/varchar@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "length": 20
+                  }
+                }
+              },
+              "providerCheckoutId": {
+                "nullable": true,
+                "type": {
+                  "codecId": "sql/varchar@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "length": 100
+                  }
+                }
+              },
+              "providerPaymentId": {
+                "nullable": true,
+                "type": {
+                  "codecId": "sql/varchar@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "length": 100
+                  }
+                }
+              },
+              "recordedBy": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/uuid@1",
+                  "kind": "scalar"
+                }
+              },
+              "referenceNo": {
+                "nullable": true,
+                "type": {
+                  "codecId": "sql/varchar@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "length": 100
                   }
                 }
               },
@@ -1419,6 +1593,22 @@
                   "model": "Appointment",
                   "namespace": "public"
                 }
+              },
+              "recorder": {
+                "cardinality": "N:1",
+                "nullable": true,
+                "on": {
+                  "localFields": [
+                    "recordedBy"
+                  ],
+                  "targetFields": [
+                    "id"
+                  ]
+                },
+                "to": {
+                  "model": "Account",
+                  "namespace": "public"
+                }
               }
             },
             "storage": {
@@ -1429,6 +1619,9 @@
                 "appointmentId": {
                   "column": "appointment_id"
                 },
+                "channel": {
+                  "column": "channel"
+                },
                 "createdAt": {
                   "column": "created_at"
                 },
@@ -1437,6 +1630,27 @@
                 },
                 "paymentMethod": {
                   "column": "payment_method"
+                },
+                "proofStoragePath": {
+                  "column": "proof_storage_path"
+                },
+                "proofUrl": {
+                  "column": "proof_url"
+                },
+                "provider": {
+                  "column": "provider"
+                },
+                "providerCheckoutId": {
+                  "column": "provider_checkout_id"
+                },
+                "providerPaymentId": {
+                  "column": "provider_payment_id"
+                },
+                "recordedBy": {
+                  "column": "recorded_by"
+                },
+                "referenceNo": {
+                  "column": "reference_no"
                 },
                 "status": {
                   "column": "status"
@@ -1453,6 +1667,153 @@
               },
               "namespaceId": "public",
               "table": "payments"
+            }
+          },
+          "PaymentSetting": {
+            "fields": {
+              "accountNumberMasked": {
+                "nullable": true,
+                "type": {
+                  "codecId": "sql/varchar@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "length": 30
+                  }
+                }
+              },
+              "createdAt": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "kind": "scalar"
+                }
+              },
+              "downPaymentKind": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/enum@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "typeName": "down_payment_kind"
+                  }
+                }
+              },
+              "downPaymentValue": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/numeric@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "precision": 10,
+                    "scale": 2
+                  }
+                }
+              },
+              "gcashQrStoragePath": {
+                "nullable": true,
+                "type": {
+                  "codecId": "sql/varchar@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "length": 500
+                  }
+                }
+              },
+              "gcashQrUrl": {
+                "nullable": true,
+                "type": {
+                  "codecId": "sql/varchar@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "length": 500
+                  }
+                }
+              },
+              "id": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/uuid@1",
+                  "kind": "scalar"
+                }
+              },
+              "receiverName": {
+                "nullable": true,
+                "type": {
+                  "codecId": "sql/varchar@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "length": 100
+                  }
+                }
+              },
+              "updatedAt": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "kind": "scalar"
+                }
+              },
+              "updatedBy": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/uuid@1",
+                  "kind": "scalar"
+                }
+              }
+            },
+            "relations": {
+              "updater": {
+                "cardinality": "N:1",
+                "nullable": true,
+                "on": {
+                  "localFields": [
+                    "updatedBy"
+                  ],
+                  "targetFields": [
+                    "id"
+                  ]
+                },
+                "to": {
+                  "model": "Account",
+                  "namespace": "public"
+                }
+              }
+            },
+            "storage": {
+              "fields": {
+                "accountNumberMasked": {
+                  "column": "account_number_masked"
+                },
+                "createdAt": {
+                  "column": "created_at"
+                },
+                "downPaymentKind": {
+                  "column": "down_payment_kind"
+                },
+                "downPaymentValue": {
+                  "column": "down_payment_value"
+                },
+                "gcashQrStoragePath": {
+                  "column": "gcash_qr_storage_path"
+                },
+                "gcashQrUrl": {
+                  "column": "gcash_qr_url"
+                },
+                "id": {
+                  "column": "id"
+                },
+                "receiverName": {
+                  "column": "receiver_name"
+                },
+                "updatedAt": {
+                  "column": "updated_at"
+                },
+                "updatedBy": {
+                  "column": "updated_by"
+                }
+              },
+              "namespaceId": "public",
+              "table": "payment_settings"
             }
           },
           "Review": {
@@ -1539,6 +1900,36 @@
                   "model": "Customer",
                   "namespace": "public"
                 }
+              },
+              "reviewPhotos": {
+                "cardinality": "1:N",
+                "on": {
+                  "localFields": [
+                    "id"
+                  ],
+                  "targetFields": [
+                    "reviewId"
+                  ]
+                },
+                "to": {
+                  "model": "ReviewPhoto",
+                  "namespace": "public"
+                }
+              },
+              "reviewRatings": {
+                "cardinality": "1:N",
+                "on": {
+                  "localFields": [
+                    "id"
+                  ],
+                  "targetFields": [
+                    "reviewId"
+                  ]
+                },
+                "to": {
+                  "model": "ReviewRating",
+                  "namespace": "public"
+                }
               }
             },
             "storage": {
@@ -1567,6 +1958,181 @@
               },
               "namespaceId": "public",
               "table": "reviews"
+            }
+          },
+          "ReviewPhoto": {
+            "fields": {
+              "createdAt": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "kind": "scalar"
+                }
+              },
+              "hidden": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/bool@1",
+                  "kind": "scalar"
+                }
+              },
+              "id": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/uuid@1",
+                  "kind": "scalar"
+                }
+              },
+              "position": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/int2@1",
+                  "kind": "scalar"
+                }
+              },
+              "reviewId": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/uuid@1",
+                  "kind": "scalar"
+                }
+              },
+              "storagePath": {
+                "nullable": false,
+                "type": {
+                  "codecId": "sql/varchar@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "length": 500
+                  }
+                }
+              },
+              "url": {
+                "nullable": false,
+                "type": {
+                  "codecId": "sql/varchar@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "length": 500
+                  }
+                }
+              }
+            },
+            "relations": {
+              "review": {
+                "cardinality": "N:1",
+                "nullable": false,
+                "on": {
+                  "localFields": [
+                    "reviewId"
+                  ],
+                  "targetFields": [
+                    "id"
+                  ]
+                },
+                "to": {
+                  "model": "Review",
+                  "namespace": "public"
+                }
+              }
+            },
+            "storage": {
+              "fields": {
+                "createdAt": {
+                  "column": "created_at"
+                },
+                "hidden": {
+                  "column": "hidden"
+                },
+                "id": {
+                  "column": "id"
+                },
+                "position": {
+                  "column": "position"
+                },
+                "reviewId": {
+                  "column": "review_id"
+                },
+                "storagePath": {
+                  "column": "storage_path"
+                },
+                "url": {
+                  "column": "url"
+                }
+              },
+              "namespaceId": "public",
+              "table": "review_photos"
+            }
+          },
+          "ReviewRating": {
+            "fields": {
+              "category": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/enum@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "typeName": "review_rating_category"
+                  }
+                }
+              },
+              "id": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/uuid@1",
+                  "kind": "scalar"
+                }
+              },
+              "rating": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/int2@1",
+                  "kind": "scalar"
+                }
+              },
+              "reviewId": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/uuid@1",
+                  "kind": "scalar"
+                }
+              }
+            },
+            "relations": {
+              "review": {
+                "cardinality": "N:1",
+                "nullable": false,
+                "on": {
+                  "localFields": [
+                    "reviewId"
+                  ],
+                  "targetFields": [
+                    "id"
+                  ]
+                },
+                "to": {
+                  "model": "Review",
+                  "namespace": "public"
+                }
+              }
+            },
+            "storage": {
+              "fields": {
+                "category": {
+                  "column": "category"
+                },
+                "id": {
+                  "column": "id"
+                },
+                "rating": {
+                  "column": "rating"
+                },
+                "reviewId": {
+                  "column": "review_id"
+                }
+              },
+              "namespaceId": "public",
+              "table": "review_ratings"
             }
           },
           "ScheduleRequest": {
@@ -1766,6 +2332,13 @@
                   "kind": "scalar"
                 }
               },
+              "imageUrl": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
               "isActive": {
                 "nullable": false,
                 "type": {
@@ -1867,6 +2440,9 @@
                 "id": {
                   "column": "id"
                 },
+                "imageUrl": {
+                  "column": "image_url"
+                },
                 "isActive": {
                   "column": "is_active"
                 },
@@ -1940,6 +2516,21 @@
                   "model": "Service",
                   "namespace": "public"
                 }
+              },
+              "staffCategories": {
+                "cardinality": "1:N",
+                "on": {
+                  "localFields": [
+                    "id"
+                  ],
+                  "targetFields": [
+                    "categoryId"
+                  ]
+                },
+                "to": {
+                  "model": "StaffCategory",
+                  "namespace": "public"
+                }
               }
             },
             "storage": {
@@ -1970,6 +2561,21 @@
                 "nullable": false,
                 "type": {
                   "codecId": "pg/uuid@1",
+                  "kind": "scalar"
+                }
+              },
+              "bio": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "coveredRoles": {
+                "many": true,
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
                   "kind": "scalar"
                 }
               },
@@ -2027,6 +2633,26 @@
                   }
                 }
               },
+              "photoUrl": {
+                "nullable": true,
+                "type": {
+                  "codecId": "sql/varchar@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "length": 500
+                  }
+                }
+              },
+              "position": {
+                "nullable": true,
+                "type": {
+                  "codecId": "sql/varchar@1",
+                  "kind": "scalar",
+                  "typeParams": {
+                    "length": 100
+                  }
+                }
+              },
               "primaryRole": {
                 "nullable": false,
                 "type": {
@@ -2035,6 +2661,13 @@
                   "typeParams": {
                     "length": 100
                   }
+                }
+              },
+              "showOnTeam": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/bool@1",
+                  "kind": "scalar"
                 }
               },
               "updatedAt": {
@@ -2102,6 +2735,36 @@
                   "namespace": "public"
                 }
               },
+              "staffAttendance": {
+                "cardinality": "1:N",
+                "on": {
+                  "localFields": [
+                    "id"
+                  ],
+                  "targetFields": [
+                    "staffId"
+                  ]
+                },
+                "to": {
+                  "model": "StaffAttendance",
+                  "namespace": "public"
+                }
+              },
+              "staffCategories": {
+                "cardinality": "1:N",
+                "on": {
+                  "localFields": [
+                    "id"
+                  ],
+                  "targetFields": [
+                    "staffId"
+                  ]
+                },
+                "to": {
+                  "model": "StaffCategory",
+                  "namespace": "public"
+                }
+              },
               "staffSchedules": {
                 "cardinality": "1:N",
                 "on": {
@@ -2138,6 +2801,12 @@
                 "accountId": {
                   "column": "account_id"
                 },
+                "bio": {
+                  "column": "bio"
+                },
+                "coveredRoles": {
+                  "column": "covered_roles"
+                },
                 "createdAt": {
                   "column": "created_at"
                 },
@@ -2156,8 +2825,17 @@
                 "phone": {
                   "column": "phone"
                 },
+                "photoUrl": {
+                  "column": "photo_url"
+                },
+                "position": {
+                  "column": "position"
+                },
                 "primaryRole": {
                   "column": "primary_role"
+                },
+                "showOnTeam": {
+                  "column": "show_on_team"
                 },
                 "updatedAt": {
                   "column": "updated_at"
@@ -2168,6 +2846,184 @@
               },
               "namespaceId": "public",
               "table": "staff"
+            }
+          },
+          "StaffAttendance": {
+            "fields": {
+              "accountId": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/uuid@1",
+                  "kind": "scalar"
+                }
+              },
+              "createdAt": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "kind": "scalar"
+                }
+              },
+              "id": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/uuid@1",
+                  "kind": "scalar"
+                }
+              },
+              "staffId": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/uuid@1",
+                  "kind": "scalar"
+                }
+              },
+              "timeIn": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "kind": "scalar"
+                }
+              },
+              "timeOut": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "kind": "scalar"
+                }
+              }
+            },
+            "relations": {
+              "account": {
+                "cardinality": "N:1",
+                "nullable": true,
+                "on": {
+                  "localFields": [
+                    "accountId"
+                  ],
+                  "targetFields": [
+                    "id"
+                  ]
+                },
+                "to": {
+                  "model": "Account",
+                  "namespace": "public"
+                }
+              },
+              "staff": {
+                "cardinality": "N:1",
+                "nullable": true,
+                "on": {
+                  "localFields": [
+                    "staffId"
+                  ],
+                  "targetFields": [
+                    "id"
+                  ]
+                },
+                "to": {
+                  "model": "Staff",
+                  "namespace": "public"
+                }
+              }
+            },
+            "storage": {
+              "fields": {
+                "accountId": {
+                  "column": "account_id"
+                },
+                "createdAt": {
+                  "column": "created_at"
+                },
+                "id": {
+                  "column": "id"
+                },
+                "staffId": {
+                  "column": "staff_id"
+                },
+                "timeIn": {
+                  "column": "time_in"
+                },
+                "timeOut": {
+                  "column": "time_out"
+                }
+              },
+              "namespaceId": "public",
+              "table": "staff_attendance"
+            }
+          },
+          "StaffCategory": {
+            "fields": {
+              "categoryId": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/uuid@1",
+                  "kind": "scalar"
+                }
+              },
+              "createdAt": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "kind": "scalar"
+                }
+              },
+              "staffId": {
+                "nullable": false,
+                "type": {
+                  "codecId": "pg/uuid@1",
+                  "kind": "scalar"
+                }
+              }
+            },
+            "relations": {
+              "category": {
+                "cardinality": "N:1",
+                "nullable": false,
+                "on": {
+                  "localFields": [
+                    "categoryId"
+                  ],
+                  "targetFields": [
+                    "id"
+                  ]
+                },
+                "to": {
+                  "model": "ServiceCategory",
+                  "namespace": "public"
+                }
+              },
+              "staff": {
+                "cardinality": "N:1",
+                "nullable": false,
+                "on": {
+                  "localFields": [
+                    "staffId"
+                  ],
+                  "targetFields": [
+                    "id"
+                  ]
+                },
+                "to": {
+                  "model": "Staff",
+                  "namespace": "public"
+                }
+              }
+            },
+            "storage": {
+              "fields": {
+                "categoryId": {
+                  "column": "category_id"
+                },
+                "createdAt": {
+                  "column": "created_at"
+                },
+                "staffId": {
+                  "column": "staff_id"
+                }
+              },
+              "namespaceId": "public",
+              "table": "staff_categories"
             }
           },
           "StaffSchedule": {
@@ -2410,6 +3266,15 @@
               ],
               "typeName": "appointment_status"
             },
+            "down_payment_kind": {
+              "kind": "postgres-enum",
+              "members": [
+                "NONE",
+                "FIXED",
+                "PERCENT"
+              ],
+              "typeName": "down_payment_kind"
+            },
             "employment_type": {
               "kind": "postgres-enum",
               "members": [
@@ -2418,11 +3283,20 @@
               ],
               "typeName": "employment_type"
             },
+            "payment_channel": {
+              "kind": "postgres-enum",
+              "members": [
+                "ONLINE",
+                "IN_PERSON"
+              ],
+              "typeName": "payment_channel"
+            },
             "payment_method": {
               "kind": "postgres-enum",
               "members": [
                 "CASH",
-                "GCASH"
+                "GCASH",
+                "MAYA"
               ],
               "typeName": "payment_method"
             },
@@ -2431,9 +3305,23 @@
               "members": [
                 "UNVERIFIED",
                 "VERIFIED",
-                "REJECTED"
+                "REJECTED",
+                "PENDING",
+                "PAID",
+                "FAILED",
+                "EXPIRED"
               ],
               "typeName": "payment_status"
+            },
+            "review_rating_category": {
+              "kind": "postgres-enum",
+              "members": [
+                "SERVICE",
+                "PRODUCTS",
+                "STAFF",
+                "TIME_MANAGEMENT"
+              ],
+              "typeName": "review_rating_category"
             },
             "schedule_request_status": {
               "kind": "postgres-enum",
@@ -2485,6 +3373,11 @@
               "namespaceId": "public",
               "tableName": "customers"
             },
+            "payment_settings": {
+              "kind": "rls",
+              "namespaceId": "public",
+              "tableName": "payment_settings"
+            },
             "payments": {
               "kind": "rls",
               "namespaceId": "public",
@@ -2494,6 +3387,16 @@
               "kind": "rls",
               "namespaceId": "public",
               "tableName": "posts"
+            },
+            "review_photos": {
+              "kind": "rls",
+              "namespaceId": "public",
+              "tableName": "review_photos"
+            },
+            "review_ratings": {
+              "kind": "rls",
+              "namespaceId": "public",
+              "tableName": "review_ratings"
             },
             "reviews": {
               "kind": "rls",
@@ -2519,6 +3422,16 @@
               "kind": "rls",
               "namespaceId": "public",
               "tableName": "staff"
+            },
+            "staff_attendance": {
+              "kind": "rls",
+              "namespaceId": "public",
+              "tableName": "staff_attendance"
+            },
+            "staff_categories": {
+              "kind": "rls",
+              "namespaceId": "public",
+              "tableName": "staff_categories"
             },
             "staff_schedules": {
               "kind": "rls",
@@ -2556,6 +3469,14 @@
                     "length": 255
                   }
                 },
+                "google_id": {
+                  "codecId": "sql/varchar@1",
+                  "nativeType": "character varying",
+                  "nullable": true,
+                  "typeParams": {
+                    "length": 255
+                  }
+                },
                 "id": {
                   "codecId": "pg/uuid@1",
                   "default": {
@@ -2565,10 +3486,19 @@
                   "nativeType": "uuid",
                   "nullable": false
                 },
+                "is_system": {
+                  "codecId": "pg/bool@1",
+                  "default": {
+                    "kind": "literal",
+                    "value": false
+                  },
+                  "nativeType": "bool",
+                  "nullable": false
+                },
                 "password_hash": {
                   "codecId": "pg/text@1",
                   "nativeType": "text",
-                  "nullable": false
+                  "nullable": true
                 },
                 "role": {
                   "codecId": "pg/enum@1",
@@ -2620,6 +3550,14 @@
               "indexes": [
                 {
                   "columns": [
+                    "is_system"
+                  ],
+                  "name": "accounts_single_system_key",
+                  "unique": true,
+                  "where": "is_system"
+                },
+                {
+                  "columns": [
                     "role"
                   ],
                   "name": "idx_accounts_role",
@@ -2645,6 +3583,12 @@
                     "email"
                   ],
                   "name": "accounts_email_key"
+                },
+                {
+                  "columns": [
+                    "google_id"
+                  ],
+                  "name": "accounts_google_id_key"
                 }
               ]
             },
@@ -2756,6 +3700,13 @@
                   ],
                   "name": "idx_appointment_services_appointment_id",
                   "unique": false
+                },
+                {
+                  "columns": [
+                    "service_id"
+                  ],
+                  "name": "idx_appointment_services_service_id",
+                  "unique": false
                 }
               ],
               "primaryKey": {
@@ -2817,6 +3768,11 @@
                   "codecId": "pg/time-temporal@1",
                   "nativeType": "time",
                   "nullable": false
+                },
+                "hold_expires_at": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
+                  "nullable": true
                 },
                 "id": {
                   "codecId": "pg/uuid@1",
@@ -3272,11 +4228,161 @@
                 }
               ]
             },
+            "payment_settings": {
+              "checks": [
+                {
+                  "expression": "(down_payment_value >= (0)::numeric)",
+                  "name": "payment_settings_value_positive"
+                }
+              ],
+              "columns": {
+                "account_number_masked": {
+                  "codecId": "sql/varchar@1",
+                  "nativeType": "character varying",
+                  "nullable": true,
+                  "typeParams": {
+                    "length": 30
+                  }
+                },
+                "created_at": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "default": {
+                    "expression": "now()",
+                    "kind": "function"
+                  },
+                  "nativeType": "timestamptz",
+                  "nullable": false
+                },
+                "down_payment_kind": {
+                  "codecId": "pg/enum@1",
+                  "default": {
+                    "kind": "literal",
+                    "value": "PERCENT"
+                  },
+                  "nativeType": "down_payment_kind",
+                  "nullable": false,
+                  "typeParams": {
+                    "typeName": "down_payment_kind"
+                  },
+                  "valueSet": {
+                    "entityKind": "valueSet",
+                    "entityName": "DownPaymentKind",
+                    "namespaceId": "public",
+                    "plane": "storage"
+                  }
+                },
+                "down_payment_value": {
+                  "codecId": "pg/numeric@1",
+                  "default": {
+                    "expression": "50",
+                    "kind": "function"
+                  },
+                  "nativeType": "numeric",
+                  "nullable": false,
+                  "typeParams": {
+                    "precision": 10,
+                    "scale": 2
+                  }
+                },
+                "gcash_qr_storage_path": {
+                  "codecId": "sql/varchar@1",
+                  "nativeType": "character varying",
+                  "nullable": true,
+                  "typeParams": {
+                    "length": 500
+                  }
+                },
+                "gcash_qr_url": {
+                  "codecId": "sql/varchar@1",
+                  "nativeType": "character varying",
+                  "nullable": true,
+                  "typeParams": {
+                    "length": 500
+                  }
+                },
+                "id": {
+                  "codecId": "pg/uuid@1",
+                  "default": {
+                    "expression": "gen_random_uuid()",
+                    "kind": "function"
+                  },
+                  "nativeType": "uuid",
+                  "nullable": false
+                },
+                "receiver_name": {
+                  "codecId": "sql/varchar@1",
+                  "nativeType": "character varying",
+                  "nullable": true,
+                  "typeParams": {
+                    "length": 100
+                  }
+                },
+                "updated_at": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "default": {
+                    "expression": "now()",
+                    "kind": "function"
+                  },
+                  "nativeType": "timestamptz",
+                  "nullable": false
+                },
+                "updated_by": {
+                  "codecId": "pg/uuid@1",
+                  "nativeType": "uuid",
+                  "nullable": true
+                }
+              },
+              "foreignKeys": [
+                {
+                  "name": "fk_payment_settings_updater",
+                  "onDelete": "setNull",
+                  "source": {
+                    "columns": [
+                      "updated_by"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "payment_settings"
+                  },
+                  "target": {
+                    "columns": [
+                      "id"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "accounts"
+                  }
+                }
+              ],
+              "indexes": [
+                {
+                  "columns": [
+                    "updated_by"
+                  ],
+                  "name": "payment_settings_updated_by_idx_65a72f86",
+                  "prefix": "payment_settings_updated_by_idx",
+                  "unique": false
+                }
+              ],
+              "primaryKey": {
+                "columns": [
+                  "id"
+                ],
+                "name": "payment_settings_pkey"
+              },
+              "uniques": []
+            },
             "payments": {
               "checks": [
                 {
+                  "expression": "(((provider)::text <> 'MANUAL'::text) OR ((channel <> 'ONLINE'::payment_channel) OR ((reference_no IS NOT NULL) AND (proof_url IS NOT NULL))))",
+                  "name": "online_payment_requires_proof"
+                },
+                {
                   "expression": "(amount >= (0)::numeric)",
                   "name": "payment_amount_positive"
+                },
+                {
+                  "expression": "((provider)::text = ANY ((ARRAY['MANUAL'::character varying, 'MAYA'::character varying])::text[]))",
+                  "name": "payments_provider_check"
                 },
                 {
                   "expression": "((status <> 'VERIFIED'::payment_status) OR ((verified_by IS NOT NULL) AND (verified_at IS NOT NULL)))",
@@ -3297,6 +4403,20 @@
                   "codecId": "pg/uuid@1",
                   "nativeType": "uuid",
                   "nullable": false
+                },
+                "channel": {
+                  "codecId": "pg/enum@1",
+                  "nativeType": "payment_channel",
+                  "nullable": false,
+                  "typeParams": {
+                    "typeName": "payment_channel"
+                  },
+                  "valueSet": {
+                    "entityKind": "valueSet",
+                    "entityName": "PaymentChannel",
+                    "namespaceId": "public",
+                    "plane": "storage"
+                  }
                 },
                 "created_at": {
                   "codecId": "pg/timestamptz-temporal@1",
@@ -3328,6 +4448,63 @@
                     "entityName": "PaymentMethod",
                     "namespaceId": "public",
                     "plane": "storage"
+                  }
+                },
+                "proof_storage_path": {
+                  "codecId": "sql/varchar@1",
+                  "nativeType": "character varying",
+                  "nullable": true,
+                  "typeParams": {
+                    "length": 500
+                  }
+                },
+                "proof_url": {
+                  "codecId": "sql/varchar@1",
+                  "nativeType": "character varying",
+                  "nullable": true,
+                  "typeParams": {
+                    "length": 500
+                  }
+                },
+                "provider": {
+                  "codecId": "sql/varchar@1",
+                  "default": {
+                    "expression": "'MANUAL'",
+                    "kind": "function"
+                  },
+                  "nativeType": "character varying",
+                  "nullable": false,
+                  "typeParams": {
+                    "length": 20
+                  }
+                },
+                "provider_checkout_id": {
+                  "codecId": "sql/varchar@1",
+                  "nativeType": "character varying",
+                  "nullable": true,
+                  "typeParams": {
+                    "length": 100
+                  }
+                },
+                "provider_payment_id": {
+                  "codecId": "sql/varchar@1",
+                  "nativeType": "character varying",
+                  "nullable": true,
+                  "typeParams": {
+                    "length": 100
+                  }
+                },
+                "recorded_by": {
+                  "codecId": "pg/uuid@1",
+                  "nativeType": "uuid",
+                  "nullable": true
+                },
+                "reference_no": {
+                  "codecId": "sql/varchar@1",
+                  "nativeType": "character varying",
+                  "nullable": true,
+                  "typeParams": {
+                    "length": 100
                   }
                 },
                 "status": {
@@ -3404,9 +4581,34 @@
                     "namespaceId": "public",
                     "tableName": "accounts"
                   }
+                },
+                {
+                  "name": "fk_payment_recorder",
+                  "onDelete": "restrict",
+                  "source": {
+                    "columns": [
+                      "recorded_by"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "payments"
+                  },
+                  "target": {
+                    "columns": [
+                      "id"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "accounts"
+                  }
                 }
               ],
               "indexes": [
+                {
+                  "columns": [
+                    "appointment_id"
+                  ],
+                  "name": "idx_payments_appointment_id",
+                  "unique": false
+                },
                 {
                   "columns": [
                     "created_at"
@@ -3420,6 +4622,13 @@
                   ],
                   "name": "idx_payments_status",
                   "unique": false
+                },
+                {
+                  "columns": [
+                    "verified_by"
+                  ],
+                  "name": "idx_payments_verified_by",
+                  "unique": false
                 }
               ],
               "primaryKey": {
@@ -3431,9 +4640,21 @@
               "uniques": [
                 {
                   "columns": [
-                    "appointment_id"
+                    "provider_checkout_id"
                   ],
-                  "name": "payments_appointment_id_key"
+                  "name": "payments_provider_checkout_id_key"
+                },
+                {
+                  "columns": [
+                    "provider_payment_id"
+                  ],
+                  "name": "payments_provider_payment_id_key"
+                },
+                {
+                  "columns": [
+                    "reference_no"
+                  ],
+                  "name": "payments_reference_no_key"
                 }
               ]
             },
@@ -3589,6 +4810,193 @@
                 "name": "posts_pkey"
               },
               "uniques": []
+            },
+            "review_photos": {
+              "checks": [
+                {
+                  "expression": "((\"position\" >= 1) AND (\"position\" <= 3))",
+                  "name": "review_photo_position_range"
+                }
+              ],
+              "columns": {
+                "created_at": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "default": {
+                    "expression": "now()",
+                    "kind": "function"
+                  },
+                  "nativeType": "timestamptz",
+                  "nullable": false
+                },
+                "hidden": {
+                  "codecId": "pg/bool@1",
+                  "default": {
+                    "kind": "literal",
+                    "value": false
+                  },
+                  "nativeType": "bool",
+                  "nullable": false
+                },
+                "id": {
+                  "codecId": "pg/uuid@1",
+                  "default": {
+                    "expression": "gen_random_uuid()",
+                    "kind": "function"
+                  },
+                  "nativeType": "uuid",
+                  "nullable": false
+                },
+                "position": {
+                  "codecId": "pg/int2@1",
+                  "nativeType": "int2",
+                  "nullable": false
+                },
+                "review_id": {
+                  "codecId": "pg/uuid@1",
+                  "nativeType": "uuid",
+                  "nullable": false
+                },
+                "storage_path": {
+                  "codecId": "sql/varchar@1",
+                  "nativeType": "character varying",
+                  "nullable": false,
+                  "typeParams": {
+                    "length": 500
+                  }
+                },
+                "url": {
+                  "codecId": "sql/varchar@1",
+                  "nativeType": "character varying",
+                  "nullable": false,
+                  "typeParams": {
+                    "length": 500
+                  }
+                }
+              },
+              "foreignKeys": [
+                {
+                  "name": "fk_review_photo_review",
+                  "onDelete": "cascade",
+                  "source": {
+                    "columns": [
+                      "review_id"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "review_photos"
+                  },
+                  "target": {
+                    "columns": [
+                      "id"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "reviews"
+                  }
+                }
+              ],
+              "indexes": [
+                {
+                  "columns": [
+                    "review_id"
+                  ],
+                  "name": "review_photos_review_id_idx_af4d2e86",
+                  "prefix": "review_photos_review_id_idx",
+                  "unique": false
+                }
+              ],
+              "primaryKey": {
+                "columns": [
+                  "id"
+                ],
+                "name": "review_photos_pkey"
+              },
+              "uniques": [
+                {
+                  "columns": [
+                    "review_id",
+                    "position"
+                  ],
+                  "name": "review_photos_review_position_key"
+                }
+              ]
+            },
+            "review_ratings": {
+              "checks": [
+                {
+                  "expression": "((rating >= 1) AND (rating <= 5))",
+                  "name": "valid_review_rating"
+                }
+              ],
+              "columns": {
+                "category": {
+                  "codecId": "pg/enum@1",
+                  "nativeType": "review_rating_category",
+                  "nullable": false,
+                  "typeParams": {
+                    "typeName": "review_rating_category"
+                  },
+                  "valueSet": {
+                    "entityKind": "valueSet",
+                    "entityName": "ReviewRatingCategory",
+                    "namespaceId": "public",
+                    "plane": "storage"
+                  }
+                },
+                "id": {
+                  "codecId": "pg/uuid@1",
+                  "default": {
+                    "expression": "gen_random_uuid()",
+                    "kind": "function"
+                  },
+                  "nativeType": "uuid",
+                  "nullable": false
+                },
+                "rating": {
+                  "codecId": "pg/int2@1",
+                  "nativeType": "int2",
+                  "nullable": false
+                },
+                "review_id": {
+                  "codecId": "pg/uuid@1",
+                  "nativeType": "uuid",
+                  "nullable": false
+                }
+              },
+              "foreignKeys": [
+                {
+                  "name": "fk_review_rating_review",
+                  "onDelete": "cascade",
+                  "source": {
+                    "columns": [
+                      "review_id"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "review_ratings"
+                  },
+                  "target": {
+                    "columns": [
+                      "id"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "reviews"
+                  }
+                }
+              ],
+              "indexes": [],
+              "primaryKey": {
+                "columns": [
+                  "id"
+                ],
+                "name": "review_ratings_pkey"
+              },
+              "uniques": [
+                {
+                  "columns": [
+                    "review_id",
+                    "category"
+                  ],
+                  "name": "review_ratings_review_category_key"
+                }
+              ]
             },
             "reviews": {
               "checks": [
@@ -3837,6 +5245,13 @@
               "indexes": [
                 {
                   "columns": [
+                    "reviewed_by"
+                  ],
+                  "name": "idx_schedule_requests_reviewed_by",
+                  "unique": false
+                },
+                {
+                  "columns": [
                     "staff_id"
                   ],
                   "name": "idx_schedule_requests_staff_id",
@@ -3967,6 +5382,11 @@
                   "nativeType": "uuid",
                   "nullable": false
                 },
+                "image_url": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": true
+                },
                 "is_active": {
                   "codecId": "pg/bool@1",
                   "default": {
@@ -4048,11 +5468,29 @@
               "uniques": []
             },
             "staff": {
+              "checks": [
+                {
+                  "expression": "array_position(\"covered_roles\", NULL) IS NULL",
+                  "name": "staff_covered_roles_elem_not_null_c7c50f7d",
+                  "prefix": "staff_covered_roles_elem_not_null"
+                }
+              ],
               "columns": {
                 "account_id": {
                   "codecId": "pg/uuid@1",
                   "nativeType": "uuid",
                   "nullable": false
+                },
+                "bio": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": true
+                },
+                "covered_roles": {
+                  "codecId": "pg/text@1",
+                  "many": true,
+                  "nativeType": "text",
+                  "nullable": true
                 },
                 "created_at": {
                   "codecId": "pg/timestamptz-temporal@1",
@@ -4110,6 +5548,22 @@
                     "length": 30
                   }
                 },
+                "photo_url": {
+                  "codecId": "sql/varchar@1",
+                  "nativeType": "character varying",
+                  "nullable": true,
+                  "typeParams": {
+                    "length": 500
+                  }
+                },
+                "position": {
+                  "codecId": "sql/varchar@1",
+                  "nativeType": "character varying",
+                  "nullable": true,
+                  "typeParams": {
+                    "length": 100
+                  }
+                },
                 "primary_role": {
                   "codecId": "sql/varchar@1",
                   "nativeType": "character varying",
@@ -4117,6 +5571,15 @@
                   "typeParams": {
                     "length": 100
                   }
+                },
+                "show_on_team": {
+                  "codecId": "pg/bool@1",
+                  "default": {
+                    "kind": "literal",
+                    "value": false
+                  },
+                  "nativeType": "bool",
+                  "nullable": false
                 },
                 "updated_at": {
                   "codecId": "pg/timestamptz-temporal@1",
@@ -4196,6 +5659,211 @@
                   "name": "staff_account_id_key"
                 }
               ]
+            },
+            "staff_attendance": {
+              "checks": [
+                {
+                  "expression": "((staff_id IS NOT NULL) <> (account_id IS NOT NULL))",
+                  "name": "exactly_one_attendance_owner"
+                },
+                {
+                  "expression": "((time_out IS NULL) OR (time_out > time_in))",
+                  "name": "valid_attendance_time"
+                }
+              ],
+              "columns": {
+                "account_id": {
+                  "codecId": "pg/uuid@1",
+                  "nativeType": "uuid",
+                  "nullable": true
+                },
+                "created_at": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "default": {
+                    "expression": "now()",
+                    "kind": "function"
+                  },
+                  "nativeType": "timestamptz",
+                  "nullable": false
+                },
+                "id": {
+                  "codecId": "pg/uuid@1",
+                  "default": {
+                    "expression": "gen_random_uuid()",
+                    "kind": "function"
+                  },
+                  "nativeType": "uuid",
+                  "nullable": false
+                },
+                "staff_id": {
+                  "codecId": "pg/uuid@1",
+                  "nativeType": "uuid",
+                  "nullable": true
+                },
+                "time_in": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "default": {
+                    "expression": "now()",
+                    "kind": "function"
+                  },
+                  "nativeType": "timestamptz",
+                  "nullable": false
+                },
+                "time_out": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "nativeType": "timestamptz",
+                  "nullable": true
+                }
+              },
+              "foreignKeys": [
+                {
+                  "name": "fk_staff_attendance_staff",
+                  "onDelete": "restrict",
+                  "source": {
+                    "columns": [
+                      "staff_id"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "staff_attendance"
+                  },
+                  "target": {
+                    "columns": [
+                      "id"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "staff"
+                  }
+                },
+                {
+                  "name": "fk_staff_attendance_account",
+                  "onDelete": "restrict",
+                  "source": {
+                    "columns": [
+                      "account_id"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "staff_attendance"
+                  },
+                  "target": {
+                    "columns": [
+                      "id"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "accounts"
+                  }
+                }
+              ],
+              "indexes": [
+                {
+                  "columns": [
+                    "staff_id",
+                    "time_in"
+                  ],
+                  "name": "idx_staff_attendance_staff_id_time",
+                  "unique": false
+                },
+                {
+                  "columns": [
+                    "account_id"
+                  ],
+                  "name": "staff_attendance_open_shift_account_key",
+                  "unique": true,
+                  "where": "(time_out IS NULL)"
+                },
+                {
+                  "columns": [
+                    "staff_id"
+                  ],
+                  "name": "staff_attendance_open_shift_key",
+                  "unique": true,
+                  "where": "(time_out IS NULL)"
+                }
+              ],
+              "primaryKey": {
+                "columns": [
+                  "id"
+                ],
+                "name": "staff_attendance_pkey"
+              },
+              "uniques": []
+            },
+            "staff_categories": {
+              "columns": {
+                "category_id": {
+                  "codecId": "pg/uuid@1",
+                  "nativeType": "uuid",
+                  "nullable": false
+                },
+                "created_at": {
+                  "codecId": "pg/timestamptz-temporal@1",
+                  "default": {
+                    "expression": "now()",
+                    "kind": "function"
+                  },
+                  "nativeType": "timestamptz",
+                  "nullable": false
+                },
+                "staff_id": {
+                  "codecId": "pg/uuid@1",
+                  "nativeType": "uuid",
+                  "nullable": false
+                }
+              },
+              "foreignKeys": [
+                {
+                  "name": "fk_staff_categories_staff",
+                  "onDelete": "cascade",
+                  "source": {
+                    "columns": [
+                      "staff_id"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "staff_categories"
+                  },
+                  "target": {
+                    "columns": [
+                      "id"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "staff"
+                  }
+                },
+                {
+                  "name": "fk_staff_categories_category",
+                  "onDelete": "restrict",
+                  "source": {
+                    "columns": [
+                      "category_id"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "staff_categories"
+                  },
+                  "target": {
+                    "columns": [
+                      "id"
+                    ],
+                    "namespaceId": "public",
+                    "tableName": "service_categories"
+                  }
+                }
+              ],
+              "indexes": [
+                {
+                  "columns": [
+                    "category_id"
+                  ],
+                  "name": "idx_staff_categories_category_id",
+                  "unique": false
+                }
+              ],
+              "primaryKey": {
+                "columns": [
+                  "staff_id",
+                  "category_id"
+                ],
+                "name": "staff_categories_pkey"
+              },
+              "uniques": []
             },
             "staff_schedules": {
               "checks": [
@@ -4573,6 +6241,14 @@
                 "NO_SHOW"
               ]
             },
+            "DownPaymentKind": {
+              "kind": "valueSet",
+              "values": [
+                "NONE",
+                "FIXED",
+                "PERCENT"
+              ]
+            },
             "EmploymentType": {
               "kind": "valueSet",
               "values": [
@@ -4580,11 +6256,19 @@
                 "PART_TIME"
               ]
             },
+            "PaymentChannel": {
+              "kind": "valueSet",
+              "values": [
+                "ONLINE",
+                "IN_PERSON"
+              ]
+            },
             "PaymentMethod": {
               "kind": "valueSet",
               "values": [
                 "CASH",
-                "GCASH"
+                "GCASH",
+                "MAYA"
               ]
             },
             "PaymentStatus": {
@@ -4592,7 +6276,20 @@
               "values": [
                 "UNVERIFIED",
                 "VERIFIED",
-                "REJECTED"
+                "REJECTED",
+                "PENDING",
+                "PAID",
+                "FAILED",
+                "EXPIRED"
+              ]
+            },
+            "ReviewRatingCategory": {
+              "kind": "valueSet",
+              "values": [
+                "SERVICE",
+                "PRODUCTS",
+                "STAFF",
+                "TIME_MANAGEMENT"
               ]
             },
             "ScheduleRequestStatus": {
@@ -4617,7 +6314,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "0c3dbaac8680a443c48be4d605176b7ce9922a781b076a7cd073d78cd884ce5d"
+    "storageHash": "8647299e69f5dc4feae7652244dfa4ffa4251af1fc50dd3237764be4668401a5"
   },
   "capabilities": {
     "postgres": {

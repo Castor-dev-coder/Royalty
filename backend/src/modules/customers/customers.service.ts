@@ -1,7 +1,8 @@
 import { db } from '../../prisma/db.js';
 import { pgVarchar } from '../../prisma/contract-compat.js';
-import { NotFoundError, ForbiddenError, ConflictError, BadRequestError } from '../../errors/index.js';
+import { NotFoundError, ForbiddenError, ConflictError, BadRequestError, ValidationError } from '../../errors/index.js';
 import { generateAuditLog } from '../../utils/audit.js';
+import { FIRST_NAME_IMMUTABLE_MESSAGE } from '../../utils/validation.js';
 
 export interface CustomerProfile {
   id: string;
@@ -174,6 +175,14 @@ export class CustomerService {
       }
     }
 
+    // First names are set at account creation and are immutable afterwards,
+    // for every caller (ADMIN included). An echo of the stored name is a
+    // harmless no-op; any different value is a change attempt and is refused.
+    if (data.firstName !== undefined
+      && String(data.firstName).trim() !== String(customer.firstName).trim()) {
+      throw new ValidationError(FIRST_NAME_IMMUTABLE_MESSAGE);
+    }
+
     // If firstName provided, validate not empty
     if (data.firstName !== undefined && data.firstName.trim().length === 0) {
       throw new BadRequestError('First name cannot be empty');
@@ -184,9 +193,9 @@ export class CustomerService {
       throw new BadRequestError('Last name cannot be empty');
     }
 
-    // Build update data
+    // Build update data. firstName is deliberately never written: it is
+    // immutable after account creation (see the guard above).
     const updateData: Record<string, unknown> = {};
-    if (data.firstName !== undefined) updateData.firstName = data.firstName;
     if (data.lastName !== undefined) updateData.lastName = data.lastName;
     if (data.gender !== undefined) updateData.gender = data.gender;
     if (data.phone !== undefined) updateData.phone = data.phone;

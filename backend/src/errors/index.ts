@@ -40,6 +40,13 @@ export class NotFoundError extends ApiError {
   }
 }
 
+export class ValidationError extends ApiError {
+  constructor(message: string, details?: unknown) {
+    super(400, 'VALIDATION_ERROR', message, details);
+    this.name = 'ValidationError';
+  }
+}
+
 export class ConflictError extends ApiError {
   constructor(message: string, details?: unknown) {
     super(409, 'CONFLICT', message, details);

@@ -16,6 +16,7 @@ import {
   listCompletedMyAppointmentsController,
   listAppointmentsController,
   listMyAppointmentsController,
+  listMyAppointmentsWithReviewController,
   listStaffAppointmentsController,
   updateAppointmentStatusController,
 } from '../modules/appointments/appointments.controller.js';
@@ -29,6 +30,7 @@ appointmentsRouter.get('/availability', validateQuery(appointmentAvailabilityQue
 appointmentsRouter.get('/', requireRole('ADMIN', 'MANAGER'), validateQuery(appointmentListQuerySchema), listAppointmentsController);
 appointmentsRouter.get('/me/completed', requireRole('CUSTOMER'), validateQuery(appointmentListQuerySchema), listCompletedMyAppointmentsController);
 appointmentsRouter.get('/me', requireRole('CUSTOMER', 'ADMIN', 'MANAGER'), validateQuery(appointmentListQuerySchema), listMyAppointmentsController);
+appointmentsRouter.get('/mine', requireRole('CUSTOMER', 'ADMIN', 'MANAGER'), validateQuery(appointmentListQuerySchema), listMyAppointmentsWithReviewController);
 appointmentsRouter.get('/staff/me', requireRole('STAFF'), validateQuery(appointmentListQuerySchema), listStaffAppointmentsController);
 appointmentsRouter.post('/', requireRole('CUSTOMER'), validateRequest(createAppointmentSchema), createAppointmentController);
 appointmentsRouter.patch('/:id/status', validateRequest(updateAppointmentStatusSchema), updateAppointmentStatusController);

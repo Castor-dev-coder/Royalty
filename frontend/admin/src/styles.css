@@ -318,8 +318,13 @@ small { font-size: var(--text-2xs); line-height: var(--leading-snug); }
 
 .page-bg { width: 100%; min-height: 100vh; min-height: 100dvh; background: var(--surface-app); display: flex; }
 .viewer-shell { width: 100%; height: 100vh; height: 100dvh; min-height: 100vh; min-height: 100dvh; display: flex; background: var(--surface-app); border: 0; box-shadow: none; }
-.sidebar { width: 260px; min-width: 260px; height: 100vh; height: 100dvh; background: var(--surface-base); border-right: 1px solid var(--border); padding: var(--space-6) var(--space-3) var(--space-4); display: flex; flex-direction: column; align-items: stretch; }
-.sidebar-brand { padding: 0 8px; min-height: 48px; }
+/* The sidebar is a viewport-height flex column. The brand is pinned to the
+   top, the sign-out area to the bottom, and only the middle region between
+   them scrolls when the navigation or status panel grows long, so content
+   can never push the sign-out control out of its panel. */
+.sidebar { width: 260px; min-width: 260px; height: 100vh; height: 100dvh; overflow: hidden; background: var(--surface-base); border-right: 1px solid var(--border); padding: var(--space-6) var(--space-3) var(--space-4); display: flex; flex-direction: column; align-items: stretch; }
+.sidebar-brand { padding: 0 8px; min-height: 48px; flex: 0 0 auto; }
+.sidebar-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 .brand-wrap { display: flex; align-items: center; gap: 12px; }
 .brand-mark { width: 30px; height: 30px; border-radius: 8px; background: var(--accent); color: var(--text-on-accent); display: inline-flex; align-items: center; justify-content: center; font-size: 0.9rem; font-weight: 700; }
 .brand-wrap h1 { margin: 0; font-size: 1.33rem; letter-spacing: 0; font-weight: 800; color: var(--text-primary); }
@@ -559,15 +564,67 @@ small { font-size: var(--text-2xs); line-height: var(--leading-snug); }
 .stars { color: var(--accent-text); letter-spacing: 0; font-size: 0.8rem; margin-bottom: 5px; }
 .review-item p { margin: 0; font-size: 0.77rem; color: var(--text-secondary); }
 
+/* Review photos: fixed 4:3 lazy thumbnails that open the photo lightbox.
+   The crop is set on the image itself so a pending upload can never change
+   the height of the review it sits in. */
+.review-photos { margin-top: 10px; }
+.review-photo-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; }
+.review-photo-cell { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.review-photo-thumb { display: block; width: 100%; padding: 0; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); overflow: hidden; background: var(--surface-sunken); cursor: zoom-in; }
+.review-photo-thumb img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
+.review-photo-hide { align-self: flex-start; border: 1px solid var(--control-border); background: var(--surface-raised); color: var(--text-secondary); font-size: var(--text-2xs); font-weight: 600; padding: 3px 9px; border-radius: var(--radius-pill); cursor: pointer; }
+.review-photo-hide:hover { color: var(--text-primary); }
+.review-photo-hide:disabled { opacity: 0.6; cursor: not-allowed; }
+.review-photo-notice { margin: 10px 0 0; font-size: var(--text-2xs); color: var(--text-secondary); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* The photo lightbox: one large photo of a review at a time. */
+.photo-lightbox-overlay { z-index: 60; }
+.photo-lightbox { --modal-gutter: 18px; width: min(720px, 100%); }
+.photo-lightbox .modal-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.photo-lightbox .modal-header h3 { font-size: var(--text-sm); font-weight: 600; color: var(--text-secondary); }
+.lightbox-close { border: 1px solid var(--control-border); background: var(--surface-raised); color: var(--text-primary); border-radius: var(--radius-sm); font-weight: 600; font-size: var(--text-2xs); padding: 6px 12px; cursor: pointer; }
+.lightbox-stage { display: flex; justify-content: center; background: var(--surface-sunken); border-radius: var(--radius-sm); overflow: hidden; }
+.lightbox-image { display: block; max-width: 100%; max-height: min(58vh, 480px); width: auto; height: auto; object-fit: contain; }
+.lightbox-controls { display: flex; align-items: center; justify-content: center; gap: 12px; padding-top: 12px; }
+.lightbox-controls button { border: 1px solid var(--control-border); background: var(--surface-raised); color: var(--text-primary); border-radius: var(--radius-sm); font-weight: 600; font-size: var(--text-2xs); padding: 8px 14px; min-height: 38px; cursor: pointer; }
+.lightbox-controls button:disabled { opacity: 0.5; cursor: not-allowed; }
+.lightbox-count { font-size: var(--text-2xs); color: var(--text-muted); }
+
 /* Profile and sign-out */
 .bottom-profile { margin-top: 18px; }
 .profile-card { display: inline-flex; align-items: center; gap: 12px; background: var(--surface-raised); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 10px 14px; }
 .avatar, .user-avatar { width: 34px; height: 34px; flex: 0 0 34px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; color: var(--text-inverse); background: var(--surface-inverse); font-size: var(--text-2xs); font-weight: 700; }
+
+/* Customer identity mark: initials, gold on dark.
+   A customer has no photo, so every customer slot shows the person's
+   initials on this disc with their name as real text beside it. The values
+   are deliberately theme-independent (like the sign-in photography panel):
+   the mark must read gold-on-dark in both themes, so it does not resolve
+   through the inverse tokens, which flip with the theme. */
+.customer-avatar {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #242321;
+  color: #d9b46e;
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+/* The initials mark beside a person's name: name as real text, mark as
+   decoration. Works inline in definition lists and as a row wrapper in
+   lists and table cells. */
+.person-inline { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
 .sidebar-profile { width: 100%; margin-top: auto; text-align: left; cursor: pointer; }
 .profile-card strong, .user-cell strong { display: block; font-size: var(--text-sm); color: var(--text-primary); }
 .profile-card span, .user-cell small { display: block; font-size: var(--text-2xs); color: var(--text-muted); }
 
-.signout-wrap { position: relative; display: block; width: 100%; margin-top: auto; }
+.signout-wrap { position: relative; display: block; width: 100%; margin-top: auto; flex: 0 0 auto; }
 .signout-wrap .sidebar-profile { margin-top: 0; }
 .signout-wrap.pending .sidebar-profile { background: var(--danger-soft); border-color: var(--danger-border); }
 .signout-wrap.pending .sidebar-profile .avatar { background: var(--danger-soft); color: var(--danger-text); }
@@ -905,9 +962,10 @@ tbody tr:hover td { background: var(--surface-hover); }
 .tab-group button.active span { background: var(--accent-soft); color: var(--accent-text); }
 .payment-tabs .search-input { min-width: min(310px, 100%); }
 .payment-table-scroll { width: 100%; overflow-x: auto; }
-.payment-table-scroll table { min-width: 770px; margin-top: 10px; }
+.payment-table-scroll table { min-width: 880px; margin-top: 10px; }
 .payment-table-scroll thead th { padding-top: 4px; }
 .payment-table-scroll tbody td { padding-top: 11px; padding-bottom: 11px; }
+.payment-customer { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .payment-customer strong, .payment-customer small, .payment-method { display: block; }
 .payment-customer small, .payment-method, .payment-date { color: var(--text-muted); font-size: var(--text-2xs); margin-top: 3px; }
 .payment-table-scroll td .status-badge { white-space: nowrap; padding: 0.32rem 0.55rem; font-size: var(--text-2xs); }
@@ -968,7 +1026,7 @@ tbody tr:hover td { background: var(--surface-hover); }
 .staff-edit-modal { width: min(880px, 100%); }
 .staff-edit-content {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
   gap: var(--space-4);
   align-items: start;
   padding: var(--space-5) 0 0;
@@ -977,15 +1035,18 @@ tbody tr:hover td { background: var(--surface-hover); }
 /* The action row sits inside a column of the two-column editor, not across
    the whole dialog. The modal's full-bleed margin would push it into the
    neighbouring panel, so it keeps the width of its own column here. */
-.staff-account-form .modal-actions { margin-left: 0; margin-right: 0; }
-.time-off-panel { grid-column: 2; grid-row: 1; }
+/* The staff-edit footer is a direct child of the dialog card, so it takes
+   the full-bleed action bar from the shared .modal-actions rule. */
+.staff-edit-side { grid-column: 2; grid-row: 1; display: grid; gap: var(--space-4); align-content: start; min-width: 0; }
+.staff-edit-side .form-section { min-width: 0; }
+.staff-edit-side .time-off-panel { grid-column: auto; grid-row: auto; }
 /* The weekly rules take a row of their own. Seven days side by side need
    the full width of the dialog, because a native time control is about
    100px wide before it can show the digits and the picker icon. */
 .scheduling-rules-panel { grid-column: 1 / -1; grid-row: 2; }
 @media (max-width: 760px) {
   .staff-edit-content { grid-template-columns: minmax(0, 1fr); }
-  .staff-account-form, .scheduling-rules-panel, .time-off-panel { grid-column: 1; grid-row: auto; }
+  .staff-account-form, .staff-edit-side, .scheduling-rules-panel, .time-off-panel { grid-column: 1; grid-row: auto; }
 }
 .modal-card.account-creation-modal { width: min(860px, 100%); }
 .modal-header {
@@ -1130,7 +1191,8 @@ textarea.modal-input { line-height: 1.55; }
 .staff-account-form, .time-off-panel { min-width: 0; }
 .staff-account-form { max-width: 760px; }
 .time-off-panel .panel-header { align-items: center; }
-.time-off-panel .panel-header .primary-button { padding: 0.62rem 0.8rem; font-size: var(--text-2xs); }
+.time-off-panel .panel-header .primary-button { padding: 0.62rem 0.8rem; font-size: var(--text-2xs); white-space: nowrap; }
+.staff-edit-side .time-off-panel .panel-header { flex-direction: column; align-items: flex-start; gap: 10px; }
 .time-off-list { display: grid; }
 .time-off-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--border-subtle); }
 .time-off-row > div strong, .time-off-row > div span { display: block; }
@@ -1453,13 +1515,27 @@ textarea.modal-input { line-height: 1.55; }
   overflow: hidden;
 }
 .login-submit:hover:not(:disabled) { background: var(--accent-hover); }
-.login-submit:disabled { opacity: 0.6; cursor: wait; }
-.login-submit .submit-spinner { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; gap: 10px; }
+/* Loading keeps the brand background, text contrast, and dimensions: the
+   spinner and the live label carry the state — never a faded button. */
+.login-submit { display: inline-flex; align-items: center; justify-content: center; gap: 10px; }
+.login-submit:active:not(:disabled) { background: var(--accent-active); transform: translateY(1px); }
+.login-submit:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.login-submit:disabled { cursor: wait; }
+.login-submit .submit-spinner { display: none; width: 22px; height: 22px; }
 .login-submit .submit-spinner svg { width: 22px; height: 22px; animation: spin 0.8s linear infinite; stroke: currentColor; stroke-width: 2.5; }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 .login-submit .submit-text { display: inline; }
-.login-submit:disabled .submit-text { display: none; }
-.login-submit:disabled .submit-spinner { display: flex; }
+.login-submit:disabled .submit-spinner { display: inline-flex; align-items: center; }
+@media (prefers-reduced-motion: reduce) {
+  .login-submit { transition: none; }
+  .login-submit:active:not(:disabled) { transform: none; }
+  .login-submit .submit-spinner svg { animation: none; }
+}
+
+.login-remember { display: flex; align-items: center; gap: 8px; margin-top: 4px; font-size: var(--text-xs); color: var(--text-secondary); cursor: pointer; }
+.login-remember input { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
+.login-remember input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.login-session-expired { margin: 0; padding: 10px 12px; border-left: 3px solid var(--accent); background: var(--accent-soft); color: var(--text-primary); font-size: var(--text-xs); border-radius: var(--radius-sm); }
 
 .login-footer { margin-top: auto; padding-top: 32px; }
 .login-footer p { margin: 0; font-size: var(--text-2xs); letter-spacing: 0.08em; color: var(--text-muted); }
@@ -1625,6 +1701,10 @@ textarea.modal-input { line-height: 1.55; }
   .viewer-shell { height: auto; min-height: 100vh; min-height: 100dvh; flex-direction: column; }
   .content-panel { height: auto; overflow: visible;
   padding: var(--space-5) var(--space-6) var(--space-7);}
+  /* Stacked top-bar mode: the sidebar is a header row again, so neither it
+     nor the scroll region between its parts constrains the page height. */
+  .sidebar { height: auto; overflow: visible; }
+  .sidebar-scroll { flex: 0 0 auto; min-height: 0; overflow: visible; }
   .sidebar-brand { display: none; }
   .signout-wrap { display: block; width: auto; max-width: 100%; align-self: flex-end; margin-top: 8px; }
   .signout-wrap .sidebar-profile { display: flex; width: auto; max-width: 100%; margin-top: 0; padding: 6px 10px; }
@@ -1802,7 +1882,10 @@ textarea.modal-input { line-height: 1.55; }
   padding: var(--space-6) var(--space-3) var(--space-4);}
   .sidebar.mobile-open { transform: translateX(0); }
   .sidebar-brand { display: flex; padding-top: 60px; flex-shrink: 0; }
-  .nav { flex: 1 1 auto; flex-direction: column; gap: var(--space-1); margin-top: var(--space-6); padding: 0 12px; overflow-y: auto; min-height: 0; }
+  /* In the drawer the same middle region carries the scrolling, so the
+     sign-out area at the bottom stays visible while the list moves. */
+  .sidebar-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-bottom: var(--space-2); }
+  .nav { flex: 0 0 auto; flex-direction: column; gap: var(--space-1); margin-top: var(--space-6); padding: 0 12px; }
   .nav-link { flex: 0 0 auto; width: 100%; min-height: 44px;
   gap: var(--space-3);
   font-size: var(--text-sm);
@@ -2554,22 +2637,57 @@ textarea.modal-input { line-height: 1.55; }
 .schedule-request-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-3); }
 .schedule-request-item {
   display: grid;
-  grid-template-columns: minmax(9rem, 0.8fr) minmax(0, 1.6fr) auto auto;
+  /* Fixed status and action tracks: the columns cannot move when the action
+     buttons give way to a settled status badge (or to nothing). */
+  grid-template-columns: minmax(9rem, 0.9fr) minmax(0, 1.8fr) 7.5rem 8.75rem;
   gap: var(--space-4);
-  align-items: center;
+  /* Top-aligned so the staff name and the request type share one line. */
+  align-items: start;
   padding: var(--space-3) 0;
   border-bottom: 1px solid var(--border-subtle);
 }
 .schedule-request-item:last-child { border-bottom: 0; }
 
-.schedule-request-who strong { display: block; color: var(--text-primary); font-size: var(--text-sm); line-height: var(--leading-snug); }
+/* Key details (who, what, when, status) lead at md; supporting metadata
+   (email, reason, submitted) stays at the 2xs floor. */
+.schedule-request-who strong { display: block; color: var(--text-primary); font-size: var(--text-md); font-weight: 600; line-height: var(--leading-snug); }
 .schedule-request-who small { display: block; color: var(--text-muted); font-size: var(--text-2xs); line-height: var(--leading-snug); margin-top: 2px; }
-.schedule-request-what { display: grid; gap: 2px; min-width: 0; }
-.schedule-request-type { color: var(--text-primary); font-size: var(--text-sm); font-weight: 600; line-height: var(--leading-snug); }
+.schedule-request-what { display: grid; gap: 3px; min-width: 0; }
+.schedule-request-type { color: var(--text-primary); font-size: var(--text-md); font-weight: 600; line-height: var(--leading-snug); }
+.schedule-request-when { color: var(--text-secondary); font-size: var(--text-sm); font-weight: 500; line-height: var(--leading-snug); }
 .schedule-request-what small { color: var(--text-muted); font-size: var(--text-2xs); line-height: var(--leading-snug); }
+.schedule-request-what small.schedule-request-when { color: var(--text-secondary); font-size: var(--text-sm); font-weight: 500; }
 .schedule-request-reason { color: var(--text-secondary) !important; }
 .schedule-request-submitted { opacity: 0.85; }
-.schedule-request-actions { display: flex; gap: var(--space-2); align-items: center; }
+.schedule-request-item > .status-badge {
+  justify-self: start;
+  align-self: start;
+  margin-top: 2px;
+  /* Uniform pill widths: the status column keeps one clean edge for every
+     state, however long the word is. */
+  min-width: 5.75rem;
+  text-align: center;
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+.schedule-request-actions {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  justify-content: flex-end;
+  align-self: start;
+  min-height: 2.25rem;
+}
+.schedule-request-actions .link-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.125rem;
+  padding: 0 0.85rem;
+  font-size: var(--text-xs);
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
 
 /* Below the tablet breakpoint the request becomes a card, so the requester
    and the request stack and nothing has to be read sideways. */
@@ -2586,7 +2704,9 @@ textarea.modal-input { line-height: 1.55; }
   .schedule-request-who { grid-area: who; }
   .schedule-request-what { grid-area: what; }
   .schedule-request-item > .status-badge { grid-area: status; align-self: start; justify-self: end; }
-  .schedule-request-actions { grid-area: action; }
+  .schedule-request-actions { grid-area: action; justify-content: stretch; }
+  /* On the card layout an empty action row would only add stray height. */
+  .schedule-request-actions:empty { display: none; }
   .schedule-request-actions .link-button {
     flex: 1 1 0;
     min-height: 44px;
@@ -2676,4 +2796,202 @@ textarea.modal-input { line-height: 1.55; }
   .staff-services-table th:nth-child(5) { width: 1%; white-space: nowrap; }
   .staff-services-table th:nth-child(1) { width: 46%; }
   .staff-services-table th:nth-child(2) { width: 30%; }
+}
+
+/* ==========================================================================
+   Image upload progress
+   The bar tracks the bytes sent so a large photo does not look stalled.
+   ========================================================================== */
+.upload-progress { margin-top: 8px; display: flex; align-items: center; gap: 10px; }
+.upload-progress-track { flex: 1; height: 8px; background: var(--chart-track); border-radius: var(--radius-pill); overflow: hidden; }
+.upload-progress-bar { height: 100%; background: var(--accent); border-radius: var(--radius-pill); transition: width 0.15s ease; }
+.upload-progress-text { font-size: var(--text-2xs); color: var(--text-secondary); white-space: nowrap; }
+.upload-url { display: block; margin-top: 6px; font-size: var(--text-2xs); color: var(--text-secondary); word-break: break-all; }
+
+/* ==========================================================================
+   Covered roles, specialties, and the show-on-team switch
+   ========================================================================== */
+.tag-picker-field { margin: 12px 0; }
+.tag-picker { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; padding: 0; list-style: none; }
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-soft-border);
+  color: var(--accent-text);
+  font-size: var(--text-xs);
+}
+.tag-chip button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: var(--text-md);
+  line-height: 1;
+  padding: 0 2px;
+}
+.tag-suggestions { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; padding: 0; list-style: none; }
+.tag-suggestion {
+  border: 1px dashed var(--control-border);
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+  border-radius: var(--radius-pill);
+  padding: 4px 10px;
+  font-size: var(--text-2xs);
+  cursor: pointer;
+}
+.tag-suggestion:hover { border-color: var(--accent); color: var(--text-primary); }
+.tag-add-row { display: flex; gap: 8px; align-items: center; }
+.tag-add-row .modal-input { flex: 1; margin: 0; }
+
+.specialty-field { border: 0; margin: 12px 0; padding: 0; }
+.specialty-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; margin-top: 8px; }
+.specialty-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+.specialty-option:has(input:checked) { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.specialty-option:has(input:focus-visible) { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+
+.toggle-field { margin: 12px 0; }
+.toggle-switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; font-size: var(--text-sm); }
+.toggle-switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.toggle-track {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-sunken);
+  border: 1px solid var(--control-border);
+  transition: background 0.15s ease, border-color 0.15s ease;
+  flex: 0 0 40px;
+}
+.toggle-track::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-raised);
+  transition: transform 0.15s ease;
+}
+.toggle-switch input:checked + .toggle-track { background: var(--accent); border-color: var(--accent); }
+.toggle-switch input:checked + .toggle-track::after { transform: translateX(18px); }
+.toggle-switch input:focus-visible + .toggle-track { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+
+/* ==========================================================================
+   Attendance
+   ========================================================================== */
+.attendance-clock-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: var(--space-3); }
+
+/* ==========================================================================
+   Payments: detail, counter recording and settings
+
+   One payment reads as its own story: where the money was collected, what
+   the server reports for the booking, and the proof behind the transaction.
+   ========================================================================== */
+.payment-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.payment-tools .search-input { flex: 1 1 220px; }
+.payment-detail-badges { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
+.payment-detail-badges .status-badge { padding: 0.32rem 0.55rem; font-size: var(--text-2xs); }
+.modal-card.payment-detail-modal { width: min(560px, 100%); }
+/* The three server figures sit side by side: total, received, still due. */
+.payment-totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 12px 0; }
+.payment-totals div { padding: 10px 12px; background: var(--surface-sunken); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); min-width: 0; }
+.payment-totals span { display: block; color: var(--text-muted); font-size: var(--text-2xs); }
+.payment-totals strong { display: block; margin-top: 4px; color: var(--text-primary); font-size: var(--text-sm); overflow-wrap: anywhere; }
+.payment-proof h4, .payment-history h4 { margin: 12px 0 6px; font-size: var(--text-xs); font-weight: 650; color: var(--text-secondary); }
+/* The proof thumbnail is a fixed crop and a button: it opens the lightbox. */
+.payment-proof-thumb { display: block; width: 96px; height: 72px; padding: 0; border: 1px solid var(--control-border); border-radius: var(--radius-sm); overflow: hidden; background: var(--surface-sunken); cursor: pointer; }
+.payment-proof-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.payment-history-list { list-style: none; margin: 0; padding: 0; }
+.payment-history-list li { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 0; border-top: 1px solid var(--border-subtle); font-size: var(--text-2xs); }
+.payment-history-list li:first-child { border-top: 0; }
+.payment-history-list .status-badge { padding: 0.28rem 0.5rem; font-size: var(--text-2xs); }
+.payment-history-method { color: var(--text-muted); }
+.payment-history-list strong { margin-left: auto; color: var(--text-primary); }
+.payment-history-list small { width: 100%; color: var(--text-muted); }
+.record-appointment-picker, .record-payment-form { display: grid; gap: 6px; }
+.record-appointment-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; max-height: 240px; overflow-y: auto; }
+.record-appointment-option { display: grid; gap: 2px; width: 100%; text-align: left; padding: 9px 12px; border: 1px solid var(--control-border); border-radius: var(--radius-sm); background: var(--surface-raised); color: var(--text-primary); cursor: pointer; }
+.record-appointment-option:hover { background: var(--surface-hover); }
+.record-appointment-option span { font-size: var(--text-xs); color: var(--text-secondary); }
+.record-appointment-option small { font-size: var(--text-2xs); color: var(--text-muted); }
+.record-appointment-chosen { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 10px 12px; margin-bottom: 6px; background: var(--surface-sunken); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); }
+.record-appointment-chosen strong, .record-appointment-chosen span, .record-appointment-chosen small { display: block; }
+.record-appointment-chosen span { font-size: var(--text-xs); color: var(--text-secondary); }
+.record-appointment-chosen small { font-size: var(--text-2xs); color: var(--text-muted); }
+.payment-settings-form { display: grid; gap: 6px; padding-top: 10px; min-width: 0; }
+.payment-settings-form .modal-input { width: 100%; }
+@media (max-width: 560px) {
+  .payment-totals { grid-template-columns: 1fr; }
+  .record-appointment-chosen { flex-direction: column; }
+}
+
+/* ─── Toast notifications (staff-management operation feedback) ────────── */
+.toast-region {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(360px, calc(100vw - 32px));
+  pointer-events: none;
+}
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 12px 12px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-base);
+  color: var(--text-primary);
+  box-shadow: 0 10px 26px rgba(20, 19, 18, 0.22);
+  pointer-events: auto;
+  animation: toast-in 180ms ease-out;
+}
+.toast-message { flex: 1; font-size: 0.875rem; line-height: 1.45; }
+.toast-dismiss {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.toast-dismiss:hover { background: var(--surface-sunken); color: var(--text-primary); }
+.toast-dismiss:focus-visible { outline: 2px solid var(--info-text); outline-offset: 1px; }
+.toast-success { border-color: var(--success-border); background: var(--success-soft); color: var(--success-text); }
+.toast-success .toast-dismiss { color: var(--success-text); }
+.toast-error { border-color: var(--danger-border); background: var(--danger-soft); color: var(--danger-text); }
+.toast-error .toast-dismiss { color: var(--danger-text); }
+.toast-warning { border-color: var(--warning-border); background: var(--warning-soft); color: var(--warning-text); }
+.toast-warning .toast-dismiss { color: var(--warning-text); }
+.toast-info { border-color: var(--info-text); background: var(--surface-base); color: var(--text-primary); }
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .toast { animation: none; }
 }

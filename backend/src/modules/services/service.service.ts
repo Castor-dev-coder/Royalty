@@ -429,13 +429,29 @@ export class ServiceService {
   private static async listServicesForStaffRow(staffId: string): Promise<ServiceInfo[]> {
     const assignments = await db.orm.public.StaffService.where({ staffId }).all();
 
+    // One lookup per unique row instead of per assignment — the serial loop
+    // made this endpoint take seconds for staff with many services.
+    const serviceIds = [...new Set(assignments.map((assignment) => String(assignment.serviceId)))];
+    const fetched = await Promise.all(serviceIds.map((id) => db.orm.public.Service.where({ id }).first()));
+    type ServiceRow = NonNullable<(typeof fetched)[number]>;
+    const serviceById = new Map<string, ServiceRow>();
+    serviceIds.forEach((serviceId, index) => {
+      const service = fetched[index];
+      if (service) serviceById.set(serviceId, service);
+    });
+    const categoryIds = [...new Set([...serviceById.values()].map((service) => String(service.categoryId)))];
+    const fetchedCategories = await Promise.all(categoryIds.map((id) => db.orm.public.ServiceCategory.where({ id }).first()));
+    const categoryNameById = new Map<string, string>();
+    categoryIds.forEach((categoryId, index) => {
+      const category = fetchedCategories[index];
+      if (category) categoryNameById.set(categoryId, String(category.name));
+    });
+
     const result: ServiceInfo[] = [];
     for (const assignment of assignments) {
-      const service = await db.orm.public.Service.where({ id: assignment.serviceId }).first();
+      const service = serviceById.get(String(assignment.serviceId));
       if (service) {
-        const category = await db.orm.public.ServiceCategory.where({ id: service.categoryId }).first();
-        const categoryName = category ? category.name : 'Unknown';
-        result.push(this.mapServiceWithCategory(service, categoryName));
+        result.push(this.mapServiceWithCategory(service, categoryNameById.get(String(service.categoryId)) ?? 'Unknown'));
       }
     }
 

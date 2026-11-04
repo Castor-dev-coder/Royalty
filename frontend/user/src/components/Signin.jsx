@@ -1,18 +1,35 @@
 import { useRef, useState } from 'react'
 import AuthModal from './AuthModal.jsx'
 import BrandMark from './BrandMark.jsx'
+import { useAuth } from '../context/useAuth.jsx'
+import { ApiError, ValidationError } from '../lib/api.js'
+import {
+  useFieldErrors,
+  validateEmail,
+  validateFullName,
+  validateNewPassword,
+  validatePasswordConfirm,
+  validatePhone,
+} from '../lib/validation.js'
 
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-
-function Signin({ onClose, onSwitch, onLogin = () => {} }) {
+function Signin({ onClose, onSwitch, onLogin = () => {}, intent = null }) {
+  const { signUp } = useAuth()
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [message, setMessage] = useState('')
-  const [errors, setErrors] = useState({})
+  const { errors, setErrors, setFieldError, field, submitErrors } = useFieldErrors()
+  const nameLive = field('name', validateFullName)
+  const emailLive = field('email', (value) => validateEmail(value, { gmail: true }))
+  const phoneLive = field('phone', validatePhone)
+  const passwordLive = field('password', validateNewPassword)
+  // Cross-field: read the password sibling from the form at validation time.
+  const confirmLive = field('confirmPassword', (value, event) =>
+    validatePasswordConfirm(value, event.currentTarget.form.elements.password.value),
+  )
   const [submitting, setSubmitting] = useState(false)
   const submittingRef = useRef(false)
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault()
     // Guards duplicate submissions even before React re-renders.
     if (submittingRef.current) return
@@ -20,22 +37,22 @@ function Signin({ onClose, onSwitch, onLogin = () => {} }) {
     const form = event.currentTarget
     const name = String(form.elements.name.value).trim()
     const email = String(form.elements.email.value).trim()
+    const phone = String(form.elements.phone.value).trim()
     const nextErrors = {}
-    if (!name) nextErrors.name = 'Enter your name.'
-    if (!email) {
-      nextErrors.email = 'Enter your email address.'
-    } else if (!EMAIL_PATTERN.test(email)) {
-      nextErrors.email = 'Enter a valid email address, such as you@example.com.'
-    }
-    if (!form.elements.password.value) {
-      nextErrors.password = 'Create a password.'
-    }
-    if (!form.elements.confirmPassword.value) {
-      nextErrors.confirmPassword = 'Re-enter your password to confirm it.'
-    } else if (form.elements.password.value !== form.elements.confirmPassword.value) {
-      nextErrors.confirmPassword = 'Passwords do not match.'
-    }
-    setErrors(nextErrors)
+    const nameError = validateFullName(name)
+    if (nameError) nextErrors.name = nameError
+    const emailError = validateEmail(email, { gmail: true })
+    if (emailError) nextErrors.email = emailError
+    const phoneError = validatePhone(phone)
+    if (phoneError) nextErrors.phone = phoneError
+    const passwordError = validateNewPassword(form.elements.password.value)
+    if (passwordError) nextErrors.password = passwordError
+    const confirmError = validatePasswordConfirm(
+      form.elements.confirmPassword.value,
+      form.elements.password.value,
+    )
+    if (confirmError) nextErrors.confirmPassword = confirmError
+    submitErrors(nextErrors)
     const firstError = Object.keys(nextErrors)[0]
     if (firstError) {
       form.elements[firstError]?.focus()
@@ -44,10 +61,30 @@ function Signin({ onClose, onSwitch, onLogin = () => {} }) {
 
     submittingRef.current = true
     setSubmitting(true)
-    const user = { name, email }
-    localStorage.setItem('royalty-user', JSON.stringify(user))
-    onLogin(user)
-    onClose()
+    setMessage('')
+    const [firstName, ...rest] = name.split(/\s+/)
+    try {
+      const user = await signUp({
+        email,
+        password: form.elements.password.value,
+        firstName,
+        lastName: rest.join(' '),
+        phone,
+      })
+      onLogin(user)
+      onClose()
+    } catch (error) {
+      if (error instanceof ValidationError && error.details && typeof error.details === 'object') {
+        setErrors((current) => ({ ...current, ...error.details }))
+      } else if (error instanceof ApiError) {
+        setMessage(error.message)
+      } else {
+        setMessage('Something went wrong. Please try again.')
+      }
+    } finally {
+      submittingRef.current = false
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -57,6 +94,11 @@ function Signin({ onClose, onSwitch, onLogin = () => {} }) {
         <h2 className="my-[25px] mb-[27px] text-center text-[clamp(1.35rem,4vw,1.75rem)] font-normal text-[#f0efed]" id="signin-title">
           Create your account
         </h2>
+        {intent && (
+          <p className="-mt-4 mb-5 text-center text-[12px] font-semibold tracking-[0.14em] text-[var(--gold)] uppercase">
+            Sign in to {intent}
+          </p>
+        )}
         <form className="flex w-full flex-col gap-[14px]" noValidate onSubmit={handleSubmit}>
           <div className="flex w-full flex-col gap-[7px]">
             <label className="text-[0.62rem] font-semibold tracking-[0.12em] text-[#918c82] uppercase" htmlFor="signin-name">
@@ -75,6 +117,7 @@ function Signin({ onClose, onSwitch, onLogin = () => {} }) {
                 id="signin-name"
                 name="name"
                 placeholder="Your full name"
+                {...nameLive}
                 required
                 type="text"
               />
@@ -101,7 +144,8 @@ function Signin({ onClose, onSwitch, onLogin = () => {} }) {
                 className="min-w-0 w-full border-0 bg-transparent text-[0.88rem] text-[#f3f0e8] outline-none placeholder:text-[#898783] focus-visible:outline-0 max-[680px]:text-[0.78rem]"
                 id="signin-email"
                 name="email"
-                placeholder="you@example.com"
+                placeholder="you@gmail.com"
+                {...emailLive}
                 required
                 type="email"
               />
@@ -109,6 +153,34 @@ function Signin({ onClose, onSwitch, onLogin = () => {} }) {
             {errors.email && (
               <p className="m-0 text-[0.68rem] leading-[1.5] text-[#e9a68c]" id="signin-email-error" role="alert">
                 {errors.email}
+              </p>
+            )}
+          </div>
+          <div className="flex w-full flex-col gap-[7px]">
+            <label className="text-[0.62rem] font-semibold tracking-[0.12em] text-[#918c82] uppercase" htmlFor="signin-phone">
+              Mobile number
+            </label>
+            <div className="flex min-h-[61px] items-center gap-[19px] rounded-[10px] border border-[#3a3835] bg-[rgba(29,29,29,0.75)] px-[18px] transition-[border-color,box-shadow] duration-[180ms] focus-within:border-[var(--gold)] focus-within:shadow-[0_0_0_2px_rgba(212,180,92,0.1)] max-[680px]:min-h-[55px] max-[680px]:gap-[13px] max-[680px]:px-[14px]">
+              <svg className="size-[26px] shrink-0 fill-none stroke-[var(--gold)] [stroke-linecap:round] [stroke-linejoin:round] [stroke-width:1.5]" viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="6" y="3" width="12" height="18" rx="2" />
+                <path d="M11 18h2" />
+              </svg>
+              <input
+                aria-describedby={errors.phone ? 'signin-phone-error' : undefined}
+                aria-invalid={errors.phone ? 'true' : undefined}
+                autoComplete="tel"
+                className="min-w-0 w-full border-0 bg-transparent text-[0.88rem] text-[#f3f0e8] outline-none placeholder:text-[#898783] focus-visible:outline-0 max-[680px]:text-[0.78rem]"
+                id="signin-phone"
+                name="phone"
+                placeholder="09XX XXX XXXX"
+                {...phoneLive}
+                required
+                type="tel"
+              />
+            </div>
+            {errors.phone && (
+              <p className="m-0 text-[0.68rem] leading-[1.5] text-[#e9a68c]" id="signin-phone-error" role="alert">
+                {errors.phone}
               </p>
             )}
           </div>
@@ -129,6 +201,16 @@ function Signin({ onClose, onSwitch, onLogin = () => {} }) {
                 id="signin-password"
                 name="password"
                 placeholder="Create your password"
+                {...passwordLive}
+                onChange={(event) => {
+                  passwordLive.onChange(event)
+                  // Keep the confirm message honest when the password
+                  // changes under it — only once confirm has content.
+                  const confirmValue = event.currentTarget.form.elements.confirmPassword.value
+                  if (confirmValue) {
+                    setFieldError('confirmPassword', validatePasswordConfirm(confirmValue, event.target.value))
+                  }
+                }}
                 required
                 type={showPassword ? 'text' : 'password'}
               />
@@ -167,6 +249,7 @@ function Signin({ onClose, onSwitch, onLogin = () => {} }) {
                 id="signin-confirm"
                 name="confirmPassword"
                 placeholder="Re-enter your password"
+                {...confirmLive}
                 required
                 type={showConfirmPassword ? 'text' : 'password'}
               />
@@ -191,11 +274,15 @@ function Signin({ onClose, onSwitch, onLogin = () => {} }) {
             )}
           </div>
           <button
-            className="btn-pill mt-1 inline-flex min-h-[46px] w-full cursor-pointer items-center justify-center rounded-full border border-[var(--gold)] bg-[var(--gold)] px-[1.4rem] py-[0.8rem] text-[0.7rem] font-bold tracking-[0.13em] text-[#111] uppercase hover:bg-[var(--gold-bright)] disabled:cursor-default disabled:opacity-60"
+            className="btn-pill mt-1 inline-flex min-h-[46px] w-full cursor-pointer items-center justify-center gap-2 rounded-full border border-[var(--gold)] bg-[var(--gold)] px-[1.4rem] py-[0.8rem] text-[0.7rem] font-bold tracking-[0.13em] text-[#111] uppercase hover:bg-[var(--gold-bright)] active:translate-y-px motion-reduce:active:translate-y-0 disabled:cursor-wait focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--gold)]"
             disabled={submitting}
+            aria-busy={submitting}
             type="submit"
           >
-            SIGN UP
+            {submitting && (
+              <span className="size-4 animate-spin rounded-full border-2 border-[#111]/30 border-t-[#111] motion-reduce:animate-none" aria-hidden="true" />
+            )}
+            {submitting ? 'Signing up…' : 'SIGN UP'}
           </button>
         </form>
         {message && <p className="auth-note mt-[13px] text-center text-[0.68rem] leading-[1.5]" role="status">{message}</p>}
@@ -210,7 +297,7 @@ function Signin({ onClose, onSwitch, onLogin = () => {} }) {
         </div>
         <button
           className="flex min-h-11 w-full cursor-pointer items-center justify-center gap-[10px] rounded border border-[#34322e] bg-[#171716] text-[0.7rem] text-[#e1ded8] transition-[border-color,background] duration-[180ms] hover:border-[var(--gold)] hover:bg-[#1d1c19]"
-          onClick={() => setMessage('Google sign-in is not connected yet.')}
+          onClick={() => setMessage('Sign-up isn’t available yet.')}
           type="button"
         >
           <span className="font-[Arial,sans-serif] text-base font-bold text-[#4285f4]" aria-hidden="true">G</span>

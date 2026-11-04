@@ -34,3 +34,6 @@ coverage/
 # IDE
 .vscode/
 .idea/
+certs/
+.seed-credentials.local
+prod-ca-2021.crt

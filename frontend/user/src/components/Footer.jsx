@@ -1,6 +1,7 @@
 import BrandMark from './BrandMark.jsx'
 import { Link } from 'react-router-dom'
 import { useToast } from '../context/useToast.jsx'
+import { SALON_PHONE } from '../lib/salon.js'
 
 const signedOutLinks = [
   { label: 'Home', to: '/' }, { label: 'Services', to: '/services' },
@@ -23,8 +24,8 @@ const contactDetails = [
   },
   {
     label: 'PHONE',
-    value: '+63 9XX XXX XXXX',
-    href: 'tel:+639XXXXXXXXX',
+    value: SALON_PHONE.value,
+    href: SALON_PHONE.href,
     icon: 'phone',
     copyable: true,
   },
@@ -111,7 +112,7 @@ function ContactIcon({ type }) {
             Where Beauty Meets Royalty.
           </p>
           <p className="type-footer-description max-w-77.5 text-[#aaa69d]">
-            A premier luxury salon in Quezon City dedicated to making every
+            A premier luxury salon in Caloocan City dedicated to making every
             client feel like royalty.
           </p>
           <div className="mt-4.5 flex gap-2.5" aria-label="Social media">
