@@ -63,17 +63,17 @@ function Login({ onClose, onSwitch, onLogin = () => {}, intent = null }) {
     <AuthModal onClose={onClose} variant="login">
       <div className="flex flex-col items-center px-[clamp(24px,8vw,58px)] pt-[38px] pb-[35px] max-[680px]:px-[22px] max-[680px]:pt-8 max-[680px]:pb-[27px]">
         <BrandMark className="size-[86px] max-[680px]:size-[72px]" />
-        <h2 className="my-[25px] mb-[27px] text-center text-[clamp(1.35rem,4vw,1.75rem)] font-normal text-[#f0efed]" id="login-title">
+        <h2 className="my-[25px] mb-[27px] text-center text-[clamp(1.65rem,4.5vw,2.1rem)] font-normal text-[#f0efed]" id="login-title">
           Login to your account
         </h2>
         {intent && (
-          <p className="-mt-4 mb-5 text-center text-[12px] font-semibold tracking-[0.14em] text-[var(--gold)] uppercase">
+          <p className="-mt-4 mb-5 text-center text-[15px] font-semibold tracking-[0.14em] text-[var(--gold)] uppercase">
             Sign in to {intent}
           </p>
         )}
         <form className="flex w-full flex-col gap-[14px]" noValidate onSubmit={handleSubmit} ref={formRef}>
           <div className="flex w-full flex-col gap-[7px]">
-            <label className="text-[0.62rem] font-semibold tracking-[0.12em] text-[#918c82] uppercase" htmlFor="login-email">
+            <label className="text-[0.82rem] font-semibold tracking-[0.12em] text-[#918c82] uppercase" htmlFor="login-email">
               Email address
             </label>
             <div className="flex min-h-[61px] items-center gap-[19px] rounded-[10px] border border-[#3a3835] bg-[rgba(29,29,29,0.75)] px-[18px] transition-[border-color,box-shadow] duration-[180ms] focus-within:border-[var(--gold)] focus-within:shadow-[0_0_0_2px_rgba(212,180,92,0.1)] max-[680px]:min-h-[55px] max-[680px]:gap-[13px] max-[680px]:px-[14px]">
@@ -85,7 +85,7 @@ function Login({ onClose, onSwitch, onLogin = () => {}, intent = null }) {
                 aria-describedby={errors.email ? 'login-email-error' : undefined}
                 aria-invalid={errors.email ? 'true' : undefined}
                 autoComplete="email"
-                className="min-w-0 w-full border-0 bg-transparent text-[0.88rem] text-[#f3f0e8] outline-none placeholder:text-[#898783] focus-visible:outline-0 max-[680px]:text-[0.78rem]"
+                className="min-w-0 w-full border-0 bg-transparent text-[1.05rem] text-[#f3f0e8] outline-none placeholder:text-[#898783] focus-visible:outline-0 max-[680px]:text-[0.95rem]"
                 id="login-email"
                 name="email"
                 placeholder="you@example.com"
@@ -95,13 +95,13 @@ function Login({ onClose, onSwitch, onLogin = () => {}, intent = null }) {
               />
             </div>
             {errors.email && (
-              <p className="m-0 text-[0.68rem] leading-[1.5] text-[#e9a68c]" id="login-email-error" role="alert">
+              <p className="m-0 text-[0.85rem] leading-[1.5] text-[#e9a68c]" id="login-email-error" role="alert">
                 {errors.email}
               </p>
             )}
           </div>
           <div className="flex w-full flex-col gap-[7px]">
-            <label className="text-[0.62rem] font-semibold tracking-[0.12em] text-[#918c82] uppercase" htmlFor="login-password">
+            <label className="text-[0.82rem] font-semibold tracking-[0.12em] text-[#918c82] uppercase" htmlFor="login-password">
               Password
             </label>
             <div className="flex min-h-[61px] items-center gap-[19px] rounded-[10px] border border-[#3a3835] bg-[rgba(29,29,29,0.75)] px-[18px] transition-[border-color,box-shadow] duration-[180ms] focus-within:border-[var(--gold)] focus-within:shadow-[0_0_0_2px_rgba(212,180,92,0.1)] max-[680px]:min-h-[55px] max-[680px]:gap-[13px] max-[680px]:px-[14px]">
@@ -113,7 +113,7 @@ function Login({ onClose, onSwitch, onLogin = () => {}, intent = null }) {
                 aria-describedby={errors.password ? 'login-password-error' : undefined}
                 aria-invalid={errors.password ? 'true' : undefined}
                 autoComplete="current-password"
-                className="min-w-0 w-full border-0 bg-transparent text-[0.88rem] text-[#f3f0e8] outline-none placeholder:text-[#898783] focus-visible:outline-0 max-[680px]:text-[0.78rem]"
+                className="min-w-0 w-full border-0 bg-transparent text-[1.05rem] text-[#f3f0e8] outline-none placeholder:text-[#898783] focus-visible:outline-0 max-[680px]:text-[0.95rem]"
                 id="login-password"
                 name="password"
                 placeholder="Enter your password"
@@ -134,14 +134,14 @@ function Login({ onClose, onSwitch, onLogin = () => {}, intent = null }) {
               </button>
             </div>
             {errors.password && (
-              <p className="m-0 text-[0.68rem] leading-[1.5] text-[#e9a68c]" id="login-password-error" role="alert">
+              <p className="m-0 text-[0.85rem] leading-[1.5] text-[#e9a68c]" id="login-password-error" role="alert">
                 {errors.password}
               </p>
             )}
           </div>
           <div className="-mt-[5px] flex justify-end">
             <button
-              className="auth-link cursor-pointer border-0 bg-transparent p-0 text-[0.65rem] no-underline hover:underline"
+              className="auth-link cursor-pointer border-0 bg-transparent p-0 text-[0.82rem] no-underline hover:underline"
               onClick={() =>
                 setMessage('Password recovery will be available when auth is connected.')
               }
@@ -150,7 +150,7 @@ function Login({ onClose, onSwitch, onLogin = () => {}, intent = null }) {
               Forgot password?
             </button>
           </div>
-          <label className="-mt-[2px] flex cursor-pointer items-center gap-[8px] text-[0.72rem] text-[#b3ada2]">
+          <label className="-mt-[2px] flex cursor-pointer items-center gap-[8px] text-[0.9rem] text-[#b3ada2]">
             <input
               className="size-[15px] cursor-pointer accent-[var(--gold)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--gold)]"
               name="rememberMe"
@@ -159,7 +159,7 @@ function Login({ onClose, onSwitch, onLogin = () => {}, intent = null }) {
             Keep me logged in
           </label>
           <button
-            className="btn-pill mt-1 inline-flex min-h-[46px] w-full cursor-pointer items-center justify-center gap-2 rounded-full border border-[var(--gold)] bg-[var(--gold)] px-[1.4rem] py-[0.8rem] text-[0.7rem] font-bold tracking-[0.13em] text-[#111] uppercase hover:bg-[var(--gold-bright)] active:translate-y-px motion-reduce:active:translate-y-0 disabled:cursor-wait focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--gold)]"
+            className="btn-pill mt-1 inline-flex min-h-[46px] w-full cursor-pointer items-center justify-center gap-2 rounded-full border border-[var(--gold)] bg-[var(--gold)] px-[1.4rem] py-[0.8rem] text-[0.88rem] font-bold tracking-[0.13em] text-[#111] uppercase hover:bg-[var(--gold-bright)] active:translate-y-px motion-reduce:active:translate-y-0 disabled:cursor-wait focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--gold)]"
             disabled={submitting}
             aria-busy={submitting}
             type="submit"
@@ -170,8 +170,8 @@ function Login({ onClose, onSwitch, onLogin = () => {}, intent = null }) {
             {submitting ? 'Signing in…' : 'LOG IN'}
           </button>
         </form>
-        {message && <p className="auth-note mt-[13px] text-center text-[0.68rem] leading-[1.5]" role="status">{message}</p>}
-        <p className="mt-[19px] text-center text-[0.68rem] text-[#aaa7a0]">
+        {message && <p className="auth-note mt-[13px] text-center text-[0.85rem] leading-[1.5]" role="status">{message}</p>}
+        <p className="mt-[19px] text-center text-[0.85rem] text-[#aaa7a0]">
           Don&apos;t have an account?{' '}
           <button className="auth-link cursor-pointer border-0 bg-transparent p-0 no-underline hover:underline" onClick={onSwitch} type="button">
             Sign up

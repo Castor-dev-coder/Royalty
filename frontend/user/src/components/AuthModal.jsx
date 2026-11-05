@@ -21,7 +21,7 @@ function AuthModal({ children, onClose, variant }) {
         </svg>
       </button>
       {children}
-      <p className="auth-note m-0 border-t border-[rgba(212,180,92,0.14)] px-6 pt-3.5 pb-4 text-center text-[0.68rem] leading-[1.5]">
+      <p className="auth-note m-0 border-t border-[rgba(212,180,92,0.14)] px-6 pt-3.5 pb-4 text-center text-[0.85rem] leading-[1.5]">
         UI preview — login is not connected to the salon&apos;s live system.
       </p>
     </Dialog>

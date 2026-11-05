@@ -22,7 +22,7 @@ import { formatAmount, groupPaymentsByAppointment, holdCountdownText, makeAttemp
 const PAGE_SIZE = 10
 
 const STATUS_LABELS = {
-  RESERVED: 'Pending',
+  RESERVED: 'Awaiting payment',
   // After verified payment the appointment reads "Booked" (payment spec).
   CONFIRMED: 'Booked',
   COMPLETED: 'Completed',

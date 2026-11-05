@@ -135,7 +135,7 @@ function Services() {
       <h1 className="sr-only">Salon Services</h1>
       <section
         aria-label="Browse salon services"
-        className="mx-auto w-[min(100%-48px,1180px)] py-[34px] pb-20 max-[600px]:w-[min(100%-36px,1180px)] max-[680px]:py-[22px] max-[680px]:pb-[58px]"
+        className="mx-auto w-[calc(100%-48px)] py-[34px] pb-20 max-[600px]:w-[calc(100%-36px)] max-[680px]:py-[22px] max-[680px]:pb-[58px]"
         id="services"
       >
         {user && (
@@ -190,7 +190,7 @@ function Services() {
 
         <div
           aria-live="polite"
-          className="grid grid-cols-3 gap-[22px] max-[900px]:grid-cols-2 max-[680px]:grid-cols-2 max-[680px]:gap-3 max-[420px]:gap-2.5"
+          className="grid grid-cols-4 gap-[18px] max-[1120px]:grid-cols-3 max-[900px]:grid-cols-2 max-[680px]:gap-3 max-[420px]:gap-2.5"
         >
           {status === 'loading' &&
             [0, 1, 2].map((row) => (

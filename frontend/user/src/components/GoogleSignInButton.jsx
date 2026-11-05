@@ -58,7 +58,7 @@ function GoogleSignInButton({ onSignedIn }) {
     const frame = frameRef.current
     if (!frame) return undefined
     const measure = () => {
-      const width = Math.round(Math.min(320, Math.max(200, frame.clientWidth - 8)))
+      const width = Math.round(Math.min(400, Math.max(200, frame.clientWidth - 8)))
       setButtonWidth((current) => (current === width ? current : width))
     }
     measure()

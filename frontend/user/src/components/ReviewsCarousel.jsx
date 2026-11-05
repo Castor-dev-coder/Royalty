@@ -46,7 +46,12 @@ function ReviewsCarousel({ reviews }) {
     const observer = new ResizeObserver(measure)
     observer.observe(container)
     return () => observer.disconnect()
-  }, [])
+    // Re-run when the review count changes: on first mount the list is often
+    // still empty (the EmptyState branch renders, so the ref is not attached
+    // and measurement is impossible). Once reviews arrive, this re-runs with
+    // the real container — without the dependency the step would stay 0 and
+    // the track could never translate.
+  }, [count])
 
   const goTo = useCallback(
     (nextIndex) => {

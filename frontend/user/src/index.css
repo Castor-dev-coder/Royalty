@@ -1,22 +1,22 @@
 @import "tailwindcss";
 
 @theme {
-  --color-bg: #0a0a0a;
-  --color-surface: #111111;
-  --color-card: #1a1a1a;
-  --color-gold: #d4b45c;
-  --color-gold-bright: #e5c66c;
+  --color-bg: #1c1b1a;
+  --color-surface: #242321;
+  --color-card: #2a2926;
+  --color-gold: #c5a15b;
+  --color-gold-bright: #d6b77a;
   --color-text: #f5f2ed;
-  --color-muted: #a7a39a;
-  --color-line: rgba(212, 180, 92, 0.32);
+  --color-muted: #a9a196;
+  --color-line: rgba(197, 161, 91, 0.32);
   --color-review-panel: #12100e;
   --color-review-card: #14110f;
   --color-review-border: rgba(212, 180, 92, 0.5);
-  --font-display: "Bodoni Moda", "Cormorant Garamond", Georgia, serif;
+  --font-display: "Cormorant Garamond", Georgia, serif;
   --font-salon: "Jost", system-ui, sans-serif;
   --font-serif: "Cormorant Garamond", Georgia, serif;
   --font-script: "Great Vibes", "Brush Script MT", cursive;
-  --font-sans: "Montserrat", system-ui, sans-serif;
+  --font-sans: "Jost", system-ui, sans-serif;
   --bg: var(--color-bg);
   --surface: var(--color-surface);
   --card: var(--color-card);
@@ -44,7 +44,7 @@
   --toast-error: #e0917f;
   --toast-warning: #d9b45c;
   --toast-info: var(--color-gold);
-  --wave-gold: rgba(212, 180, 92, 0.72);
+  --wave-gold: rgba(197, 161, 91, 0.72);
   --skeleton-base: rgba(212, 180, 92, 0.08);
   --skeleton-sheen: rgba(212, 180, 92, 0.16);
   --atmosphere-a: rgba(212, 180, 92, 0.1);
@@ -55,7 +55,7 @@
   --atmo-gold-3: #b98b3e;
   --atmo-gold-4: #f6e3a1;
   --atmo-thread-angle: 105deg;
-  --atmo-lines-opacity: 0.75;
+  --atmo-lines-opacity: 0.45;
   --atmo-vignette: radial-gradient(130% 140% at 50% 38%, rgba(36, 28, 16, 0.6) 0%, rgba(12, 10, 8, 0.3) 55%, rgba(0, 0, 0, 0.78) 100%);
   --atmo-parallax: 8px;
   --serif: var(--font-serif);
@@ -1139,7 +1139,7 @@ html[data-theme='light'] .service-description::-webkit-scrollbar-thumb {
    the largest text so pricing reads at a glance. */
 .service-price {
   margin: 8px 0 0;
-  font-family: var(--serif);
+  font-family: var(--serif), 'Segoe UI', 'Noto Sans', system-ui, sans-serif;
   font-size: clamp(22px, 2.4vw, 28px);
   font-weight: 700;
   letter-spacing: 0.3px;
@@ -1550,6 +1550,25 @@ html[data-theme='light'] .google-button-frame:focus-within {
   max-width: 100%;
 }
 
+/* Match the auth modal's gold-pill aesthetic. Google's stock button themes
+   only offer black / white / blue — none match the modal's solid-gold CTA —
+   so recolor the rendered button to gold fill + dark text. The Google "G"
+   logo keeps its own colors. Overrides Google's own button styles. */
+.google-button-host button,
+.google-button-host [role='button'],
+.google-button-host > div > div {
+  background: #d4b45c !important;
+  background-image: none !important;
+  color: #221a0c !important;
+  border: none !important;
+  border-radius: 999px !important;
+  box-shadow: none !important;
+}
+.google-button-frame {
+  background: transparent !important;
+  border: none !important;
+}
+
 /* ==========================================================================
    UI REFRESH — THE GOLD HAIRLINE RULE (signature detail)
 
@@ -1584,6 +1603,15 @@ html[data-theme='light'] {
   width: clamp(40px, 5vw, 64px);
   height: 1px;
   margin-left: clamp(12px, 1.4vw, 18px);
+  vertical-align: 0.32em;
+  background: var(--rule-fade);
+}
+.type-section-eyebrow::before {
+  content: '';
+  display: inline-block;
+  width: clamp(40px, 5vw, 64px);
+  height: 1px;
+  margin-right: clamp(12px, 1.4vw, 18px);
   vertical-align: 0.32em;
   background: var(--rule-fade);
 }

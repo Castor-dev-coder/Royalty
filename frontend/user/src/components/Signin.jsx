@@ -52,6 +52,12 @@ function Signin({ onClose, onSwitch, onLogin = () => {}, intent = null }) {
       form.elements.password.value,
     )
     if (confirmError) nextErrors.confirmPassword = confirmError
+    if (!form.elements.termsConsent.checked) {
+      nextErrors.termsConsent = 'Please accept the Terms & Conditions to continue.'
+    }
+    if (!form.elements.privacyConsent.checked) {
+      nextErrors.privacyConsent = 'Please accept the Privacy Policy to continue.'
+    }
     submitErrors(nextErrors)
     const firstError = Object.keys(nextErrors)[0]
     if (firstError) {
@@ -91,17 +97,17 @@ function Signin({ onClose, onSwitch, onLogin = () => {}, intent = null }) {
     <AuthModal onClose={onClose} variant="signin">
       <div className="flex flex-col items-center px-[clamp(24px,8vw,58px)] pt-[38px] pb-[35px] max-[680px]:px-[22px] max-[680px]:pt-8 max-[680px]:pb-[27px]">
         <BrandMark className="size-[86px] max-[680px]:size-[72px]" />
-        <h2 className="my-[25px] mb-[27px] text-center text-[clamp(1.35rem,4vw,1.75rem)] font-normal text-[#f0efed]" id="signin-title">
+        <h2 className="my-[25px] mb-[27px] text-center text-[clamp(1.65rem,4.5vw,2.1rem)] font-normal text-[#f0efed]" id="signin-title">
           Create your account
         </h2>
         {intent && (
-          <p className="-mt-4 mb-5 text-center text-[12px] font-semibold tracking-[0.14em] text-[var(--gold)] uppercase">
+          <p className="-mt-4 mb-5 text-center text-[15px] font-semibold tracking-[0.14em] text-[var(--gold)] uppercase">
             Sign in to {intent}
           </p>
         )}
         <form className="flex w-full flex-col gap-[14px]" noValidate onSubmit={handleSubmit}>
           <div className="flex w-full flex-col gap-[7px]">
-            <label className="text-[0.62rem] font-semibold tracking-[0.12em] text-[#918c82] uppercase" htmlFor="signin-name">
+            <label className="text-[0.82rem] font-semibold tracking-[0.12em] text-[#918c82] uppercase" htmlFor="signin-name">
               Full name
             </label>
             <div className="flex min-h-[61px] items-center gap-[19px] rounded-[10px] border border-[#3a3835] bg-[rgba(29,29,29,0.75)] px-[18px] transition-[border-color,box-shadow] duration-[180ms] focus-within:border-[var(--gold)] focus-within:shadow-[0_0_0_2px_rgba(212,180,92,0.1)] max-[680px]:min-h-[55px] max-[680px]:gap-[13px] max-[680px]:px-[14px]">
@@ -113,7 +119,7 @@ function Signin({ onClose, onSwitch, onLogin = () => {}, intent = null }) {
                 aria-describedby={errors.name ? 'signin-name-error' : undefined}
                 aria-invalid={errors.name ? 'true' : undefined}
                 autoComplete="name"
-                className="min-w-0 w-full border-0 bg-transparent text-[0.88rem] text-[#f3f0e8] outline-none placeholder:text-[#898783] focus-visible:outline-0 max-[680px]:text-[0.78rem]"
+                className="min-w-0 w-full border-0 bg-transparent text-[1.05rem] text-[#f3f0e8] outline-none placeholder:text-[#898783] focus-visible:outline-0 max-[680px]:text-[0.95rem]"
                 id="signin-name"
                 name="name"
                 placeholder="Your full name"
@@ -123,13 +129,13 @@ function Signin({ onClose, onSwitch, onLogin = () => {}, intent = null }) {
               />
             </div>
             {errors.name && (
-              <p className="m-0 text-[0.68rem] leading-[1.5] text-[#e9a68c]" id="signin-name-error" role="alert">
+              <p className="m-0 text-[0.85rem] leading-[1.5] text-[#e9a68c]" id="signin-name-error" role="alert">
                 {errors.name}
               </p>
             )}
           </div>
           <div className="flex w-full flex-col gap-[7px]">
-            <label className="text-[0.62rem] font-semibold tracking-[0.12em] text-[#918c82] uppercase" htmlFor="signin-email">
+            <label className="text-[0.82rem] font-semibold tracking-[0.12em] text-[#918c82] uppercase" htmlFor="signin-email">
               Email address
             </label>
             <div className="flex min-h-[61px] items-center gap-[19px] rounded-[10px] border border-[#3a3835] bg-[rgba(29,29,29,0.75)] px-[18px] transition-[border-color,box-shadow] duration-[180ms] focus-within:border-[var(--gold)] focus-within:shadow-[0_0_0_2px_rgba(212,180,92,0.1)] max-[680px]:min-h-[55px] max-[680px]:gap-[13px] max-[680px]:px-[14px]">
@@ -141,7 +147,7 @@ function Signin({ onClose, onSwitch, onLogin = () => {}, intent = null }) {
                 aria-describedby={errors.email ? 'signin-email-error' : undefined}
                 aria-invalid={errors.email ? 'true' : undefined}
                 autoComplete="email"
-                className="min-w-0 w-full border-0 bg-transparent text-[0.88rem] text-[#f3f0e8] outline-none placeholder:text-[#898783] focus-visible:outline-0 max-[680px]:text-[0.78rem]"
+                className="min-w-0 w-full border-0 bg-transparent text-[1.05rem] text-[#f3f0e8] outline-none placeholder:text-[#898783] focus-visible:outline-0 max-[680px]:text-[0.95rem]"
                 id="signin-email"
                 name="email"
                 placeholder="you@gmail.com"
@@ -151,13 +157,13 @@ function Signin({ onClose, onSwitch, onLogin = () => {}, intent = null }) {
               />
             </div>
             {errors.email && (
-              <p className="m-0 text-[0.68rem] leading-[1.5] text-[#e9a68c]" id="signin-email-error" role="alert">
+              <p className="m-0 text-[0.85rem] leading-[1.5] text-[#e9a68c]" id="signin-email-error" role="alert">
                 {errors.email}
               </p>
             )}
           </div>
           <div className="flex w-full flex-col gap-[7px]">
-            <label className="text-[0.62rem] font-semibold tracking-[0.12em] text-[#918c82] uppercase" htmlFor="signin-phone">
+            <label className="text-[0.82rem] font-semibold tracking-[0.12em] text-[#918c82] uppercase" htmlFor="signin-phone">
               Mobile number
             </label>
             <div className="flex min-h-[61px] items-center gap-[19px] rounded-[10px] border border-[#3a3835] bg-[rgba(29,29,29,0.75)] px-[18px] transition-[border-color,box-shadow] duration-[180ms] focus-within:border-[var(--gold)] focus-within:shadow-[0_0_0_2px_rgba(212,180,92,0.1)] max-[680px]:min-h-[55px] max-[680px]:gap-[13px] max-[680px]:px-[14px]">
@@ -169,7 +175,7 @@ function Signin({ onClose, onSwitch, onLogin = () => {}, intent = null }) {
                 aria-describedby={errors.phone ? 'signin-phone-error' : undefined}
                 aria-invalid={errors.phone ? 'true' : undefined}
                 autoComplete="tel"
-                className="min-w-0 w-full border-0 bg-transparent text-[0.88rem] text-[#f3f0e8] outline-none placeholder:text-[#898783] focus-visible:outline-0 max-[680px]:text-[0.78rem]"
+                className="min-w-0 w-full border-0 bg-transparent text-[1.05rem] text-[#f3f0e8] outline-none placeholder:text-[#898783] focus-visible:outline-0 max-[680px]:text-[0.95rem]"
                 id="signin-phone"
                 name="phone"
                 placeholder="09XX XXX XXXX"
@@ -179,13 +185,13 @@ function Signin({ onClose, onSwitch, onLogin = () => {}, intent = null }) {
               />
             </div>
             {errors.phone && (
-              <p className="m-0 text-[0.68rem] leading-[1.5] text-[#e9a68c]" id="signin-phone-error" role="alert">
+              <p className="m-0 text-[0.85rem] leading-[1.5] text-[#e9a68c]" id="signin-phone-error" role="alert">
                 {errors.phone}
               </p>
             )}
           </div>
           <div className="flex w-full flex-col gap-[7px]">
-            <label className="text-[0.62rem] font-semibold tracking-[0.12em] text-[#918c82] uppercase" htmlFor="signin-password">
+            <label className="text-[0.82rem] font-semibold tracking-[0.12em] text-[#918c82] uppercase" htmlFor="signin-password">
               Password
             </label>
             <div className="flex min-h-[61px] items-center gap-[19px] rounded-[10px] border border-[#3a3835] bg-[rgba(29,29,29,0.75)] px-[18px] transition-[border-color,box-shadow] duration-[180ms] focus-within:border-[var(--gold)] focus-within:shadow-[0_0_0_2px_rgba(212,180,92,0.1)] max-[680px]:min-h-[55px] max-[680px]:gap-[13px] max-[680px]:px-[14px]">
@@ -197,7 +203,7 @@ function Signin({ onClose, onSwitch, onLogin = () => {}, intent = null }) {
                 aria-describedby={errors.password ? 'signin-password-error' : undefined}
                 aria-invalid={errors.password ? 'true' : undefined}
                 autoComplete="new-password"
-                className="min-w-0 w-full border-0 bg-transparent text-[0.88rem] text-[#f3f0e8] outline-none placeholder:text-[#898783] focus-visible:outline-0 max-[680px]:text-[0.78rem]"
+                className="min-w-0 w-full border-0 bg-transparent text-[1.05rem] text-[#f3f0e8] outline-none placeholder:text-[#898783] focus-visible:outline-0 max-[680px]:text-[0.95rem]"
                 id="signin-password"
                 name="password"
                 placeholder="Create your password"
@@ -227,13 +233,13 @@ function Signin({ onClose, onSwitch, onLogin = () => {}, intent = null }) {
               </button>
             </div>
             {errors.password && (
-              <p className="m-0 text-[0.68rem] leading-[1.5] text-[#e9a68c]" id="signin-password-error" role="alert">
+              <p className="m-0 text-[0.85rem] leading-[1.5] text-[#e9a68c]" id="signin-password-error" role="alert">
                 {errors.password}
               </p>
             )}
           </div>
           <div className="flex w-full flex-col gap-[7px]">
-            <label className="text-[0.62rem] font-semibold tracking-[0.12em] text-[#918c82] uppercase" htmlFor="signin-confirm">
+            <label className="text-[0.82rem] font-semibold tracking-[0.12em] text-[#918c82] uppercase" htmlFor="signin-confirm">
               Confirm password
             </label>
             <div className="flex min-h-[61px] items-center gap-[19px] rounded-[10px] border border-[#3a3835] bg-[rgba(29,29,29,0.75)] px-[18px] transition-[border-color,box-shadow] duration-[180ms] focus-within:border-[var(--gold)] focus-within:shadow-[0_0_0_2px_rgba(212,180,92,0.1)] max-[680px]:min-h-[55px] max-[680px]:gap-[13px] max-[680px]:px-[14px]">
@@ -245,7 +251,7 @@ function Signin({ onClose, onSwitch, onLogin = () => {}, intent = null }) {
                 aria-describedby={errors.confirmPassword ? 'signin-confirm-error' : undefined}
                 aria-invalid={errors.confirmPassword ? 'true' : undefined}
                 autoComplete="new-password"
-                className="min-w-0 w-full border-0 bg-transparent text-[0.88rem] text-[#f3f0e8] outline-none placeholder:text-[#898783] focus-visible:outline-0 max-[680px]:text-[0.78rem]"
+                className="min-w-0 w-full border-0 bg-transparent text-[1.05rem] text-[#f3f0e8] outline-none placeholder:text-[#898783] focus-visible:outline-0 max-[680px]:text-[0.95rem]"
                 id="signin-confirm"
                 name="confirmPassword"
                 placeholder="Re-enter your password"
@@ -268,13 +274,51 @@ function Signin({ onClose, onSwitch, onLogin = () => {}, intent = null }) {
               </button>
             </div>
             {errors.confirmPassword && (
-              <p className="m-0 text-[0.68rem] leading-[1.5] text-[#e9a68c]" id="signin-confirm-error" role="alert">
+              <p className="m-0 text-[0.85rem] leading-[1.5] text-[#e9a68c]" id="signin-confirm-error" role="alert">
                 {errors.confirmPassword}
               </p>
             )}
           </div>
+          <div className="flex flex-col gap-2.5">
+            <label className="flex cursor-pointer items-start gap-2.5 text-[0.85rem] leading-[1.5] text-[#b3ada2]">
+              <input
+                className="mt-[3px] size-[15px] shrink-0 cursor-pointer accent-[var(--gold)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--gold)]"
+                name="termsConsent"
+                type="checkbox"
+              />
+              <span>
+                I agree to the{' '}
+                <a className="text-[var(--gold)] underline hover:no-underline" href="/terms" rel="noopener noreferrer" target="_blank">
+                  Terms &amp; Conditions
+                </a>
+              </span>
+            </label>
+            {errors.termsConsent && (
+              <p className="m-0 text-[0.85rem] leading-[1.5] text-[#e9a68c]" role="alert">
+                {errors.termsConsent}
+              </p>
+            )}
+            <label className="flex cursor-pointer items-start gap-2.5 text-[0.85rem] leading-[1.5] text-[#b3ada2]">
+              <input
+                className="mt-[3px] size-[15px] shrink-0 cursor-pointer accent-[var(--gold)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--gold)]"
+                name="privacyConsent"
+                type="checkbox"
+              />
+              <span>
+                I agree to the{' '}
+                <a className="text-[var(--gold)] underline hover:no-underline" href="/privacy" rel="noopener noreferrer" target="_blank">
+                  Privacy Policy
+                </a>
+              </span>
+            </label>
+            {errors.privacyConsent && (
+              <p className="m-0 text-[0.85rem] leading-[1.5] text-[#e9a68c]" role="alert">
+                {errors.privacyConsent}
+              </p>
+            )}
+          </div>
           <button
-            className="btn-pill mt-1 inline-flex min-h-[46px] w-full cursor-pointer items-center justify-center gap-2 rounded-full border border-[var(--gold)] bg-[var(--gold)] px-[1.4rem] py-[0.8rem] text-[0.7rem] font-bold tracking-[0.13em] text-[#111] uppercase hover:bg-[var(--gold-bright)] active:translate-y-px motion-reduce:active:translate-y-0 disabled:cursor-wait focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--gold)]"
+            className="btn-pill mt-1 inline-flex min-h-[46px] w-full cursor-pointer items-center justify-center gap-2 rounded-full border border-[var(--gold)] bg-[var(--gold)] px-[1.4rem] py-[0.8rem] text-[0.88rem] font-bold tracking-[0.13em] text-[#111] uppercase hover:bg-[var(--gold-bright)] active:translate-y-px motion-reduce:active:translate-y-0 disabled:cursor-wait focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--gold)]"
             disabled={submitting}
             aria-busy={submitting}
             type="submit"
@@ -285,22 +329,22 @@ function Signin({ onClose, onSwitch, onLogin = () => {}, intent = null }) {
             {submitting ? 'Signing up…' : 'SIGN UP'}
           </button>
         </form>
-        {message && <p className="auth-note mt-[13px] text-center text-[0.68rem] leading-[1.5]" role="status">{message}</p>}
-        <p className="mt-[19px] text-center text-[0.68rem] text-[#aaa7a0]">
+        {message && <p className="auth-note mt-[13px] text-center text-[0.85rem] leading-[1.5]" role="status">{message}</p>}
+        <p className="mt-[19px] text-center text-[0.85rem] text-[#aaa7a0]">
           Already have an account?{' '}
           <button className="auth-link cursor-pointer border-0 bg-transparent p-0 no-underline hover:underline" onClick={onSwitch} type="button">
             Log in
           </button>
         </p>
-        <div className="relative my-[21px] w-full text-center text-[0.58rem] text-[#77736b] before:absolute before:top-1/2 before:right-0 before:left-0 before:h-px before:bg-[#34322e] before:content-['']">
+        <div className="relative my-[21px] w-full text-center text-[0.72rem] text-[#77736b] before:absolute before:top-1/2 before:right-0 before:left-0 before:h-px before:bg-[#34322e] before:content-['']">
           <span className="relative bg-[#11110f] px-3">OR</span>
         </div>
         <button
-          className="flex min-h-11 w-full cursor-pointer items-center justify-center gap-[10px] rounded border border-[#34322e] bg-[#171716] text-[0.7rem] text-[#e1ded8] transition-[border-color,background] duration-[180ms] hover:border-[var(--gold)] hover:bg-[#1d1c19]"
+          className="flex min-h-[46px] w-full cursor-pointer items-center justify-center gap-[10px] rounded-full border border-[var(--gold)] bg-[var(--gold)] px-[1.4rem] text-[0.88rem] font-bold text-[#221a0c] transition-[background] duration-[180ms] hover:bg-[var(--gold-bright)]"
           onClick={() => setMessage('Sign-up isn’t available yet.')}
           type="button"
         >
-          <span className="font-[Arial,sans-serif] text-base font-bold text-[#4285f4]" aria-hidden="true">G</span>
+          <span className="grid size-[26px] place-items-center rounded-[6px] bg-white font-[Arial,sans-serif] text-base font-bold text-[#4285f4]" aria-hidden="true">G</span>
           Sign up with Google
         </button>
       </div>

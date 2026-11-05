@@ -26,6 +26,8 @@ const About = lazy(() => import('./pages/About.jsx'))
 const Settings = lazy(() => import('./pages/Settings.jsx'))
 const Notifications = lazy(() => import('./pages/Notifications.jsx'))
 const PaymentReturnPage = lazy(() => import('./pages/PaymentReturnPage.jsx'))
+const TermsAndConditions = lazy(() => import('./pages/TermsAndConditions.jsx'))
+const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy.jsx'))
 
 function lazily(element, fallback) {
   return <Suspense fallback={fallback}>{element}</Suspense>
@@ -80,6 +82,14 @@ function App() {
               <Route
                 element={lazily(<PaymentReturnPage />, <ContentPageSkeleton />)}
                 path="/payment/return"
+              />
+              <Route
+                element={lazily(<TermsAndConditions />, <ContentPageSkeleton />)}
+                path="/terms"
+              />
+              <Route
+                element={lazily(<PrivacyPolicy />, <ContentPageSkeleton />)}
+                path="/privacy"
               />
               <Route
                 element={lazily(<NotFound />, <ContentPageSkeleton />)}

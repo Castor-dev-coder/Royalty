@@ -1,9 +1,3 @@
-const stats = [
-  { value: '500+', label: 'CLIENTS SERVED' },
-  { value: '15+', label: 'EXPERT STAFF' },
-  { value: '8+', label: 'YEARS OF EXCELLENCE' },
-]
-
 function OurStory() {
   return (
     <section
@@ -18,6 +12,9 @@ function OurStory() {
         />
       </div>
       <div>
+        <div className="mb-4 text-[13px] font-medium tracking-[0.22em] text-(--muted) opacity-75">
+          004.
+        </div>
         <span className="type-section-eyebrow mb-3.75 inline-block text-(--gold)">
           OUR STORY
         </span>
@@ -45,18 +42,12 @@ function OurStory() {
             — Founder, Royalty Hair and Nails Studio
           </cite>
         </blockquote>
-        <div className="grid grid-cols-3 gap-4.5 max-[380px]:gap-2.5">
-          {stats.map(({ value, label }) => (
-            <div className="flex flex-col gap-1.75" key={label}>
-              <strong className="type-stat-value text-(--gold)">
-                {value}
-              </strong>
-              <span className="type-stat-label text-[#a7a198]">
-                {label}
-              </span>
-            </div>
-          ))}
-        </div>
+        {/* No studio-stats endpoint exists yet (FE gap) — the fabricated
+            numbers were removed (matching the About page) rather than
+            replaced with invented ones. */}
+        <p className="m-0 text-[13px] leading-[1.7] text-[#a7a198]" role="status">
+          Studio statistics are not available yet.
+        </p>
       </div>
     </section>
   )

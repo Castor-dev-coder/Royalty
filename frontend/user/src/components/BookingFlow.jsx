@@ -25,7 +25,7 @@ import {
 
 /* The progress indicator maps 1:1 onto the booking flow's real states:
    1 = details form, 2 = review, 3 = confirmation screen. */
-const STEPS = ['Details', 'Review', 'Confirmed']
+const STEPS = ['Details', 'Review', 'Payment']
 const SWIPE_MS = 260
 
 function prefersReducedMotion() {
@@ -844,7 +844,7 @@ function BookingFlow({ service, user, onClose }) {
     <>
     <Dialog labelledBy="booking-title" onClose={onClose} panelClassName="max-h-[92vh] w-full max-w-140 overflow-y-auto rounded-md border border-(--gold) bg-[#11110f] shadow-[0_20px_80px_rgba(0,0,0,.65)]">
         <div className="flex items-center justify-between border-b border-[rgba(212,180,92,.25)] px-6 py-5">
-          <div><p className="m-0 text-[10px] uppercase tracking-[2px] text-(--gold)\">Royalty Salon</p><h2 id="booking-title" className="m-1 font-(--serif) text-2xl text-[#f3eee5]">{activeStep === 3 ? 'Booking Confirmed' : activeStep === 2 ? 'Review your booking' : 'Book your appointment'}</h2></div>
+          <div><p className="m-0 text-[10px] uppercase tracking-[2px] text-(--gold)\">Royalty Salon</p><h2 id="booking-title" className="m-1 font-(--serif) text-2xl text-[#f3eee5]">{activeStep === 3 ? (mayaPayment?.status === 'PAID' ? 'Booking Confirmed' : 'Booking reserved') : activeStep === 2 ? 'Review your booking' : 'Book your appointment'}</h2></div>
           <button type="button" onClick={onClose} className="text-2xl text-[#aaa49a] hover:text-(--gold)" aria-label="Close">×</button>
         </div>
 

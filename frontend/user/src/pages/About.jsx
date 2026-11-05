@@ -69,7 +69,10 @@ function About() {
           </div>
 
           <div>
-            <span className="mb-0.75 inline-block font-salon text-base leading-tight font-semibold tracking-[1.3px] text-(--gold) uppercase">
+            <div className="mb-4 text-[13px] font-medium tracking-[0.22em] text-(--muted) opacity-75">
+              001.
+            </div>
+            <span className="type-section-eyebrow mb-3 inline-block text-(--gold)">
               OUR STORY
             </span>
             <Reveal>
@@ -117,7 +120,10 @@ function About() {
           <div aria-hidden="true" className="salon-lines" />
           <div aria-hidden="true" className="team-arcs" />
           <header className="text-center">
-            <span className="mb-0.75 inline-block font-salon text-[17.5px] leading-tight font-semibold tracking-[1.3px] text-(--gold) uppercase">
+            <div className="mb-4 text-[13px] font-medium tracking-[0.22em] text-(--muted) opacity-75">
+              002.
+            </div>
+            <span className="type-section-eyebrow mb-3 inline-block text-(--gold)">
               OUR TEAM
             </span>
             <h2
